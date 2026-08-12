@@ -100,23 +100,35 @@ class GerenciadorNotificacoes:
 
     async def _broadcast(self, msg: dict):
         if not self.conexoes_ativas:
+            logger.debug("⚠️ [WS] Nenhum cliente conectado para broadcast.")
             if msg.get("tipo_ws") in ["CHAT_RESPONSE", "NOTIFICACAO"]:
                 self._buffer_mensagens.append(msg)
                 if len(self._buffer_mensagens) > 20: self._buffer_mensagens.pop(0)
             return
 
+        logger.info(f"📡 [WS] Fazendo broadcast para {len(self.conexoes_ativas)} clientes.")
         payload_str = json.dumps(msg, default=str)
         tasks = []
         for ws in self.conexoes_ativas:
-            tasks.append(asyncio.wait_for(ws.send_text(payload_str), timeout=2.0))
+            tasks.append(asyncio.wait_for(ws.send_text(payload_str), timeout=3.0))
         
         try:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        except: pass
+            resultados = await asyncio.gather(*tasks, return_exceptions=True)
+            for i, res in enumerate(resultados):
+                if isinstance(res, Exception):
+                    logger.error(f"❌ [WS] Erro no broadcast para cliente {i}: {res}")
+        except Exception as e:
+            logger.error(f"❌ [WS] Erro geral no broadcast: {e}")
 
     async def processar_evento_kernel(self, evento):
         """Método para o Kernel chamar diretamente."""
         await self.enviar_alerta(evento.model_dump())
+
+    async def iniciar_monitor(self):
+        """Loop para logar status das conexões no servidor."""
+        while True:
+            logger.info(f"📊 [WS Status] Ativos: {len(self.conexoes_ativas)} | Master: {'ON' if self.pc_master else 'OFF'} | Mobile: {'ON' if self.mobile_client else 'OFF'}")
+            await asyncio.sleep(15)
 
 central_alertas = GerenciadorNotificacoes()
 

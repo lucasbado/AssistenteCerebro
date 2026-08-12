@@ -134,7 +134,8 @@ async def lifespan(app: FastAPI):
     tasks = [
         asyncio.create_task(loop_clima()),
         asyncio.create_task(loop_rotina()),
-        asyncio.create_task(kernel.iniciar())
+        asyncio.create_task(kernel.iniciar()),
+        asyncio.create_task(central_alertas.iniciar_monitor())
     ]
     
     # 🌍 SÓ INICIA UDP LOCALMENTE: Render não suporta UDP inbound desta forma
