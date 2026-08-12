@@ -40,27 +40,54 @@ class AgenteRaciocinio:
             ))
 
         # 1. Recupera Contexto do Obsidian (Long-term)
-        conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
-        logger.info(f"📓 [Raciocínio] Contexto Obsidian carregado ({len(conhecimento_atual)} chars).")
+        try:
+            conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
+            logger.info(f"📓 [Raciocínio] Contexto Obsidian carregado.")
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao ler Obsidian: {e}")
+            conhecimento_atual = ""
 
-        # 2. Salva a mensagem do usuário IMEDIATAMENTE se for comando direto
-        # Isso garante que a LLM veja o que você acabou de dizer no histórico.
+        # 2. Salva a mensagem do usuário com TIMEOUT
         chave_conversa = "br.com.assistentecell.chat" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else evento.pacote
         if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
             texto_usuario = evento.payload.get("texto", "")
             if texto_usuario:
-                await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Usuário: {texto_usuario}"])
+                try:
+                    await asyncio.wait_for(
+                        self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Usuário: {texto_usuario}"]),
+                        timeout=5.0
+                    )
+                except Exception as e:
+                    logger.error(f"❌ [Raciocínio] Falha ao salvar conversa no DB: {e}")
 
-        # 3. Recupera contexto histórico (Short-term memory)
-        historico = await self.memoria_trabalho.obter_contexto(chave_conversa)
+        # 3. Recupera contexto histórico
+        try:
+            historico = await asyncio.wait_for(self.memoria_trabalho.obter_contexto(chave_conversa), timeout=3.0)
+        except:
+            historico = []
 
-        # 4. Consulta o Córtex (LLM) com o histórico ATUALIZADO
-        resultado = await self.llm.classificar_evento(
-            categoria=evento.categoria.value,
-            pacote=evento.pacote,
-            payload=evento.payload,
-            historico=historico
-        )
+        # 4. Consulta o Córtex (LLM) com TIMEOUT de 40s
+        logger.info(f"🤖 [Raciocínio] Chamando LLM para {evento.id[:8]}...")
+        try:
+            resultado = await asyncio.wait_for(
+                self.llm.classificar_evento(
+                    categoria=evento.categoria.value,
+                    pacote=evento.pacote,
+                    payload=evento.payload,
+                    historico=historico
+                ),
+                timeout=40.0
+            )
+        except asyncio.TimeoutError:
+            logger.error("❌ [Raciocínio] TIMEOUT da LLM (40s).")
+            resultado = {
+                "tipo_interacao": "NOTIFICAR",
+                "mensagem_dinamica": "Tive um lapso de memória aqui, a nuvem tá lenta. Pode repetir?",
+                "execucao_direta": None
+            }
+        except Exception as e:
+            logger.error(f"❌ [Raciocínio] Erro inesperado na LLM: {e}")
+            resultado = {"tipo_interacao": "IGNORAR"}
 
         # 🌟 LOG DE DECISÃO: Ver exatamente o que a IA pensou
         logger.info(f"📊 [OLLIE_BRAIN] Raw Decision: {json.dumps(resultado, ensure_ascii=False)}")

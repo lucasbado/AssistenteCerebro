@@ -60,14 +60,15 @@ class MemoriaDeTrabalho:
         caem abaixo de zero. Retorna o número de conversas esquecidas.
         """
         async with AsyncSessionLocal() as session:
-            agora = datetime.now(timezone.utc)
+            # Mecanismo simplificado para funcionar tanto em SQLite quanto Postgres
+            # Deleta conversas que não foram acessadas há mais de 7 dias ou têm relevância 0
+            limite_esquecimento = datetime.now(timezone.utc) - timedelta(days=7)
             
-            # Subquery para encontrar IDs a serem deletados
-            expired_conversations_stmt = select(MemoriaTrabalhoDB.id).where(
-                (MemoriaTrabalhoDB.relevancia - (( (julianday(agora) - julianday(MemoriaTrabalhoDB.ultima_interacao)) * 24) * DECAY_RATE_PER_HOUR)) < 0
+            delete_stmt = delete(MemoriaTrabalhoDB).where(
+                (MemoriaTrabalhoDB.ultima_interacao < limite_esquecimento) |
+                (MemoriaTrabalhoDB.relevancia <= 0)
             )
             
-            delete_stmt = delete(MemoriaTrabalhoDB).where(MemoriaTrabalhoDB.id.in_(expired_conversations_stmt.scalar_subquery()))
             result = await session.execute(delete_stmt)
             await session.commit()
             

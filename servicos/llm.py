@@ -33,7 +33,7 @@ class ServicoLLM:
 
     async def _gerar_json(self, prompt: str, system: str) -> dict: 
         if self.api_key:
-            # Chamada Groq
+            # Chamada Groq com timeout de 35 segundos
             chat_completion = await self.client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": system},
@@ -41,7 +41,8 @@ class ServicoLLM:
                 ],
                 model=self.modelo,
                 response_format={"type": "json_object"},
-                temperature=0.1
+                temperature=0.1,
+                timeout=35.0 
             )
             raw_response = chat_completion.choices[0].message.content
         else:
