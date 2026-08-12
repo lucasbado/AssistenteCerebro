@@ -1,13 +1,22 @@
 import os
 import subprocess
 import psutil
-import pyautogui
-import voicemeeterlib
 import spotipy
 import toml
 from spotipy.oauth2 import SpotifyOAuth
 import logging
 from typing import List
+
+# Importação condicional para bibliotecas de hardware (evita crash na nuvem)
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None
+
+try:
+    import voicemeeterlib
+except ImportError:
+    voicemeeterlib = None
 
 logger = logging.getLogger("PCControl")
 
@@ -49,21 +58,27 @@ class PcControlService:
     def inicializar(self):
         try:
             # Tenta Voicemeeter, mas não mata o serviço se falhar (ex: nuvem)
-            try:
-                self.vm = voicemeeterlib.api('banana')
-                self.vm.login()
-                logger.info("[PCControl] Voicemeeter conectado.")
-            except Exception as e:
-                logger.warning(f"[PCControl] Voicemeeter não encontrado (esperado em nuvem): {e}")
+            if voicemeeterlib:
+                try:
+                    self.vm = voicemeeterlib.api('banana')
+                    self.vm.login()
+                    logger.info("[PCControl] Voicemeeter conectado.")
+                except Exception as e:
+                    logger.warning(f"[PCControl] Falha ao logar no Voicemeeter: {e}")
+            else:
+                logger.warning("[PCControl] Biblioteca voicemeeterlib não instalada.")
 
             self._init_spotify()
             
             # Pyautogui pode falhar em servidores sem tela
-            try:
-                pyautogui.PAUSE = 0
-                pyautogui.FAILSAFE = False
-            except:
-                logger.warning("[PCControl] Interface gráfica não disponível.")
+            if pyautogui:
+                try:
+                    pyautogui.PAUSE = 0
+                    pyautogui.FAILSAFE = False
+                except Exception as e:
+                    logger.warning(f"[PCControl] Falha ao configurar PyAutoGUI: {e}")
+            else:
+                logger.warning("[PCControl] Biblioteca pyautogui não instalada.")
                 
             return True
         except Exception as e:
