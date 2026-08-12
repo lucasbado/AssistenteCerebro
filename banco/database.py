@@ -1,13 +1,25 @@
+import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
 
-# Alterado para engine assíncrona com aiosqlite para não bloquear a CPU
-ASYNC_DATABASE_URL = "sqlite+aiosqlite:///./agente_local.db"
+load_dotenv()
+
+# Prioriza a URL da nuvem (Neon.tech/Postgres), senão usa SQLite local
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///D:/Programacao/AssistenteCell/agente_local.db")
+
+# Ajuste específico para asyncpg (Neon/Postgres requer sslmode)
+if DATABASE_URL.startswith("postgresql"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+    # Neon exige sslmode=require
+    if "sslmode" not in DATABASE_URL:
+        DATABASE_URL += "?sslmode=require"
 
 async_engine = create_async_engine(
-    ASYNC_DATABASE_URL, 
-    connect_args={"check_same_thread": False},
-    echo=False # Mude para True se precisar debugar queries geradas pelos agentes
+    DATABASE_URL, 
+    # check_same_thread apenas para SQLite
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+    echo=False
 )
 
 # Fábrica de Sessões assíncronas

@@ -3,8 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.perfil import router as perfil_router
 from api.status import router as status_router
 from api.memoria import router as memoria_router
-from servicos.router import router as timeline_router
+# 🌟 CORREÇÃO: O router da timeline foi movido para a camada de API, seguindo a arquitetura.
+from api.router_timeline import router as timeline_router
 from api.router import router as home_router
+from api.router_capabilities import router as capabilities_router
 
 def criar_app_api():
     """
@@ -32,6 +34,8 @@ def criar_app_api():
     app.include_router(status_router, prefix="/api/v1/status", tags=["Status"])
     app.include_router(memoria_router, prefix="/api/v1/memory", tags=["Memória"])
     app.include_router(timeline_router, prefix="/api/v1/timeline", tags=["Timeline"])
+    # 🌟 NOVO: Registra os endpoints GET e PUT para /capabilities
+    app.include_router(capabilities_router, prefix="/api/v1/capabilities", tags=["Capabilities"])
 
     return app
 

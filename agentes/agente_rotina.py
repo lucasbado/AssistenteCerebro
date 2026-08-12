@@ -68,12 +68,36 @@ class AgenteRotina:
                 )
             )
 
-    async def _analisar_padroes_gerais(self):
+    async def _analisar_padPatterns_gerais(self):
         """
-        Lógica para ler a MemoriaPerfil e descobrir correlações.
-        (Versão simplificada para MVP)
+        Lógica para ler a MemoriaPerfil e descobrir correlações para sugerir automações.
         """
-        logger.info("🧠 AgenteRotina: Iniciando reflexão sobre padrões de uso...")
-        top_apps = await memoria_perfil.obter_top_entidades(categoria="APP_USO", limite=3)
-        # Aqui poderíamos disparar insights para a Home baseados no volume de uso
-        # ou sugerir 'curas' para vícios em certos apps.
+        logger.info("🧠 AgenteRotina: Iniciando reflexão sobre padrões para sugerir automações...")
+        
+        # 1. Busca associações PC-Mobile aprendidas na memória semântica
+        from servicos.catalogo_semantico import catalogo
+        apps = await catalogo.memoria.obter_perfil_completo(confianca_minima=0.5)
+        
+        for app in apps:
+            entidade = await catalogo.obter_app(app.valor)
+            if entidade and entidade.atributos.get("associacoes", {}).get("pc_default"):
+                programa = entidade.atributos["associacoes"]["pc_default"]["programa"]
+                
+                # Gera uma sugestão de regra se houver uma associação forte
+                await kernel.publicar(EventoCanonico(
+                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                    acao=TipoAcao.INTENCAO_INTERACAO,
+                    origem=OrigemEvento.IA,
+                    pacote=app.valor,
+                    payload={
+                        "titulo": "Sugestão de Automação",
+                        "texto": f"Sempre que você abre o app no celular, você usa o {programa} no PC. Quer que eu abra ele pra você?",
+                        "sugestao_regra": {
+                            "skill_id": "automacao",
+                            "trigger_package": app.valor,
+                            "action_type": "PC_COMMAND",
+                            "action_parameter": programa,
+                            "justificativa": "Notei que você costuma usar ambos juntos."
+                        }
+                    }
+                ))

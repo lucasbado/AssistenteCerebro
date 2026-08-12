@@ -66,7 +66,8 @@ class AgenteFoco:
             self._inferir_sugestao_contextual(evento, entidade_app),
             self._inferir_bem_estar(evento, entidade_app),
             self._inferir_app_favorito(evento, perfil_app),
-            self._inferir_trabalho_vs_lazer(evento, entidade_app)
+            self._inferir_trabalho_vs_lazer(evento, entidade_app),
+            self._verificar_associacao_pc(evento, entidade_app)
         )
 
     async def _inferir_trabalho_vs_lazer(self, evento: EventoCanonico, entidade: EntidadeSemantica | None):
@@ -139,6 +140,34 @@ class AgenteFoco:
                         "acao_parametro": "com.spotify.music",  # Ou o pacote do seu player favorito
                         "acao_texto": "Ouvir Música",
                     },
+                )
+            )
+
+    async def _verificar_associacao_pc(self, evento: EventoCanonico, entidade_app: EntidadeSemantica | None):
+        """
+        Verifica se o aplicativo aberto tem uma ação de PC associada (aprendida
+        pelo AgenteInferencia) e, em caso afirmativo, dispara o evento para executá-la.
+        """
+        if not entidade_app or not entidade_app.atributos:
+            return
+
+        associacao_pc = entidade_app.atributos.get("associacoes", {}).get("pc_default")
+        if not associacao_pc:
+            return
+
+        programa = associacao_pc.get("programa")
+        if programa:
+            logger.info(f"💡 AgenteFoco: Associação de PC encontrada para '{evento.pacote}'. Acionando '{programa}'.")
+
+            # Dispara um evento específico para o AgentePcExecutor
+            await kernel.publicar(
+                evento.clonar(
+                    categoria=CategoriaEvento.SISTEMA_COMANDO_PC,
+                    acao=TipoAcao.EXECUTAR_PROGRAMA,
+                    origem=OrigemEvento.IA,
+                    payload={
+                        "programa": programa
+                    }
                 )
             )
 

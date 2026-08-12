@@ -11,6 +11,7 @@ from core.evento import EventoCanonico
 from core.tipos import TipoAcao, CategoriaEvento
 from servicos.memoria_episodica import MemoriaEpisodica
 from servicos.memoria_perfil import memoria_perfil
+from servicos.obsidian_service import obsidian_service
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,12 @@ class AgenteAprendizagem:
         elif tipo_feedback.upper() == "ACTION_CLICKED":
             logger.info(f"🧠 [Aprendizagem] Feedback positivo (ACTION_CLICKED) para '{valor_perfil}'. Aumentando relevância.")
             await memoria_perfil.registrar_feedback_positivo(categoria_perfil, valor_perfil)
+            
+            # 🌟 NOVO: Persistência de hábito confirmado no Obsidian
+            obsidian_service.registrar_fato(
+                "Aprendizado_Automatico", 
+                f"Usuário confirmou interesse/hábito em: {valor_perfil} ({categoria_perfil})"
+            )
 
     def _extrair_entidade_do_evento(self, evento_dict: dict) -> tuple[str, str] | None:
         """Heurística para encontrar a 'coisa' sobre a qual o usuário está dando feedback."""

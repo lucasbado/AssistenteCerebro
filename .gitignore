@@ -1,1 +1,18 @@
-.aider*
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.env
+
+# Banco de Dados Local
+*.db
+*.sqlite3
+
+# IDEs
+.idea/
+.vscode/
+
+# Ollie Master (App Local)
+ollie_master_gui.py

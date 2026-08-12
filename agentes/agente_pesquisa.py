@@ -21,6 +21,11 @@ class AgentePesquisa:
         self.max_results = max_results
         self.ddgs = DDGS(timeout=10)
 
+    def _executar_busca(self, query: str):
+        """Executa a busca síncrona no DuckDuckGo."""
+        with DDGS() as ddgs:
+            return list(ddgs.text(query, max_results=self.max_results))
+
     async def processar(self, evento: EventoCanonico):
         query = evento.payload.get("query")
         if not query:
@@ -31,23 +36,28 @@ class AgentePesquisa:
         
         try:
             # 1. Buscar links no DuckDuckGo
-            search_results = await self.ddgs.atext(query, max_results=self.max_results)
+            search_results = await asyncio.to_thread(self._executar_busca, query)
+            
             if not search_results:
+                logger.warning(f"🌐 [Pesquisa] Nenhum resultado encontrado para '{query}'")
                 await self._publicar_resultado(evento, "Não encontrei resultados para sua busca.", sucesso=False)
                 return
+
+            logger.info(f"🌐 [Pesquisa] Encontrados {len(search_results)} resultados. Extraindo conteúdos...")
 
             # 2. Extrair conteúdo das páginas em paralelo
             urls = [r['href'] for r in search_results]
             tasks = [self._extrair_conteudo(url) for url in urls]
             conteudos = await asyncio.gather(*tasks)
             
-            conteudo_final = "\n\n---\n\n".join(filter(None, conteudos))
+            conteudo_final = "\n\n---\n\n".join([c[:2000] for c in conteudos if c])
 
             if not conteudo_final:
-                await self._publicar_resultado(evento, "Não consegui extrair conteúdo relevante dos resultados.", sucesso=False)
+                logger.warning(f"🌐 [Pesquisa] Falha ao extrair texto útil das URLs.")
+                await self._publicar_resultado(evento, "Não consegui extrair conteúdo relevante dos sites.", sucesso=False)
                 return
 
-            logger.info(f"🌐 [Pesquisa] Conteúdo extraído com sucesso. Enviando para síntese.")
+            logger.info(f"🌐 [Pesquisa] Sucesso! Enviando {len(conteudo_final)} caracteres para síntese.")
             await self._publicar_resultado(evento, conteudo_final, sucesso=True)
 
         except Exception as e:
@@ -66,14 +76,14 @@ class AgentePesquisa:
 
     async def _publicar_resultado(self, evento_original: EventoCanonico, conteudo: str, sucesso: bool):
         """Publica o resultado da pesquisa para o próximo agente no pipeline."""
-        await kernel.publicar(
-            evento_original.clonar(
-                acao=TipoAcao.RESULTADO_PESQUISA,
-                origem=OrigemEvento.SISTEMA,
-                payload={
-                    "query": evento_original.payload.get("query"),
-                    "sucesso": sucesso,
-                    "conteudo": conteudo,
-                }
-            )
+        novo_evento = evento_original.clonar(
+            acao=TipoAcao.RESULTADO_PESQUISA,
+            origem=OrigemEvento.SISTEMA,
+            payload={
+                "query": evento_original.payload.get("query"),
+                "sucesso": sucesso,
+                "conteudo": conteudo,
+            }
         )
+        logger.info(f"🌐 [Pesquisa] Publicando resultado final ({novo_evento.id[:8]}) para síntese.")
+        await kernel.publicar(novo_evento)

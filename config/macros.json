@@ -1,0 +1,15 @@
+{
+    "modo_imersao": [
+        {
+            "alvo": "PC",
+            "comando": "mutar_mic",
+            "parametro": ""
+        },
+        {
+            "alvo": "PC",
+            "comando": "executar_macro",
+            "parametro": "win_d"
+        }
+    ],
+    "{'nome':_'modo_treino',_'passos':_[{'comando':_'abrir_app',_'parametro':_'vscode'},_{'comando':_'abrir_app',_'parametro':_'spotify'}]}": []
+}

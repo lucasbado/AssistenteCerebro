@@ -1,5 +1,8 @@
+import logging
 from .agregador import agregador_timeline
 from .dto import TimelineDTO, TimelineItemDTO
+
+logger = logging.getLogger(__name__)
 
 class ServicoTimeline:
     async def gerar_timeline(self) -> TimelineDTO:

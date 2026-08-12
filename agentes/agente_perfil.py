@@ -29,6 +29,11 @@ class AgentePerfil:
         if evento.categoria == CategoriaEvento.APP_FOREGROUND:
             if evento.pacote:
                 await memoria_perfil.registrar_uso_app(evento.pacote)
+                # NOVO: Garante que o app seja conhecido pelo catálogo semântico.
+                # A função obter_app é idempotente e irá classificar/salvar o app
+                # apenas se ele for desconhecido, evitando trabalho repetido.
+                logger.debug(f"Garantindo que o app '{evento.pacote}' está no catálogo.")
+                await catalogo.obter_app(evento.pacote)
 
         # Registra a escuta de um artista
         elif evento.categoria == CategoriaEvento.MEDIA:

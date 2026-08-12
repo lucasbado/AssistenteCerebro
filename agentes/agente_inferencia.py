@@ -1,22 +1,34 @@
 """
 agentes/agente_inferencia.py
 """
-from collections import defaultdict, deque
+from collections import defaultdict, deque, namedtuple
 from datetime import datetime, timedelta, timezone
 from core.evento import EventoCanonico
 from core.tipos import CategoriaEvento
 from modelos.catalogo import EntidadeSemantica
 from servicos.catalogo_semantico import catalogo
 from servicos.memoria_perfil import memoria_perfil
+import logging
+
+logger = logging.getLogger(__name__)
+Coocorrencia = namedtuple('Coocorrencia', ['pacote_app', 'programa_pc', 'timestamp'])
 
 class AgenteInferencia:
     def __init__(self):
         self.eventos_recentes: deque[EventoCanonico] = deque(maxlen=500)
         self.uso_apps: defaultdict[str, deque[datetime]] = defaultdict(lambda: deque(maxlen=20))
+        # NOVO: Histórico de coocorrências para aprender associações
+        self.coocorrencias: deque[Coocorrencia] = deque(maxlen=100)
+        self.associacoes_pc_aprendidas: dict[str, str] = {} # Cache para evitar escritas repetidas no DB
 
     async def processar(self, evento: EventoCanonico):
         self.eventos_recentes.append(evento)
         self._atualizar_frequencias(evento)
+
+        # NOVO: Processa eventos de atividade do PC para aprender rotinas
+        if evento.categoria == CategoriaEvento.PC_ACTIVITY:
+            await self._registrar_coocorrencia_pc(evento)
+
         await self._inferir_padroes(evento)
 
     def _atualizar_frequencias(self, evento: EventoCanonico):
@@ -24,10 +36,55 @@ class AgenteInferencia:
             self.uso_apps[evento.pacote].append(evento.timestamp)
 
     async def _inferir_padroes(self, evento: EventoCanonico):
+        # 🌟 NOVO: Monitoramento de coocorrência Celular -> Celular
+        if evento.categoria == CategoriaEvento.APP_FOREGROUND:
+            await self._registrar_coocorrencia_mobile(evento)
+
         await self._padrao_app_mais_usado()
         await self._inferir_contato_favorito(evento)
         await self._inferir_rotina_musical(evento)
         await self._padrao_rotina_noturna()
+        await self._inferir_associacao_pc()
+        await self._inferir_associacao_mobile()
+
+    async def _registrar_coocorrencia_mobile(self, evento_atual: EventoCanonico):
+        """Registra quando dois apps diferentes são abertos em sequência rápida."""
+        pacote_atual = evento_atual.pacote
+        if "assistentecell" in pacote_atual: return
+
+        agora = evento_atual.timestamp
+        for ev in reversed(self.eventos_recentes):
+            # Procura o penúltimo app aberto nos últimos 60s
+            if (agora - ev.timestamp) > timedelta(seconds=60): break
+            if ev.id == evento_atual.id: continue
+
+            if ev.categoria == CategoriaEvento.APP_FOREGROUND and ev.pacote != pacote_atual:
+                if "assistentecell" in ev.pacote: continue
+                
+                # Registra como uma coocorrência mobile (usamos o campo programa_pc para o segundo app)
+                nova = Coocorrencia(ev.pacote, pacote_atual, agora)
+                self.coocorrencias.append(nova)
+                logger.info(f"🧠 [INFERENCIA] Coocorrência registrada (Mobile): '{ev.pacote}' -> '{pacote_atual}'")
+                return
+
+    async def _inferir_associacao_mobile(self):
+        """Aprende padrões de abertura de apps sequenciais no celular."""
+        if len(self.coocorrencias) < 2: return
+
+        contador = defaultdict(int)
+        for co in self.coocorrencias:
+            # Identifica mobile-mobile pelo ponto no nome do "programa"
+            if "." in co.programa_pc:
+                contador[(co.pacote_app, co.programa_pc)] += 1
+
+        for (p1, p2), contagem in contador.items():
+            if contagem >= 2:
+                logger.info(f"✨ [INFERENCIA] Novo hábito mobile detectado: '{p1}' ➔ '{p2}'")
+                entidade = await catalogo.obter_app(p1)
+                if entidade:
+                    entidade.atributos.setdefault("associacoes", {})
+                    entidade.atributos["associacoes"]["mobile_next"] = { "pacote": p2 }
+                    await catalogo.memoria.salvar(entidade)
 
     async def _inferir_contato_favorito(self, evento: EventoCanonico):
         if evento.categoria != CategoriaEvento.NOTIFICACAO:
@@ -120,9 +177,63 @@ class AgenteInferencia:
             return
         app_top = max(apps_noturnos.items(), key=lambda x: x[1])
         pacote, uso = app_top
-        if uso < 3:
+        # 🌟 AJUSTE: Limiar baixado para 2 para aprendizado mais rápido no início
+        if uso < 2:
             return
         entidade = await catalogo.obter_app(pacote) or EntidadeSemantica(tipo="APP", chave=pacote)
         entidade.atributos.setdefault("insights", {})
         entidade.atributos["insights"]["uso_noturno"] = True
         await catalogo.memoria.salvar(entidade)
+
+    async def _registrar_coocorrencia_pc(self, evento_pc: EventoCanonico):
+        """
+        Chamado quando uma atividade no PC é detectada (via UDP listener). 
+        Procura por um evento de app no celular que tenha ocorrido um pouco antes.
+        """
+        # 🌟 CORREÇÃO: Pega o processo dentro do sub-payload enviado pelo Client PC
+        inner_payload = evento_pc.payload.get("payload", {})
+        programa_pc = inner_payload.get("processo")
+        
+        if not programa_pc:
+            return
+
+        agora = evento_pc.timestamp
+        # Procura por um APP_FOREGROUND nos últimos 60 segundos
+        for ev in reversed(self.eventos_recentes):
+            if (agora - ev.timestamp) > timedelta(seconds=60):
+                break
+
+            if ev.categoria == CategoriaEvento.APP_FOREGROUND:
+                pacote_app = ev.pacote
+                if "assistentecell" in pacote_app: continue
+
+                nova_coocorrencia = Coocorrencia(pacote_app, programa_pc, agora)
+                self.coocorrencias.append(nova_coocorrencia)
+                logger.info(f"🧠 [INFERENCIA] Coocorrência registrada (PC): App '{pacote_app}' -> PC '{programa_pc}'")
+                return
+
+    async def _inferir_associacao_pc(self):
+        """
+        Analisa as coocorrências registradas e, se encontrar um padrão forte,
+        salva a associação na memória semântica.
+        """
+        # 🌟 AJUSTE: Limiar baixado para 2 interações para proatividade inicial
+        if len(self.coocorrencias) < 2: 
+            return
+
+        contador = defaultdict(int)
+        for co in self.coocorrencias:
+            # Filtra o que NÃO parece mobile-mobile (não tem pontos no nome do programa)
+            if "." not in co.programa_pc:
+                contador[(co.pacote_app, co.programa_pc)] += 1
+
+        for (pacote, programa), contagem in contador.items():
+            if contagem >= 2 and self.associacoes_pc_aprendidas.get(pacote) != programa:
+                logger.info(f"✨ [INFERENCIA] Nova associação aprendida! App '{pacote}' -> PC '{programa}'")
+                
+                entidade_app = await catalogo.obter_app(pacote)
+                if entidade_app:
+                    entidade_app.atributos.setdefault("associacoes", {})
+                    entidade_app.atributos["associacoes"]["pc_default"] = { "programa": programa }
+                    await catalogo.memoria.salvar(entidade_app)
+                    self.associacoes_pc_aprendidas[pacote] = programa

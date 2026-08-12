@@ -44,6 +44,14 @@ class PiadaContent(BaseModel):
     title: Optional[str] = "Humor"
     text: str
 
+class SugestaoRegraContent(BaseModel):
+    """Conteúdo para o card de sugestão de regra automática."""
+    skill_id: str = "automacao"
+    trigger_package: str = ""
+    action_type: str = "OPEN_APP"
+    action_parameter: str = ""
+    justificativa: Optional[str] = None
+
 class TimelineContent(BaseModel):
     """Conteúdo para o card de timeline."""
     eventos: List[TimelineItemDTO]
@@ -78,6 +86,10 @@ class StatusLLMCard(BaseModel):
     tipo: Literal["status_llm"] = "status_llm"
     conteudo: LLMStatusDTO # Reutiliza o DTO de status diretamente
 
+class SugestaoRegraCard(BaseModel):
+    tipo: Literal["sugestao_regra"] = "sugestao_regra"
+    conteudo: SugestaoRegraContent
+
 # --- União Discriminada de todos os tipos de cards possíveis ---
 # O Pydantic usará o campo 'tipo' para validar qual card está sendo usado.
 AnyCard = Annotated[
@@ -88,7 +100,8 @@ AnyCard = Annotated[
         DicaCard, 
         PiadaCard, 
         TimelineCard, 
-        StatusLLMCard
+        StatusLLMCard,
+        SugestaoRegraCard
     ],
     Field(discriminator="tipo")
 ]

@@ -1,157 +1,91 @@
 """
 core/kernel.py
-
-Kernel Cognitivo
-
-Responsável por:
-
-- Receber eventos
-- Enfileirar
-- Distribuir para especialistas
-- Controlar prioridade
-- Manter métricas simples
+Kernel Cognitivo - Refatorado para Alta Performance
 """
 
 from __future__ import annotations
-
 import asyncio
 import logging
-
 from typing import Awaitable, Callable
-
 from core.evento import EventoCanonico
-from core.tipos import EstadoEvento, TipoAcao
+from core.tipos import EstadoEvento, TipoAcao, CategoriaEvento, PrioridadeEvento
 
 logger = logging.getLogger("Kernel")
-
 
 Callback = Callable[[EventoCanonico], Awaitable[None]]
 Filtro = Callable[[EventoCanonico], bool]
 
 class KernelCognitivo:
-
     def __init__(self):
-
-        # Lista de tuplas (filtro, callback)
         self._listeners: list[tuple[Filtro, Callback]] = []
-
-        # Fila de prioridade
         self._fila = asyncio.PriorityQueue()
-
-        # Métricas
         self.eventos_recebidos = 0
         self.eventos_processados = 0
-
         self._contador = 0
 
     def limpar_listeners(self):
-        """Limpa todos os listeners registrados para evitar duplicatas durante o hot-reload."""
         if self._listeners:
             logger.info(f"[Kernel] Limpando {len(self._listeners)} listeners antigos.")
             self._listeners.clear()
 
-    # ----------------------------------------------------
-    # Registro de especialistas
-    # ----------------------------------------------------
-
-    def registrar(
-        self,
-        filtro: Filtro,
-        callback: Callback,
-    ):
-        """Registra um callback que será acionado se o filtro retornar True para um evento."""
+    def registrar(self, filtro: Filtro, callback: Callback):
         self._listeners.append((filtro, callback))
-        # O nome da função pode ser útil para debugging
-        logger.info(f"[Kernel] Listener registrado com filtro para: {callback.__qualname__}")
+        logger.info(f"[Kernel] Listener registrado: {callback.__qualname__}")
 
-    # ----------------------------------------------------
-    # Publicação
-    # ----------------------------------------------------
-
-    async def publicar(
-        self,
-        evento: EventoCanonico,
-    ):
-
+    async def publicar(self, evento: EventoCanonico):
         self.eventos_recebidos += 1
-
         self._contador += 1
 
-        prioridade = -evento.prioridade.value
-
-        await self._fila.put(
-            (
-                prioridade,
-                self._contador,
-                evento,
-            )
-        )
-
-        logger.info(
-            f"[Kernel] Evento publicado "
-            f"{evento.categoria.value}/{evento.acao.value} "
-            f"({evento.id[:8]})"
-        )
-
-    # ----------------------------------------------------
-    # Loop Principal
-    # ----------------------------------------------------
+        # Aumenta a prioridade se for um comando imediato do usuário
+        if evento.categoria in [CategoriaEvento.SISTEMA_COMANDO_PC, CategoriaEvento.SISTEMA_COMANDO_USUARIO]:
+            evento.prioridade = PrioridadeEvento.ALTA
+            
+        # asyncio.PriorityQueue usa o menor valor como maior prioridade
+        prioridade_valor = -evento.prioridade.value
+        
+        await self._fila.put((prioridade_valor, self._contador, evento))
+        logger.info(f"[Kernel] Evento enfileirado: {evento.categoria.value} ({evento.id[:8]})")
 
     async def iniciar(self):
-
-        logger.info("Kernel iniciado.")
-
+        logger.info("🚀 Kernel em modo Concorrente (Alta Performance) iniciado.")
         while True:
-
+            # Obtém o evento da fila
             _, _, evento = await self._fila.get()
-
             evento.estado = EstadoEvento.PROCESSANDO
+            
+            # --- MUDANÇA CRÍTICA: NÃO USAMOS 'AWAIT' NO DESPACHO ---
+            # Disparamos uma Task e voltamos imediatamente para pegar o próximo da fila.
+            # Isso impede que um agente lento (como a LLM) trave o sistema.
+            asyncio.create_task(self._processar_seguro(evento))
+            self.eventos_processados += 1
 
-            try: # O try/except garante que o Kernel nunca pare, mesmo que um agente falhe
-                await self._despachar(evento)
-                self.eventos_processados += 1
-            except Exception as e:
-                # Loga o erro, mas o Kernel continua seu trabalho.
-                # A rastreabilidade do evento com falha pode ser feita na camada de observabilidade.
-                logger.exception(f"Erro irrecuperável ao despachar evento {evento.id[:8]}: {e}")
-            finally: # Garante que a tarefa seja marcada como concluída na fila
-                self._fila.task_done()
-
-    # ----------------------------------------------------
-    # Distribuição
-    # ----------------------------------------------------
+    async def _processar_seguro(self, evento: EventoCanonico):
+        """Wrapper para despachar e gerenciar o ciclo de vida da tarefa."""
+        try:
+            logger.info(f"[Kernel] Processando {evento.categoria.value} | Ação: {evento.acao.value}")
+            await self._despachar(evento)
+        except Exception as e:
+            logger.error(f"❌ Erro ao processar evento {evento.id[:8]}: {e}")
+        finally:
+            self._fila.task_done()
 
     async def _despachar(self, evento: EventoCanonico):
-        # Filtra os agentes interessados
         tarefas = []
         for filtro, callback in self._listeners:
             if filtro(evento):
                 tarefas.append(callback(evento))
         
         if tarefas:
-            try:
-                # Executa todos os agentes inscritos em paralelo
-                await asyncio.gather(*tarefas)
-            except Exception as e:
-                # Apenas logamos a falha. O sistema não tenta chamar evento.erro()
-                print(f"[Kernel] Erro catastrófico ao processar evento {evento.id}: {e}")
-
-    # ----------------------------------------------------
-    # Utilidades
-    # ----------------------------------------------------
+            # Aqui sim usamos gather, mas apenas dentro desta task específica do evento
+            await asyncio.gather(*tarefas, return_exceptions=True)
+            logger.info(f"✅ Evento {evento.id[:8]} finalizado por {len(tarefas)} ouvintes.")
 
     def estatisticas(self):
-
         return {
-
             "fila": self._fila.qsize(),
-
             "recebidos": self.eventos_recebidos,
-
             "processados": self.eventos_processados,
-
             "listeners_registrados": len(self._listeners),
         }
-
 
 kernel = KernelCognitivo()

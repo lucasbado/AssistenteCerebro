@@ -1,2 +1,10 @@
 [windows]
 sandbox = "unelevated"
+
+[obsidian]
+vault_path = "D:/Programacao/AssistenteCell/Ollie"
+
+[spotify]
+client_id = "f3057b1a89eb42a48517096408a6c608"
+client_secret = "c6bb12d8f0c64f799e842dacd3c63d5b"
+redirect_uri = "http://127.0.0.1:8888/callback"

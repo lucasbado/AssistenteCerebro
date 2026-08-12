@@ -1,0 +1,1 @@
+Dispositivo conectado ao LUSCA-PC com sucesso.

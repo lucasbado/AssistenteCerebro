@@ -11,13 +11,19 @@ complexos (contêm texto) e devem ser escalados para a camada de Raciocínio (LL
 import logging
 
 from core.evento import EventoCanonico
-from core.tipos import TipoAcao
+from core.tipos import TipoAcao, CategoriaEvento
 from core.kernel import kernel
 
 logger = logging.getLogger(__name__)
 
 class AgenteReflexo:
     async def processar(self, evento: EventoCanonico):
+        # 🌟 NOVO: Comandos diretos do usuário são sempre complexos (merecem LLM)
+        if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+            logger.info(f"💬 [Reflexo] Comando do usuário recebido. Elevando para complexo.")
+            await kernel.publicar(evento.clonar(acao=TipoAcao.EVENTO_COMPLEXO))
+            return
+
         # O filtro do Kernel já garante que este agente só recebe eventos de NOTIFICACAO.
         remetente = evento.payload.get("titulo")
         texto = evento.payload.get("texto")

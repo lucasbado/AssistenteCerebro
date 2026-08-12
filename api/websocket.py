@@ -4,6 +4,7 @@ api/websocket.py
 import logging
 import json
 import asyncio
+from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger("WebSocket")
@@ -12,115 +13,111 @@ router = APIRouter()
 class GerenciadorNotificacoes:
     def __init__(self):
         self.conexoes_ativas: list[WebSocket] = []
+        self._buffer_mensagens: list[dict] = []
+        self.pc_master: WebSocket = None # Referência para o PC ligado
+        self.mobile_client: WebSocket = None
 
     async def conectar(self, websocket: WebSocket):
         await websocket.accept()
         self.conexoes_ativas.append(websocket)
-        logger.info("✅ Conexão WS estabelecida com o telemóvel!")
+        logger.info(f"✅ [WS] Nova conexão! Total ativos: {len(self.conexoes_ativas)}")
+        
+        # Pede identificação ao conectar
+        try:
+            await websocket.send_json({
+                "tipo_ws": "SOLICITAR_IDENTIFICACAO"
+            })
+        except: pass
 
     def desconectar(self, websocket: WebSocket):
         if websocket in self.conexoes_ativas:
             self.conexoes_ativas.remove(websocket)
-        logger.warning("🔌 Telemóvel desconectado do WS.")
+        if self.pc_master == websocket:
+            self.pc_master = None
+            logger.warning("🔌 [WS] PC Master desconectado.")
+        if self.mobile_client == websocket:
+            self.mobile_client = None
+            logger.warning("🔌 [WS] Celular desconectado.")
 
     async def enviar_alerta(self, payload: dict):
-        if not self.conexoes_ativas:
-            logger.warning("⚠️ Tentativa de enviar alerta, mas o telemóvel está desconectado!")
-            return
-        
-        # O 'payload' recebido é o evento completo serializado.
-        # Extraímos o payload de negócio dele.
         payload_negocio = payload.get("payload", {})
-
-        # LÓGICA DE ADAPTAÇÃO (ROBUSTA):
-        # 1. Copia o payload interno para não modificar o evento original e preservar todos os campos.
         dados_para_envio = payload_negocio.copy()
+        
+        # Identifica se deve ir para o CHAT
+        if 'tipo_ws' not in dados_para_envio:
+            origem = payload.get("origem")
+            categoria = payload.get("categoria")
+            metadados = payload.get("metadados", {})
+            if metadados.get("tipo_destino") == "CHAT" or origem == "IA" or categoria == "INTENCAO_NOTIFICACAO":
+                dados_para_envio['tipo_ws'] = 'CHAT_RESPONSE'
+            else:
+                dados_para_envio['tipo_ws'] = 'NOTIFICACAO'
 
-        # Adiciona flag de tipo para o cliente saber o que fazer
-        dados_para_envio['tipo_ws'] = 'NOTIFICACAO'
-
-        # 2. Adapta o nome da chave 'mensagem' para 'texto' para manter
-        #    compatibilidade com o contrato do cliente Android.
-        #    O 'pop' remove a chave antiga e retorna seu valor, evitando duplicidade.
         if 'mensagem' in dados_para_envio:
             dados_para_envio['texto'] = dados_para_envio.pop('mensagem')
-        
-        # 3. Garante valores padrão e a assinatura do sistema.
-        dados_para_envio.setdefault("titulo", "Ollie")
+        dados_para_envio.setdefault("titulo", "Assistente")
         dados_para_envio["origem_sistema"] = "OLLIE"
+        
+        if 'timestamp' in payload:
+            ts = payload['timestamp']
+            dados_para_envio['timestamp'] = ts.isoformat() if isinstance(ts, datetime) else str(ts)
+            
+        dados_para_envio['correlacao_id'] = str(payload.get('correlacao_id', ''))
 
-        # 4. INCLUI O GANCHO PARA FEEDBACK: O ID de correlação é a chave para o aprendizado.
-        dados_para_envio['correlacao_id'] = payload.get('correlacao_id')
+        # ROTEAMENTO INTELIGENTE:
+        # Se for comando de hardware, manda pro PC.
+        if "comando" in dados_para_envio:
+            if self.pc_master:
+                logger.info(f"⚡ [WS] Enviando comando '{dados_para_envio['comando']}' para PC Master.")
+                await self._enviar_direto(self.pc_master, dados_para_envio)
+            else:
+                logger.warning("⚠️ [WS] Comando de hardware recebido mas PC Master está offline.")
+            return
 
-        logger.info(f"🚀 Enviando alerta via WS: {json.dumps(dados_para_envio, ensure_ascii=False)}")
+        # Notificações e Chat vão para todos (ou apenas mobile se quisermos economizar)
         await self._broadcast(dados_para_envio)
 
     async def enviar_evento_log(self, evento_dict: dict):
-        """Envia um evento técnico/cognitivo para o log em tempo real do dispositivo."""
-        if not self.conexoes_ativas:
-            return
-
-        # Prepara o DTO simplificado para a timeline do Android
+        ts = evento_dict.get("timestamp")
+        ts_str = ts.isoformat() if isinstance(ts, datetime) else str(ts)
         log_dto = {
             "tipo_ws": "EVENTO_LOG",
-            "id": evento_dict.get("id"),
-            "categoria": evento_dict.get("categoria"),
+            "id": str(evento_dict.get("id")),
+            "categoria": str(evento_dict.get("categoria")),
             "resumo": self._gerar_resumo_amigavel(evento_dict),
-            "timestamp": evento_dict.get("timestamp"),
-            "origem": evento_dict.get("origem"),
-            "icone": self._mapear_icone(evento_dict.get("categoria"))
+            "timestamp": ts_str,
+            "origem": str(evento_dict.get("origem")),
+            "icone": "circle"
         }
-
         await self._broadcast(log_dto)
 
+    async def _enviar_direto(self, ws: WebSocket, msg: dict):
+        try:
+            await ws.send_text(json.dumps(msg, default=str))
+        except Exception as e:
+            logger.error(f"❌ [WS] Falha no envio direto: {e}")
+            self.desconectar(ws)
+
     async def _broadcast(self, msg: dict):
-        """Auxiliar para enviar para todos os clientes conectados."""
-        tarefas = []
-        for conexao in self.conexoes_ativas:
-            tarefas.append(conexao.send_json(msg))
-        if tarefas:
-            await asyncio.gather(*tarefas, return_exceptions=True)
+        if not self.conexoes_ativas:
+            if msg.get("tipo_ws") in ["CHAT_RESPONSE", "NOTIFICACAO"]:
+                self._buffer_mensagens.append(msg)
+                if len(self._buffer_mensagens) > 20: self._buffer_mensagens.pop(0)
+            return
 
-    def _gerar_resumo_amigavel(self, ev: dict) -> str:
-        cat = ev.get("categoria")
-        payload = ev.get("payload", {})
+        payload_str = json.dumps(msg, default=str)
+        tasks = []
+        for ws in self.conexoes_ativas:
+            tasks.append(asyncio.wait_for(ws.send_text(payload_str), timeout=2.0))
         
-        if cat == "APP_FOREGROUND":
-            pacote = payload.get("pacote") or ev.get("pacote", "")
-            app = pacote.split(".")[-1].capitalize()
-            if "assistentecell" in pacote.lower(): app = "Ollie (meu app)"
-            return f"Observei você abrindo o {app}"
-        
-        elif cat == "SENSOR_SYSTEM_CONTEXT":
-            if "wifi" in payload:
-                ssid = payload['wifi'].get('ssid')
-                if ssid == "<unknown ssid>": return "Notei que você mudou de rede Wi-Fi"
-                return f"Aprendi sobre sua conexão no Wi-Fi: {ssid}"
-            return "Analisei seu contexto e localização atual"
-        
-        elif cat == "INTENCAO_NOTIFICACAO":
-            return f"Pensei em te sugerir: {payload.get('titulo')}"
-        
-        elif cat == "INSIGHT_MEMORIA":
-            return f"Gerei um novo insight sobre seus hábitos: {payload.get('conteudo', {}).get('title', 'Dica')}"
+        try:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        except: pass
 
-        elif cat == "MEDIA":
-            artista = payload.get("artista", "alguém")
-            return f"Vi que você começou a ouvir {artista}"
-        
-        return f"Processei um novo evento de {cat}"
+    async def processar_evento_kernel(self, evento):
+        """Método para o Kernel chamar diretamente."""
+        await self.enviar_alerta(evento.model_dump())
 
-    def _mapear_icone(self, categoria: str) -> str:
-        mapeamento = {
-            "APP_FOREGROUND": "eye",
-            "SENSOR_SYSTEM_CONTEXT": "cog",
-            "INTENCAO_NOTIFICACAO": "bell",
-            "INSIGHT_MEMORIA": "psychology",
-            "MEDIA": "play"
-        }
-        return mapeamento.get(categoria, "circle")
-
-# Instância global para os Agentes usarem quando quiserem falar com o telemóvel
 central_alertas = GerenciadorNotificacoes()
 
 @router.websocket("/ws/alertas")
@@ -128,12 +125,29 @@ async def websocket_endpoint(websocket: WebSocket):
     await central_alertas.conectar(websocket)
     try:
         while True:
-            # Mantemos a conexão aberta escutando por comandos do cliente
             data = await websocket.receive_text()
-            # Adicionamos um log para depuração futura, caso o cliente envie dados.
-            logger.info(f"📥 WS recebeu dados do cliente: {data}")
-    except WebSocketDisconnect as e:
-        logger.info(f"🔌 WS desconectado com código: {e.code} ({e.reason})")
+            try:
+                msg = json.loads(data)
+                tipo = msg.get("tipo_ws")
+                
+                # Handshake de identificação
+                if tipo == "REGISTRO":
+                    cliente_id = msg.get("id")
+                    if cliente_id == "PC_MASTER":
+                        central_alertas.pc_master = websocket
+                        logger.info("🖥️ [WS] PC Master registrado com sucesso!")
+                    elif cliente_id == "MOBILE":
+                        central_alertas.mobile_client = websocket
+                        logger.info("📱 [WS] Celular registrado com sucesso!")
+                
+                elif tipo == "LISTA_APPS":
+                    from servicos.pc_control_service import pc_control_service
+                    apps = msg.get("apps", [])
+                    pc_control_service.salvar_cache_apps(apps)
+                    
+            except Exception as e:
+                logger.error(f"Erro ao processar mensagem WS: {e}")
+    except WebSocketDisconnect:
         central_alertas.desconectar(websocket)
     except Exception as e:
-        logger.error(f"❌ Erro interno no WS: {e}")
+        central_alertas.desconectar(websocket)

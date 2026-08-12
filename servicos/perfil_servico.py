@@ -5,6 +5,7 @@ from .agregador_perfil import agregador_perfil, AppInfo, ArtistaInfo
 from .perfil_dto import PerfilCognitivoDTO, HabitoAppDTO, PreferenciaMusicalDTO
 from servicos.llm import ServicoLLM
 from servicos.catalogo_semantico import catalogo
+from servicos.obsidian_service import obsidian_service
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,12 @@ class ServicoPerfil:
     async def gerar_perfil_cognitivo(self) -> PerfilCognitivoDTO:
         """Ponto de entrada principal para gerar o perfil completo."""
         dados_agregados = await agregador_perfil.obter_dados_perfil_consolidado()
+        conhecimento_obsidian = obsidian_service.listar_conhecimento_essencial()
 
         texto_para_llm = await self._formatar_dados_para_llm(dados_agregados)
+        # Mescla com Obsidian para contexto na análise do perfil
+        texto_para_llm += f"\n\nContexto de Longo Prazo (Obsidian):\n{conhecimento_obsidian}"
+
         try:
             resumo_dict = await self.llm.resumir_perfil_usuario(texto_para_llm)
         except Exception as e:

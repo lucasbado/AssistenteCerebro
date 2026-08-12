@@ -7,7 +7,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 @router.get(
-    "/",
+    "",
     response_model=HomeDTO,
     summary="Agrega todas as informações para a tela inicial",
     tags=["Home"]

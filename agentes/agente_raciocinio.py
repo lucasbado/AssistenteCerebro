@@ -1,23 +1,18 @@
 """
 agentes/agente_raciocinio.py
-
-Camada 4: Cognição.
-
-Agente responsável por invocar a LLM (o "córtex") quando um evento é
-considerado complexo ou ambíguo o suficiente pelas camadas inferiores.
-Ele escuta a intenção de raciocinar e, se necessário, gera uma intenção de interação.
 """
-
 from __future__ import annotations
 import json
-
 import logging
-
+import re
 from core.evento import EventoCanonico
 from core.tipos import PrioridadeEvento, OrigemEvento, TipoAcao, CategoriaEvento
 from core.kernel import kernel
 from servicos.llm import ServicoLLM
 from servicos.memoria_episodica import MemoriaEpisodica
+from servicos.memoria_semantica import MemoriaSemantica
+from servicos.obsidian_service import obsidian_service
+from modelos.catalogo import EntidadeSemantica
 
 logger = logging.getLogger(__name__)
 
@@ -25,131 +20,293 @@ class AgenteRaciocinio:
     def __init__(self):
         self.llm = ServicoLLM()
         self.memoria_episodica = MemoriaEpisodica()
+        self.memoria_semantica = MemoriaSemantica()
+        from servicos.memoria_trabalho import memoria_trabalho
+        self.memoria_trabalho = memoria_trabalho
 
     async def processar(self, evento: EventoCanonico):
-        # Este agente só deve ser ativado por uma INTENCAO_RACIOCINIO
         if evento.acao != TipoAcao.INTENCAO_RACIOCINIO:
             return
-        logger.info(f"🧠 [Raciocínio] Recebido evento para análise profunda: {evento.id[:8]}")
+            
+        logger.info(f"🧠 [Raciocínio] Analisando evento: {evento.id[:8]}")
 
-        # Log de diagnóstico para verificar o payload antes de chamar a LLM
-        log_payload = {
-            "categoria": evento.categoria.value,
-            "pacote": evento.pacote,
-            "payload": evento.payload
-        }
-        logger.info(f"Payload enviado para LLM: {json.dumps(log_payload, ensure_ascii=False, indent=2)}")
+        # 1. Recupera Contexto do Obsidian (Long-term)
+        conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
+        logger.info(f"📓 [Raciocínio] Contexto Obsidian carregado ({len(conhecimento_atual)} chars).")
 
-        # 1. Chama a LLM para uma primeira análise do evento
+        # 2. Salva a mensagem do usuário IMEDIATAMENTE se for comando direto
+        # Isso garante que a LLM veja o que você acabou de dizer no histórico.
+        chave_conversa = "br.com.assistentecell.chat" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else evento.pacote
+        if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+            texto_usuario = evento.payload.get("texto", "")
+            if texto_usuario:
+                await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Usuário: {texto_usuario}"])
+
+        # 3. Recupera contexto histórico (Short-term memory)
+        historico = await self.memoria_trabalho.obter_contexto(chave_conversa)
+
+        # 4. Consulta o Córtex (LLM) com o histórico ATUALIZADO
         resultado = await self.llm.classificar_evento(
             categoria=evento.categoria.value,
             pacote=evento.pacote,
             payload=evento.payload,
+            historico=historico
         )
 
-        # 2. Verifica se a LLM emitiu uma Decisão Cognitiva (Automação)
-        if "decisao" in resultado:
-            logger.info(f"⚡ [Raciocínio] LLM emitiu uma DECISÃO: {resultado['decisao']}")
-            # Publica a decisão para que outros agentes (Foco, Música, Execução) possam reagir
-            await kernel.publicar(
-                evento.clonar(
-                    categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO,
-                    acao=TipoAcao.ATUALIZAR_CONTEXTO,
+        # 🌟 LOG DE DECISÃO: Ver exatamente o que a IA pensou
+        logger.info(f"📊 [OLLIE_BRAIN] Raw Decision: {json.dumps(resultado, ensure_ascii=False)}")
+
+        logger.info(f"🤔 [Raciocínio] LLM Decidiu: Interação={resultado.get('tipo_interacao')} | Exec={resultado.get('execucao_direta') is not None}")
+        
+        # 🌟 DEBUG: Log do que a IA disse
+        msg_ia = resultado.get("mensagem_dinamica")
+        if not msg_ia:
+            logger.warning(f"⚠️ [Raciocínio] A IA não gerou uma mensagem dinâmica para {evento.categoria.value}")
+        else:
+            logger.info(f"💬 [IA] Respondeu: '{msg_ia[:50]}...'")
+
+        # 4. LÓGICA DE EXECUÇÃO DIRETA (Prioridade Máxima)
+        exec_direta = resultado.get("execucao_direta")
+        if exec_direta and isinstance(exec_direta, dict):
+            if evento.categoria in [CategoriaEvento.NOTIFICACAO, CategoriaEvento.APP_FOREGROUND, CategoriaEvento.MEDIA]:
+                logger.info(f"🛡️ [Raciocínio] Execução direta BLOQUEADA para evento ambiente ({evento.categoria}).")
+                exec_direta = None
+            
+        if exec_direta and isinstance(exec_direta, dict):
+            alvo = str(exec_direta.get("alvo", "")).upper().strip()
+            comando = str(exec_direta.get("comando", "")).lower().strip() # Forçamos lowercase
+            param = str(exec_direta.get("parametro", "")).strip()
+
+            logger.info(f"⚡ [Raciocínio] Decisão de Execução Direta: {alvo} -> {comando}({param})")
+
+            # 🌟 CASO 1: Pesquisa Web
+            if "pesquisa_web" in comando:
+                logger.info(f"🌐 [Raciocínio] Escalando para AgentePesquisa: {param}")
+                
+                # 🛡️ Feedback imediato via Chat para manter a constância
+                if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+                    await kernel.publicar(evento.clonar(
+                        categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                        acao=TipoAcao.INTENCAO_INTERACAO,
+                        origem=OrigemEvento.IA,
+                        payload={"texto": f"Para {param}, vou buscar isso para você.", "tipo_ws": "CHAT_RESPONSE"}
+                    ))
+
+                await kernel.publicar(evento.clonar(
+                    categoria=CategoriaEvento.INTENCAO_PESQUISA,
+                    acao=TipoAcao.INTENCAO_PESQUISA,
                     origem=OrigemEvento.IA,
-                    payload=resultado
-                )
-            )
+                    payload={"query": param}
+                ))
+                return
 
-        # 3. Verifica se a LLM solicitou uma pesquisa na web
-        if resultado.get("contexto_extra", {}).get("precisa_pesquisar"):
-            query = resultado.get("contexto_extra", {}).get("query")
-            if query:
-                logger.info(f"🧠 [Raciocínio] LLM solicitou pesquisa por '{query}'. Delegando ao AgentePesquisa.")
-                await kernel.publicar(
-                    evento.clonar(
-                        acao=TipoAcao.INTENCAO_PESQUISA,
-                        payload={"query": query}
-                    )
-                )
-                return # O fluxo para aqui e será retomado quando o resultado da pesquisa chegar.
+            # 🌟 CASO 2: Comandos de PC
+            elif alvo == "PC":
+                payload_pc = {"comando": comando, "parametro": param} # 🌟 Sempre inclui o parametro
+                if "abrir_app" in comando: payload_pc["app"] = param
+                elif "executar_macro" in comando: payload_pc["macro"] = param
+                elif "abrir_url" in comando: payload_pc["url"] = param
+                elif "pesquisa_google" in comando: payload_pc["query"] = param
+                elif "buscar_documentos" in comando: payload_pc["termo"] = param
+                elif "spotify_play" in comando: payload_pc["query"] = param
+                
+                # 🌟 FALLBACK: Se o comando for "fullscreen", mapeia para "janela_fullscreen"
+                if comando == "fullscreen": payload_pc["comando"] = "janela_fullscreen"
+                if comando == "maximizar": payload_pc["comando"] = "janela_maximizar"
+                if comando == "minimizar": payload_pc["comando"] = "janela_minimizar"
+                
+                await kernel.publicar(evento.clonar(
+                    categoria=CategoriaEvento.SISTEMA_COMANDO_PC,
+                    acao=TipoAcao.NORMAL,
+                    origem=OrigemEvento.IA,
+                    payload=payload_pc
+                ))
 
-        # 3. Se não precisa pesquisar, verifica o tipo de interação que a IA decidiu.
+            # 🌟 CASO 3: Comandos Mobile
+            elif alvo == "MOBILE":
+                payload_mob = {"comando": comando + "_mobile"} if not comando.endswith("_mobile") else {"comando": comando}
+                if "abrir_app" in comando: payload_mob["pacote"] = param
+                elif "abrir_url" in comando: payload_mob["url"] = param
+                
+                await kernel.publicar(evento.clonar(
+                    categoria=CategoriaEvento.SISTEMA_COMANDO_PC,
+                    acao=TipoAcao.NORMAL,
+                    origem=OrigemEvento.IA,
+                    payload=payload_mob
+                ))
+
+            # 🌟 CASO 4: Gerenciamento de Macros
+            if comando == "criar_macro":
+                from servicos.macro_service import macro_service
+                # Extrai os passos reais decididos pela IA
+                passos = exec_direta.get("passos", [])
+                if not passos:
+                    logger.warning(f"⚠️ [Raciocínio] IA tentou criar macro '{param}' sem passos!")
+                
+                macro_service.criar_macro(param, passos)
+                logger.info(f"💾 [Raciocínio] Macro '{param}' salva com {len(passos)} passos.")
+
+        # 5. LÓGICA DE INTERAÇÃO (Notificações e Sugestões)
         tipo_interacao = resultado.get("tipo_interacao")
+        
+        # 🌟 SEM FALLBACK: Se for comando do usuário, a IA é obrigada a ter mensagem_dinamica.
+        # Caso não tenha (erro de IA), o sistema apenas loga, mas não envia mentiras.
         if tipo_interacao == "NOTIFICAR":
-            # Apenas se a IA decidir explicitamente por uma notificação, o fluxo continua.
             mensagem = resultado.get("mensagem_dinamica")
-            prioridade_str = resultado.get("prioridade", "NORMAL").upper()
-            try:
-                prioridade = PrioridadeEvento[prioridade_str]
-            except KeyError:
-                logger.warning(f"LLM retornou prioridade inválida '{prioridade_str}'. Usando NORMAL.")
-                prioridade = PrioridadeEvento.NORMAL
+            if mensagem:
+                # 🛡️ CENSURA DE NOME: Remove apresentações em conversas contínuas
+                if historico and len(historico) > 0:
+                    # Regex para pegar variações como "Sou a Ollie", "Eu sou a Ollie", "É a Ollie"
+                    padrao = r"(?i)\b(eu\s+)?sou\s+a\s+ollie\b[,!.]*|\b(olha,\s+)?é\s+a\s+ollie\b[,!.]*|\bollie\s+aqui\b[,!.]*"
+                    mensagem = re.sub(padrao, "", mensagem).strip()
+                    # Limpa pontuação sobressalente no início e garante capitalização
+                    mensagem = re.sub(r"^[^\w\s]+", "", mensagem).strip().capitalize()
 
-            if mensagem and mensagem.strip():
-                # Prepara o payload da notificação
-                payload_notificacao = {
+                payload_notif = {
                     "texto": mensagem,
                     "titulo": "Assistente",
                     "contexto": resultado.get("contexto_extra", {}),
-                    "remetente": evento.payload.get("titulo")
                 }
+                
+                # Suporte a Sugestão de Regra Automática
+                sugestao = resultado.get("sugestao_regra")
+                if sugestao:
+                    payload_notif["sugestao_regra"] = sugestao
 
-                # Adiciona a ação sugerida pela IA, se houver
-                acao_sugerida = resultado.get("acao_sugerida")
-                if acao_sugerida and isinstance(acao_sugerida, dict):
-                    payload_notificacao["acao_tipo"] = acao_sugerida.get("tipo")
-                    payload_notificacao["acao_parametro"] = acao_sugerida.get("parametro")
-                    payload_notificacao["acao_texto"] = acao_sugerida.get("texto_botao")
+                # Se o evento original era um comando do usuário, marcamos como resposta de chat
+                if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+                    payload_notif["tipo_ws"] = "CHAT_RESPONSE"
+                    # Salva a resposta da Ollie na memória de trabalho
+                    await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Ollie: {mensagem}"])
 
-                # Publica um novo evento de INTENCAO_INTERACAO
-                evento_intencao = evento.clonar(
+                # Adiciona ação sugerida (botão) se a IA definiu
+                acao_sug = resultado.get("acao_sugerida")
+                if acao_sug:
+                    payload_notif["acao_tipo"] = acao_sug.get("tipo")
+                    payload_notif["acao_parametro"] = acao_sug.get("parametro")
+                    payload_notif["acao_texto"] = acao_sug.get("texto_botao")
+
+                await kernel.publicar(evento.clonar(
                     categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                     acao=TipoAcao.INTENCAO_INTERACAO,
                     origem=OrigemEvento.IA,
-                    prioridade=prioridade,
-                    payload=payload_notificacao
-                )
-                await kernel.publicar(evento_intencao)
-                logger.info(f"🧠 [Raciocínio] Gerada intenção: {mensagem[:50]}...")
-        else:
-            # Se for ATUALIZACAO_SILENCIOSA ou IGNORAR, a ação termina aqui.
-            logger.info(f"🤫 [Raciocínio] Decisão da IA: {tipo_interacao}. Contexto atualizado sem notificação.")
+                    payload=payload_notif,
+                    metadados={"tipo_destino": "CHAT"} # 🌟 Força sinalização de chat nos metadados
+                ))
+                logger.info(f"🧠 [Raciocínio] Intenção de interação gerada com sugestão.")
+
+            # 🌟 RE-ATIVAR THINKING: Se disparou uma pesquisa, garante que o indicador volte a pulsar
+            # mesmo após a mensagem inicial de "Vou buscar...".
+            if exec_direta and exec_direta.get("comando") == "pesquisa_web":
+                 await kernel.publicar(evento.clonar(
+                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                    acao=TipoAcao.INTENCAO_INTERACAO,
+                    origem=OrigemEvento.IA,
+                    payload={"tipo_ws": "THINKING", "titulo": "Ollie", "texto": "..."}
+                ))
+
+        # 6. LÓGICA DE MEMÓRIA PERMANENTE (Obsidian - Filtro de Rigor)
+        mem_obsidian = resultado.get("memoria_obsidian")
+        if mem_obsidian and isinstance(mem_obsidian, dict):
+            titulo = str(mem_obsidian.get("titulo", "")).strip()
+            fato = str(mem_obsidian.get("fato", "")).strip()
+            
+            # Bloqueio de lixo: não salva notificações nem conversas como "conhecimento permanente"
+            lixo_keywords = ["notificação", "whatsapp", "instagram", "conversa", "mensagem", "abriu"]
+            is_lixo = any(k in titulo.lower() or k in fato.lower() for k in lixo_keywords)
+            
+            if titulo and fato and not is_lixo:
+                logger.info(f"📓 [Raciocínio] Registrando fato novo no Obsidian: {titulo}")
+                obsidian_service.registrar_fato(titulo, fato)
+            else:
+                logger.debug(f"🤫 [Raciocínio] Fato Obsidian ignorado por ser trivial ou ruído: {titulo}")
 
     async def sintetizar_com_pesquisa(self, evento_resultado: EventoCanonico):
-        """
-        Processa o resultado de uma pesquisa na web, combina com o contexto original
-        e gera uma resposta final.
-        """
-        logger.info(f"🧠 [Raciocínio] Recebido resultado de pesquisa ({evento_resultado.id[:8]}). Sintetizando resposta.")
+        """Recebe o conteúdo bruto da web e gera a resposta final + aprendizado."""
+        query = evento_resultado.payload.get("query")
+        conteudo_bruto = evento_resultado.payload.get("conteudo")
+        sucesso = evento_resultado.payload.get("sucesso", False)
+        
+        logger.info(f"🧠 [Raciocínio] Recebido resultado da pesquisa (Sucesso: {sucesso}). Iniciando síntese...")
 
-        # 1. Recupera o evento original que disparou a cadeia de raciocínio
-        evento_original_dict = await self.memoria_episodica.obter_evento_original_por_correlacao(evento_resultado.correlacao_id)
-        if not evento_original_dict:
-            logger.error(f"Não foi possível encontrar o evento original com ID de correlação {evento_resultado.correlacao_id}")
-            return
-
-        # 2. Prepara o payload para a LLM com o contexto original + resultados da pesquisa
-        payload_sintese = {
-            "evento_original": evento_original_dict,
-            "resultado_pesquisa": evento_resultado.payload
-        }
-
-        # 3. Chama a LLM para gerar a resposta final
-        resultado_sintese = await self.llm.classificar_evento(
-            categoria="SINTESE_PESQUISA", # Categoria especial para a LLM entender o contexto
-            pacote="br.com.ollie.kernel",
-            payload=payload_sintese
-        )
-
-        # 4. Publica a interação final
-        if resultado_sintese.get("acao_necessaria") and resultado_sintese.get("mensagem_dinamica"):
-            evento_final = evento_resultado.clonar(
+        if not sucesso or not conteudo_bruto:
+            logger.warning(f"[Raciocínio] Pesquisa falhou ou retornou vazia para '{query}'.")
+            await kernel.publicar(evento_resultado.clonar(
+                categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                 acao=TipoAcao.INTENCAO_INTERACAO,
                 origem=OrigemEvento.IA,
-                payload={
-                    "texto": resultado_sintese["mensagem_dinamica"],
-                    "titulo": "Assistente",
+                payload={"texto": f"Desculpe, não encontrei informações úteis sobre '{query}'.", "tipo_ws": "CHAT_RESPONSE"}
+            ))
+            return
+
+        # 1. Recupera histórico do chat para manter a constância na síntese
+        historico = await self.memoria_trabalho.obter_contexto("br.com.assistentecell.chat")
+
+        # 2. Sintetiza a resposta e extrai fatos
+        try:
+            # 🛡️ Garantimos que o indicador de pensamento continue ativo no app
+            await kernel.publicar(evento_resultado.clonar(
+                categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                acao=TipoAcao.INTENCAO_INTERACAO,
+                origem=OrigemEvento.IA,
+                payload={"tipo_ws": "THINKING", "titulo": "Ollie", "texto": "..."}
+            ))
+
+            resultado = await self.llm.sintetizar_resposta_pesquisa(query, conteudo_bruto, historico=historico)
+            
+            # Se a LLM não retornou o formato esperado, trata como erro amigável
+            if not isinstance(resultado, dict) or "resposta_amigavel" not in resultado:
+                raise ValueError("Resposta da LLM inválida para síntese.")
+
+        except Exception as e:
+            logger.error(f"❌ [Raciocínio] Falha na síntese da LLM: {e}")
+            await kernel.publicar(evento_resultado.clonar(
+                categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                acao=TipoAcao.INTENCAO_INTERACAO,
+                origem=OrigemEvento.IA,
+                payload={"texto": "Desculpe, tive um problema ao ler as informações encontradas.", "tipo_ws": "CHAT_RESPONSE"}
+            ))
+            return
+        
+        # 3. Responde ao usuário no Chat
+        resposta_texto = resultado.get("resposta_amigavel")
+        
+        # Salva a resposta da pesquisa na memória de trabalho
+        await self.memoria_trabalho.atualizar_conversa("br.com.assistentecell.chat", [f"Ollie: {resposta_texto}"])
+
+        await kernel.publicar(evento_resultado.clonar(
+            categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+            acao=TipoAcao.INTENCAO_INTERACAO,
+            origem=OrigemEvento.IA,
+            payload={
+                "texto": resposta_texto,
+                "titulo": "Ollie (Web)",
+                "tipo_ws": "CHAT_RESPONSE"
+            }
+        ))
+        
+        logger.info(f"✅ [Raciocínio] Resposta de pesquisa enviada ao chat.")
+
+        # 3. APRENDIZADO: Salva Fato Semântico se identificado
+        fato = resultado.get("fato_para_aprender")
+        if fato and isinstance(fato, dict):
+            chave = fato.get("chave")
+            logger.info(f"🧠 [Aprendizado] Novo fato semântico sobre '{chave}' detectado.")
+            
+            entidade = EntidadeSemantica(
+                tipo="CONHECIMENTO_GERAL",
+                chave=chave,
+                atributos={
+                    "categoria": fato.get("categoria"),
+                    "conteudo": fato.get("conteudo"),
+                    "importancia": fato.get("importancia", 1),
+                    "fonte": "WEB_RESEARCH",
+                    "data_aprendizado": evento_resultado.timestamp.isoformat()
                 }
             )
-            await kernel.publicar(evento_final)
-            logger.info(f"🧠 [Raciocínio] Síntese final gerada: {resultado_sintese['mensagem_dinamica'][:50]}...")
+            await self.memoria_semantica.salvar(entidade)
+
+        # 4. MEMÓRIA OBSIDIAN
+        mem_obs = resultado.get("memoria_obsidian")
+        if mem_obs and isinstance(mem_obs, dict):
+            obsidian_service.registrar_fato(mem_obs.get("titulo", "Conhecimento_Web"), mem_obs.get("fato", ""))

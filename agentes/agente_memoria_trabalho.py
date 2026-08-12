@@ -12,7 +12,8 @@ from servicos.memoria_trabalho import memoria_trabalho
 logger = logging.getLogger(__name__)
 
 # Tempo em segundos para agrupar mensagens da mesma conversa antes de enviar para a IA
-DEBOUNCE_SECONDS = 8
+# Aumentado para 45 segundos na Nuvem para maximizar a economia de tokens
+DEBOUNCE_SECONDS = 45
 
 class AgenteMemoriaTrabalho:
     """

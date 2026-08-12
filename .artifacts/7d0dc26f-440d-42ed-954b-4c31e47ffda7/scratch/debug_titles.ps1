@@ -1,0 +1,1 @@
+Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object MainWindowTitle, ProcessName | Format-List

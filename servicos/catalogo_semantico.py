@@ -36,40 +36,30 @@ class CatalogoSemantico:
         self.llm = ServicoLLM()
 
     async def obter_artista(self, artista: str) -> Optional[EntidadeSemantica]:
-        """
-        Obtém uma entidade de artista. Se não existir, usa a LLM para classificar,
-        salva no banco e retorna.
-        """
-        # 🌟 CRUCIAL: O 'await' garante que o Pydantic / Dicionário seja resolvido aqui
+        """Obtém um artista. Em nuvem, a classificação é postergada para economizar tokens."""
         entidade = await self.memoria.buscar("ARTISTA", artista)
         if not entidade:
-            try:
-                # A LLM é acionada como último recurso para enriquecer o conhecimento do sistema.
-                logger.info(f"Artista '{artista}' não encontrado no catálogo. Classificando com LLM...")
-                entidade = await self.llm.classificar_artista(artista)
-                await self.memoria.salvar(entidade)
-                logger.info(f"Artista '{artista}' classificado e salvo na Memória Semântica.")
-            except Exception as e:
-                logger.error(f"Erro ao classificar artista '{artista}' com LLM: {e}")
-                return None # Retorna None para não quebrar o agente consumidor.
+            # Placeholder para economizar Groq API
+            logger.info(f"Artista '{artista}' marcado para classificação futura.")
+            entidade = EntidadeSemantica(
+                tipo="ARTISTA", 
+                chave=artista, 
+                atributos={"nome": artista, "status": "PENDENTE_IA"}
+            )
+            await self.memoria.salvar(entidade)
         return entidade
 
     async def obter_app(self, pacote: str) -> Optional[EntidadeSemantica]:
-        """
-        Obtém uma entidade de app. Se não existir, usa a LLM para classificar,
-        salva no banco e retorna.
-        """
-        # 🌟 CRUCIAL: Garante o desempacotamento assíncrono do modelo do banco
+        """Obtém um app. Classificação via IA apenas em lote ou sob demanda."""
         entidade = await self.memoria.buscar("APP", pacote)
         if not entidade:
-            try:
-                logger.info(f"App '{pacote}' não encontrado no catálogo. Classificando com LLM...")
-                entidade = await self.llm.classificar_app(pacote)
-                await self.memoria.salvar(entidade)
-                logger.info(f"App '{pacote}' classificado e salvo na Memória Semântica.")
-            except Exception as e:
-                logger.error(f"Erro ao classificar app '{pacote}' com LLM: {e}")
-                return None
+            logger.info(f"App '{pacote}' marcado para classificação futura.")
+            entidade = EntidadeSemantica(
+                tipo="APP", 
+                chave=pacote, 
+                atributos={"pacote": pacote, "status": "PENDENTE_IA"}
+            )
+            await self.memoria.salvar(entidade)
         return entidade
 
     async def obter_contato(self, contato_nome: str) -> Optional[EntidadeSemantica]:
