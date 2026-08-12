@@ -162,8 +162,22 @@ async def websocket_endpoint(websocket: WebSocket):
                 msg = json.loads(data)
                 tipo = msg.get("tipo_ws")
                 
-                # Handshake de identificação
-                if tipo == "REGISTRO":
+                # Roteamento de comandos entre dispositivos (Relé)
+                if tipo == "COMANDO_PC" or msg.get("destino") == "PC_MASTER":
+                    if central_alertas.pc_master:
+                        logger.info(f"⚡ [WS RELAY] Encaminhando comando para PC Master: {msg.get('comando')}")
+                        await central_alertas._enviar_direto(central_alertas.pc_master, msg)
+                    else:
+                        logger.warning("⚠️ [WS RELAY] Comando para PC recebido, mas PC Master está offline.")
+                
+                elif msg.get("destino") == "MOBILE":
+                    if central_alertas.mobile_client:
+                        logger.info(f"📱 [WS RELAY] Encaminhando mensagem para Celular.")
+                        await central_alertas._enviar_direto(central_alertas.mobile_client, msg)
+                    else:
+                        logger.warning("⚠️ [WS RELAY] Mensagem para Mobile recebida, mas Celular está offline.")
+
+                elif tipo == "REGISTRO":
                     cliente_id = msg.get("id")
                     if cliente_id == "PC_MASTER":
                         central_alertas.pc_master = websocket

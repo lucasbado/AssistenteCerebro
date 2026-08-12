@@ -68,6 +68,8 @@ class ServicoLLM:
         instrucoes_extras = self._carregar_instrucoes_cognitivas()
         agora = datetime.now().strftime("%d/%m/%Y %H:%M")
 
+        logger.info(f"🧠 [LLM] Classificando evento: {categoria} | Pacote: {pacote}")
+        
         system = f"""Você é a Ollie, a inteligência central ÁCIDA, SARCÁSTICA e DESPOJADA.
 Você é uma amiga íntima do usuário. NUNCA diga seu nome ou se apresente se houver histórico.
 
