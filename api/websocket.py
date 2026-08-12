@@ -43,15 +43,18 @@ class GerenciadorNotificacoes:
         payload_negocio = payload.get("payload", {})
         dados_para_envio = payload_negocio.copy()
         
-        # Identifica se deve ir para o CHAT
+        # Identifica se deve ir para o CHAT, preservando se já existir um tipo específico
         if 'tipo_ws' not in dados_para_envio:
-            origem = payload.get("origem")
-            categoria = payload.get("categoria")
-            metadados = payload.get("metadados", {})
-            if metadados.get("tipo_destino") == "CHAT" or origem == "IA" or categoria == "INTENCAO_NOTIFICACAO":
-                dados_para_envio['tipo_ws'] = 'CHAT_RESPONSE'
+            if 'tipo_ws' in payload:
+                dados_para_envio['tipo_ws'] = payload['tipo_ws']
             else:
-                dados_para_envio['tipo_ws'] = 'NOTIFICACAO'
+                origem = payload.get("origem")
+                categoria = payload.get("categoria")
+                metadados = payload.get("metadados", {})
+                if metadados.get("tipo_destino") == "CHAT" or origem == "IA" or categoria == "INTENCAO_NOTIFICACAO":
+                    dados_para_envio['tipo_ws'] = 'CHAT_RESPONSE'
+                else:
+                    dados_para_envio['tipo_ws'] = 'NOTIFICACAO'
 
         if 'mensagem' in dados_para_envio:
             dados_para_envio['texto'] = dados_para_envio.pop('mensagem')
@@ -65,18 +68,25 @@ class GerenciadorNotificacoes:
         dados_para_envio['correlacao_id'] = str(payload.get('correlacao_id', ''))
 
         # ROTEAMENTO INTELIGENTE:
-        # Se for comando de hardware, manda pro PC.
-        if "comando" in dados_para_envio:
-            if self.pc_master:
-                logger.info(f"⚡ [WS] Enviando comando '{dados_para_envio['comando']}' para PC Master.")
-                await self._enviar_direto(self.pc_master, dados_para_envio)
-            else:
-                logger.warning(f"⚠️ [WS] Comando '{dados_para_envio['comando']}' recebido mas PC Master está offline.")
-                # Fallback: Envia para todos para debug
-                await self._broadcast(dados_para_envio)
-            return
+        tipo_ws = dados_para_envio.get("tipo_ws")
 
-        # Notificações e Chat vão para todos
+        # 1. Se for comando de hardware (PC_COMMAND), manda prioritariamente para o PC Master
+        if tipo_ws == "PC_COMMAND" or "comando" in dados_para_envio:
+            if self.pc_master:
+                logger.info(f"⚡ [WS] Enviando comando '{dados_para_envio.get('comando')}' para PC Master.")
+                await self._enviar_direto(self.pc_master, dados_para_envio)
+                return
+            else:
+                logger.warning(f"⚠️ [WS] Comando recebido mas PC Master está offline.")
+        
+        # 2. Se for resposta de chat ou notificação, tenta mandar prioritariamente para o Celular
+        if tipo_ws in ["CHAT_RESPONSE", "NOTIFICACAO"]:
+            if self.mobile_client:
+                logger.info(f"📱 [WS] Enviando {tipo_ws} para Mobile Client.")
+                await self._enviar_direto(self.mobile_client, dados_para_envio)
+                return
+
+        # 3. Fallback: Envia para todos (Broadcast)
         await self._broadcast(dados_para_envio)
 
     async def enviar_evento_log(self, evento_dict: dict):
