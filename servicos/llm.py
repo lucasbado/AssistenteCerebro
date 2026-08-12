@@ -200,3 +200,23 @@ Hoje é {agora}. Use gírias e seja direta, mas correta nos fatos.
         dados = await self._gerar_json(prompt, system)
         dados['chave'] = pacote
         return EntidadeSemantica.model_validate(dados)
+
+    def _carregar_instrucoes_cognitivas(self) -> str:
+        """Carrega as capacidades e filosofia das notas em docs/."""
+        instrucoes = []
+        arquivos = ["capabilities.md", "filosofia.md"]
+        
+        # Tenta diretório local ou raiz (Render)
+        for pasta in ["D:/Programacao/AssistenteCell/docs", "docs"]:
+            if os.path.exists(pasta):
+                for arq in arquivos:
+                    path = os.path.join(pasta, arq)
+                    if os.path.exists(path):
+                        try:
+                            with open(path, "r", encoding="utf-8") as f:
+                                instrucoes.append(f"### {arq.upper()}:\n{f.read()}")
+                                logger.info(f"📓 [LLM] Contexto carregado: {arq}")
+                        except: pass
+                if instrucoes: break
+        
+        return "\n\n".join(instrucoes) if instrucoes else "Sem instruções extras disponíveis."
