@@ -176,6 +176,14 @@ Hoje é {agora}. Use gírias e seja direta, mas correta nos fatos.
             logger.error(f"Erro ao sintetizar pesquisa: {e}")
             return {"resposta_amigavel": "Erro ao processar pesquisa.", "fato_para_aprender": None}
 
+    async def classificar_contato(self, nome: str) -> EntidadeSemantica:
+        """Cria uma entidade de contato básica sem precisar de IA."""
+        return EntidadeSemantica(
+            tipo="CONTATO",
+            chave=nome,
+            atributos={"nome": nome, "status": "CONHECIDO"}
+        )
+
     # Métodos legados mantidos por compatibilidade
     async def classificar_artista(self, nome: str) -> EntidadeSemantica:
         system = "Você é um catálogo musical. Responda APENAS JSON {tipo:ARTISTA, chave:'', atributos:{genero:'', pais:'', epoca:'', similar:[]}}"

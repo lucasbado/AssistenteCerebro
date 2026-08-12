@@ -135,7 +135,7 @@ class ServicoHome:
                 cards=cards
             )
         except Exception as e:
-            logger.error(f"ERRO CRÍTICO ao gerar Home: {e}")
+            logger.error(f"ERRO CRÍTICO ao gerar Home: {e}", exc_info=True)
             return HomeDTO(
                 saudacao="Olá (Modo de Segurança)",
                 clima=None,
