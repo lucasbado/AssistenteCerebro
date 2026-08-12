@@ -30,6 +30,15 @@ class AgenteRaciocinio:
             
         logger.info(f"🧠 [Raciocínio] Analisando evento: {evento.id[:8]}")
 
+        # 🌟 FEEDBACK IMEDIATO: Sinaliza que a Ollie começou a pensar
+        if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+            await kernel.publicar(evento.clonar(
+                categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                acao=TipoAcao.INTENCAO_INTERACAO,
+                origem=OrigemEvento.IA,
+                payload={"tipo_ws": "THINKING", "titulo": "Ollie", "texto": "..."}
+            ))
+
         # 1. Recupera Contexto do Obsidian (Long-term)
         conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
         logger.info(f"📓 [Raciocínio] Contexto Obsidian carregado ({len(conhecimento_atual)} chars).")

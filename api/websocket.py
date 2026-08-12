@@ -85,13 +85,14 @@ class GerenciadorNotificacoes:
                 logger.warning(f"⚠️ [WS] Comando recebido mas PC Master está offline.")
         
         # 2. Se for resposta de chat ou notificação, tenta mandar prioritariamente para o Celular
-        if tipo_ws in ["CHAT_RESPONSE", "NOTIFICACAO"]:
+        if tipo_ws in ["CHAT_RESPONSE", "NOTIFICACAO", "THINKING"]:
             if self.mobile_client:
-                logger.info(f"📱 [WS] Roteando {tipo_ws} para Mobile Client.")
+                logger.info(f"📱 [WS] Roteando {tipo_ws} para Mobile Client (Handshake OK).")
                 await self._enviar_direto(self.mobile_client, dados_para_envio)
                 return
             else:
-                logger.info(f"📡 [WS] Mobile offline, tentando broadcast para {tipo_ws}")
+                logger.warning(f"⚠️ [WS] Tentativa de enviar {tipo_ws} mas Mobile Client não está registrado!")
+                logger.info("📡 [WS] Tentando broadcast como fallback...")
 
         # 3. Fallback: Envia para todos (Broadcast)
         await self._broadcast(dados_para_envio)
@@ -192,6 +193,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     pc_control_service.salvar_cache_apps(apps)
                 
                 elif tipo == "STATUS_PC":
+                    # Auto-registro se não estiver registrado
+                    if not central_alertas.pc_master:
+                        central_alertas.pc_master = websocket
+                        logger.info("🖥️ [WS] PC Master auto-registrado via Status.")
+                    
                     # Retransmite o status do PC para todos (especialmente para o Celular)
                     logger.info(f"🖥️ [WS] Status do PC recebido: {msg.get('stats')}")
                     await central_alertas._broadcast(msg)
