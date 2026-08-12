@@ -63,6 +63,7 @@ class MemoriaEpisodica:
         Recupera os eventos mais recentes.
         Crucial para injetar no Prompt da LLM e dar "consciência do agora" ao sistema.
         """
+        # 🕒 CORREÇÃO DEFINITIVA: Garante uso de datetimes com timezone para PostgreSQL/Neon
         limite_tempo = datetime.now(timezone.utc) - timedelta(minutes=minutos)
 
         async with AsyncSessionLocal() as session:

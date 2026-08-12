@@ -173,6 +173,7 @@ app.add_middleware(
 
 # Endpoints
 @app.get("/")
+@app.head("/")
 async def root():
     return {"status": "AssistenteCell Ecosystem is Live", "version": "0.3.0-beta"}
 

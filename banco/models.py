@@ -15,7 +15,7 @@ class EventoEpisodicoDB(Base):
     id = Column(String(36), primary_key=True) # UUID convertido para String
     correlacao_id = Column(String(36), index=True)
     evento_pai_id = Column(String(36), index=True, nullable=True)
-    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
     
     origem = Column(String(100), index=True) # Ex: 'android.sensor.notification'
     tipo = Column(String(100), index=True)   # Ex: 'NOTIFICACAO_RECEBIDA'
@@ -45,7 +45,7 @@ class PerfilUsuarioDB(Base):
     confianca = Column(Float, default=0.0)     # Score normalizado de 0.0 a 1.0
     
     # CRUCIAL: Timestamp para o Agente de Memória aplicar fórmulas de esquecimento (Decay)
-    ultima_atualizacao = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    ultima_atualizacao = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 class MemoriaTrabalhoDB(Base):
     """
@@ -58,4 +58,4 @@ class MemoriaTrabalhoDB(Base):
     chave_conversa = Column(String(255), unique=True, index=True) # Ex: 'whatsapp::minha fadona❤️'
     resumo_contexto = Column(JSON) # Lista de mensagens recentes ou um resumo da LLM
     relevancia = Column(Float, default=0.0, index=True)
-    ultima_interacao = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    ultima_interacao = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
