@@ -106,6 +106,10 @@ async def lifespan(app: FastAPI):
     kernel.registrar(lambda e: e.acao == TipoAcao.INTENCAO_RACIOCINIO, agentes_inst["raciocinio"].processar)
     kernel.registrar(lambda e: e.acao == TipoAcao.INTENCAO_PESQUISA, agentes_inst["pesquisa"].processar)
     kernel.registrar(lambda e: e.acao == TipoAcao.RESULTADO_PESQUISA, agentes_inst["raciocinio"].sintetizar_com_pesquisa)
+    
+    # 🌟 CRUCIAL: Registro do Agente de Notificações para enviar respostas ao WebSocket
+    kernel.registrar(lambda e: e.categoria == CategoriaEvento.INTENCAO_NOTIFICACAO, agentes_inst["notificacoes"].processar)
+
     kernel.registrar(lambda e: True, agentes_inst["episodico"].processar)
     kernel.registrar(lambda e: e.acao == TipoAcao.GERAR_RESUMO_PERFIL, agentes_inst["sumarizador"].processar)
     kernel.registrar(lambda e: e.acao == TipoAcao.FEEDBACK_USUARIO, agentes_inst["aprendizagem"].processar)
