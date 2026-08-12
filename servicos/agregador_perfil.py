@@ -27,7 +27,8 @@ class AgregadorPerfil:
         """
         try:
             top_apps_bruto = await memoria_perfil.obter_top_entidades(categoria="APP_USO", limite=5)
-            top_artistas_bruto = await memoria_perfil.obter_top_entidades(categoria="ESCUTA_ARTISTA", limite=5)
+            # Corrigido: A categoria correta é ARTISTA_PREFERENCIA (conforme definido em memoria_perfil.py)
+            top_artistas_bruto = await memoria_perfil.obter_top_entidades(categoria="ARTISTA_PREFERENCIA", limite=5)
 
             return {
                 "apps": [AppInfo(pacote=item.valor, score=item.score) for item in top_apps_bruto],

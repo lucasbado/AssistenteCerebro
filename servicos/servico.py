@@ -10,7 +10,9 @@ class ServicoTimeline:
         Orquestra a busca de eventos e sua transformação em uma
         narrativa para a timeline.
         """
-        eventos_brutos = await agregador_timeline.obter_eventos_recentes()
+        # Aumentamos para 24h para garantir que a home não fique vazia nos primeiros testes
+        eventos_brutos = await agregador_timeline.obter_eventos_recentes(minutos=1440)
+        logger.info(f"📓 [Timeline] Recuperados {len(eventos_brutos)} eventos das últimas 24h.")
         
         timeline_items = []
         for evento in eventos_brutos:

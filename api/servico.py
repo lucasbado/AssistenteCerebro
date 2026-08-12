@@ -78,21 +78,44 @@ class ServicoHome:
                 for card_data in perfil_cognitivo.cards_dinamicos:
                     try:
                         tipo = card_data.get("tipo")
-                        conteudo = card_data.get("conteudo")
-                        if not conteudo or not isinstance(conteudo, dict): continue
+                        raw_conteudo = card_data.get("conteudo")
+                        if not raw_conteudo or not isinstance(raw_conteudo, dict): continue
                         
+                        # Suporte a campos alternativos ou aninhamento excessivo vindo da LLM
+                        conteudo = raw_conteudo.get("conteudo", raw_conteudo) if isinstance(raw_conteudo.get("conteudo"), dict) else raw_conteudo
+
                         if tipo == "insight":
-                            cards.append(InsightCard(conteudo=InsightContent(**conteudo)))
+                            text = conteudo.get("text") or conteudo.get("texto")
+                            if text:
+                                cards.append(InsightCard(conteudo=InsightContent(
+                                    title=conteudo.get("title") or conteudo.get("titulo") or "Insight",
+                                    text=text
+                                )))
                         elif tipo == "dica":
-                            cards.append(DicaCard(conteudo=DicaContent(**conteudo)))
+                            text = conteudo.get("text") or conteudo.get("texto")
+                            if text:
+                                cards.append(DicaCard(conteudo=DicaContent(
+                                    title=conteudo.get("title") or conteudo.get("titulo") or "Dica do Dia",
+                                    text=text
+                                )))
                         elif tipo == "piada":
-                            cards.append(PiadaCard(conteudo=PiadaContent(**conteudo)))
+                            text = conteudo.get("text") or conteudo.get("texto")
+                            if text:
+                                cards.append(PiadaCard(conteudo=PiadaContent(
+                                    title=conteudo.get("title") or conteudo.get("titulo") or "Humor",
+                                    text=text
+                                )))
                         elif tipo == "sugestao_regra":
                             # Validação rigorosa para evitar ValidationError do Pydantic
                             campos_obrigatorios = ["skill_id", "trigger_package", "action_type", "action_parameter"]
-                            if all(k in conteudo for k in campos_obrigatorios) and \
-                               isinstance(conteudo.get("action_parameter"), str):
-                                cards.append(SugestaoRegraCard(conteudo=SugestaoRegraContent(**conteudo)))
+                            if all(k in conteudo for k in campos_obrigatorios):
+                                cards.append(SugestaoRegraCard(conteudo=SugestaoRegraContent(
+                                    skill_id=str(conteudo["skill_id"]),
+                                    trigger_package=str(conteudo["trigger_package"]),
+                                    action_type=str(conteudo["action_type"]),
+                                    action_parameter=str(conteudo["action_parameter"]),
+                                    justificativa=conteudo.get("justificativa")
+                                )))
                             else:
                                 logger.warning(f"Card sugestao_regra malformado (hallucination) ignorado: {conteudo}")
                     except Exception as e:
