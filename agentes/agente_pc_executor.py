@@ -1,4 +1,5 @@
 import logging
+import os
 from core.evento import EventoCanonico
 from core.tipos import EstadoEvento, TipoAcao
 from servicos.pc_control_service import pc_control_service

@@ -8,14 +8,19 @@ import logging
 from typing import List
 
 # Importação condicional para bibliotecas de hardware e serviços externos
-try:
-    import pyautogui
-except ImportError:
-    pyautogui = None
+# 🌍 SEGURANÇA CLOUD: Não importa bibliotecas de GUI/Hardware no Render
+if not os.getenv("RENDER"):
+    try:
+        import pyautogui
+    except ImportError:
+        pyautogui = None
 
-try:
-    import voicemeeterlib
-except ImportError:
+    try:
+        import voicemeeterlib
+    except ImportError:
+        voicemeeterlib = None
+else:
+    pyautogui = None
     voicemeeterlib = None
 
 try:
