@@ -133,9 +133,14 @@ async def lifespan(app: FastAPI):
     tasks = [
         asyncio.create_task(loop_clima()),
         asyncio.create_task(loop_rotina()),
-        asyncio.create_task(udp_listener.iniciar()),
         asyncio.create_task(kernel.iniciar())
     ]
+    
+    # 🌍 SÓ INICIA UDP LOCALMENTE: Render não suporta UDP inbound desta forma
+    if not os.getenv("RENDER"):
+        tasks.append(asyncio.create_task(udp_listener.iniciar()))
+    else:
+        logger.info("☁️ [Main] Modo Cloud detectado: UDP Listener desativado.")
     
     logger.info("🚀 AI Brain & PC Master Control online!")
     yield
