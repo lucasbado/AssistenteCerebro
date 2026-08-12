@@ -171,6 +171,10 @@ app.add_middleware(
 )
 
 # Endpoints
+@app.get("/")
+async def root():
+    return {"status": "AssistenteCell Ecosystem is Live", "version": "0.3.0-beta"}
+
 app.include_router(eventos_router, tags=["Gateway"])
 app.include_router(ws_router, prefix="/api/v1", tags=["WebSocket"])
 app.include_router(testes_router, tags=["Testes"])

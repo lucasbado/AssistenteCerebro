@@ -97,22 +97,22 @@ class ServicoHome:
                             text = conteudo.get("text") or conteudo.get("texto")
                             if text:
                                 cards.append(InsightCard(conteudo=InsightContent(
-                                    title=conteudo.get("title") or conteudo.get("titulo") or "Insight",
-                                    text=text
+                                    title=str(conteudo.get("title") or conteudo.get("titulo") or "Insight"),
+                                    text=str(text)
                                 )))
                         elif tipo == "dica":
                             text = conteudo.get("text") or conteudo.get("texto")
                             if text:
                                 cards.append(DicaCard(conteudo=DicaContent(
-                                    title=conteudo.get("title") or conteudo.get("titulo") or "Dica do Dia",
-                                    text=text
+                                    title=str(conteudo.get("title") or conteudo.get("titulo") or "Dica do Dia"),
+                                    text=str(text)
                                 )))
                         elif tipo == "piada":
                             text = conteudo.get("text") or conteudo.get("texto")
                             if text:
                                 cards.append(PiadaCard(conteudo=PiadaContent(
-                                    title=conteudo.get("title") or conteudo.get("titulo") or "Humor",
-                                    text=text
+                                    title=str(conteudo.get("title") or conteudo.get("titulo") or "Humor"),
+                                    text=str(text)
                                 )))
                         elif tipo == "sugestao_regra":
                             # Validação rigorosa para evitar ValidationError do Pydantic
@@ -123,7 +123,7 @@ class ServicoHome:
                                     trigger_package=str(conteudo["trigger_package"]),
                                     action_type=str(conteudo["action_type"]),
                                     action_parameter=str(conteudo["action_parameter"]),
-                                    justificativa=conteudo.get("justificativa")
+                                    justificativa=str(conteudo.get("justificativa", ""))
                                 )))
                             else:
                                 logger.warning(f"Card sugestao_regra malformado (hallucination) ignorado: {conteudo}")
@@ -131,19 +131,29 @@ class ServicoHome:
                         logger.error(f"Erro ao processar card dinâmico {card_data.get('tipo')}: {e}")
             
             # Fallback para o resumo comportamental antigo se não houver cards novos
-            if not cards and perfil_cognitivo and perfil_cognitivo.resumo_comportamental and perfil_cognitivo.resumo_comportamental != "N/A":
+            if not cards and perfil_cognitivo and hasattr(perfil_cognitivo, "resumo_comportamental") and perfil_cognitivo.resumo_comportamental != "N/A":
                 cards.append(
                     InsightCard(
                         conteudo=InsightContent(
                             title="Resumo",
-                            text=perfil_cognitivo.resumo_comportamental
+                            text=str(perfil_cognitivo.resumo_comportamental)
                         )
                     )
                 )
 
             # Card de Timeline
-            if timeline and timeline.eventos:
-                cards.append(TimelineCard(conteudo=TimelineContent(eventos=timeline.eventos[:3])))
+            if timeline and hasattr(timeline, "eventos") and timeline.eventos:
+                try:
+                    cards.append(TimelineCard(conteudo=TimelineContent(eventos=timeline.eventos[:3])))
+                except Exception as e:
+                    logger.error(f"Erro ao adicionar card de timeline: {e}")
+
+            # 2.2. Card de Status do Sistema
+            if status_sistema and hasattr(status_sistema, "llm") and status_sistema.llm:
+                try:
+                    cards.append(StatusLLMCard(conteudo=status_sistema.llm))
+                except Exception as e:
+                    logger.error(f"Erro ao adicionar card de status LLM: {e}")
 
             # 2.1. Lógica de "Boas-Vindas" para novos usuários
             if not cards:
@@ -155,10 +165,6 @@ class ServicoHome:
                         )
                     )
                 )
-            
-            # 2.2. Card de Status do Sistema
-            if status_sistema and status_sistema.llm:
-                cards.append(StatusLLMCard(conteudo=status_sistema.llm))
 
             # 3. Monta o DTO final da Home
             return HomeDTO(

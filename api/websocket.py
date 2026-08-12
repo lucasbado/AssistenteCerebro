@@ -126,6 +126,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
+            logger.info(f"📥 [WS] Mensagem recebida: {data}")
             try:
                 msg = json.loads(data)
                 tipo = msg.get("tipo_ws")
