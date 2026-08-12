@@ -50,24 +50,33 @@ class ServicoHome:
         try:
             # 1. Executa as chamadas de serviço em paralelo para máxima eficiência
             # --- LÓGICA DO CLIMA ---
-            memoria = request.app.state.agente_memoria_trabalho
-            clima_interno = getattr(memoria, 'contexto_atual', None)
-            weather_dto = None
-            if clima_interno and clima_interno.get("temperatura"):
-                weather_dto = ApiWeather(
-                    temperatura=str(clima_interno.get("temperatura")),
-                    cidade=clima_interno.get("cidade", "São Paulo"),
-                    condicao=clima_interno.get("condicao", "Desconhecido"),
-                    icon_code=clima_interno.get("icon_code", "sun")
-                )
+            try:
+                memoria = request.app.state.agente_memoria_trabalho
+                clima_interno = getattr(memoria, 'contexto_atual', None)
+                weather_dto = None
+                if clima_interno and clima_interno.get("temperatura"):
+                    weather_dto = ApiWeather(
+                        temperatura=str(clima_interno.get("temperatura")),
+                        cidade=clima_interno.get("cidade", "São Paulo"),
+                        condicao=clima_interno.get("condicao", "Desconhecido"),
+                        icon_code=clima_interno.get("icon_code", "sun")
+                    )
+            except Exception as e:
+                logger.error(f"Erro ao obter clima: {e}")
+                weather_dto = None
             # --- FIM DA LÓGICA DO CLIMA ---
 
-            perfil_task = servico_perfil.gerar_perfil_cognitivo()
-            timeline_task = servico_timeline.gerar_timeline()
-            status_task = servico_status.gerar_status_sistema()
+            async def safe_task(coro, task_name):
+                try:
+                    return await coro
+                except Exception as e:
+                    logger.error(f"Erro na task {task_name}: {e}", exc_info=True)
+                    return None
 
             perfil_cognitivo, timeline, status_sistema = await asyncio.gather(
-                perfil_task, timeline_task, status_task
+                safe_task(servico_perfil.gerar_perfil_cognitivo(), "perfil"),
+                safe_task(servico_timeline.gerar_timeline(), "timeline"),
+                safe_task(servico_status.gerar_status_sistema(), "status")
             )
 
             # 2. Monta a lista de cards dinamicamente
