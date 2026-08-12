@@ -8,11 +8,26 @@ logger = logging.getLogger("ObsidianService")
 class ObsidianService:
     def __init__(self):
         try:
-            config = toml.load("D:/Programacao/AssistenteCell/config.toml")
-            self.vault_path = config.get("obsidian", {}).get("vault_path", "D:/Programacao/AssistenteCell/Ollie")
+            # Tenta carregar do caminho absoluto (Local) ou relativo (Cloud/Local)
+            config_path = "D:/Programacao/AssistenteCell/config.toml"
+            if not os.path.exists(config_path):
+                config_path = "config.toml"
+
+            config = {}
+            if os.path.exists(config_path):
+                config = toml.load(config_path)
+            
+            # Prioriza variável de ambiente, depois config.toml, depois fallback
+            self.vault_path = os.getenv("OBSIDIAN_VAULT_PATH") or \
+                              config.get("obsidian", {}).get("vault_path", "D:/Programacao/AssistenteCell/Ollie")
+            
+            # Na nuvem, se o caminho absoluto falhar, tenta relativo
+            if not os.path.exists(self.vault_path):
+                self.vault_path = "Ollie"
+
             self.agente_dir = os.path.join(self.vault_path, "Agente")
             
-            if not os.path.exists(self.agente_dir):
+            if self.vault_path and not os.path.exists(self.agente_dir):
                 os.makedirs(self.agente_dir)
                 logger.info(f"Diretório de aprendizado criado: {self.agente_dir}")
         except Exception as e:

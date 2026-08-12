@@ -7,7 +7,7 @@ from spotipy.oauth2 import SpotifyOAuth
 import logging
 from typing import List
 
-# Importação condicional para bibliotecas de hardware (evita crash na nuvem)
+# Importação condicional para bibliotecas de hardware e serviços externos
 try:
     import pyautogui
 except ImportError:
@@ -17,6 +17,13 @@ try:
     import voicemeeterlib
 except ImportError:
     voicemeeterlib = None
+
+try:
+    import spotipy
+    from spotipy.oauth2 import SpotifyOAuth
+except ImportError:
+    spotipy = None
+    SpotifyOAuth = None
 
 logger = logging.getLogger("PCControl")
 
@@ -47,10 +54,19 @@ class PcControlService:
 
     def _carregar_config(self):
         try:
-            config = toml.load("D:/Programacao/AssistenteCell/config.toml")
-            self.spot_id = config.get("spotify", {}).get("client_id")
-            self.spot_secret = config.get("spotify", {}).get("client_secret")
-            self.spot_uri = config.get("spotify", {}).get("redirect_uri", "http://127.0.0.1:8888/callback")
+            # Tenta carregar do caminho absoluto (Local) ou relativo (Cloud/Local)
+            path = "D:/Programacao/AssistenteCell/config.toml"
+            if not os.path.exists(path):
+                path = "config.toml" # Tenta na raiz do projeto
+            
+            if os.path.exists(path):
+                config = toml.load(path)
+                self.spot_id = config.get("spotify", {}).get("client_id")
+                self.spot_secret = config.get("spotify", {}).get("client_secret")
+                self.spot_uri = config.get("spotify", {}).get("redirect_uri", "http://127.0.0.1:8888/callback")
+            else:
+                logger.warning("Arquivo config.toml não encontrado.")
+                self.spot_id = None
         except Exception as e:
             logger.error(f"Erro ao carregar config.toml: {e}")
             self.spot_id = None
