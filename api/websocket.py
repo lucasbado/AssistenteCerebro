@@ -71,10 +71,12 @@ class GerenciadorNotificacoes:
                 logger.info(f"⚡ [WS] Enviando comando '{dados_para_envio['comando']}' para PC Master.")
                 await self._enviar_direto(self.pc_master, dados_para_envio)
             else:
-                logger.warning("⚠️ [WS] Comando de hardware recebido mas PC Master está offline.")
+                logger.warning(f"⚠️ [WS] Comando '{dados_para_envio['comando']}' recebido mas PC Master está offline.")
+                # Fallback: Envia para todos para debug
+                await self._broadcast(dados_para_envio)
             return
 
-        # Notificações e Chat vão para todos (ou apenas mobile se quisermos economizar)
+        # Notificações e Chat vão para todos
         await self._broadcast(dados_para_envio)
 
     async def enviar_evento_log(self, evento_dict: dict):
@@ -84,7 +86,7 @@ class GerenciadorNotificacoes:
             "tipo_ws": "EVENTO_LOG",
             "id": str(evento_dict.get("id")),
             "categoria": str(evento_dict.get("categoria")),
-            "resumo": self._gerar_resumo_amigavel(evento_dict),
+            "resumo": str(evento_dict.get("resumo", "Evento")),
             "timestamp": ts_str,
             "origem": str(evento_dict.get("origem")),
             "icone": "circle"
@@ -168,4 +170,5 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         central_alertas.desconectar(websocket)
     except Exception as e:
+        logger.error(f"Erro no WebSocket: {e}")
         central_alertas.desconectar(websocket)
