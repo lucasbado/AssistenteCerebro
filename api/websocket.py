@@ -145,6 +145,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     from servicos.pc_control_service import pc_control_service
                     apps = msg.get("apps", [])
                     pc_control_service.salvar_cache_apps(apps)
+                
+                elif tipo == "STATUS_PC":
+                    # Retransmite o status do PC para todos (especialmente para o Celular)
+                    logger.info(f"🖥️ [WS] Status do PC recebido: {msg.get('stats')}")
+                    await central_alertas._broadcast(msg)
                     
             except Exception as e:
                 logger.error(f"Erro ao processar mensagem WS: {e}")
