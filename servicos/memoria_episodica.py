@@ -63,13 +63,15 @@ class MemoriaEpisodica:
         Recupera os eventos mais recentes.
         Crucial para injetar no Prompt da LLM e dar "consciência do agora" ao sistema.
         """
-        # 🕒 CORREÇÃO DEFINITIVA: Garante uso de datetimes com timezone para PostgreSQL/Neon
+        # 🕒 COMPATIBILIDADE TOTAL: Se o banco foi criado como naive (sem timezone), 
+        # forçamos o Python a usar naive UTC para evitar crash no asyncpg.
         limite_tempo = datetime.now(timezone.utc) - timedelta(minutes=minutos)
+        limite_tempo_query = limite_tempo.replace(tzinfo=None)
 
         async with AsyncSessionLocal() as session:
             stmt = (
                 select(EventoEpisodicoDB)
-                .where(EventoEpisodicoDB.timestamp >= limite_tempo)
+                .where(EventoEpisodicoDB.timestamp >= limite_tempo_query)
                 .order_by(EventoEpisodicoDB.timestamp.asc())
             )
 
