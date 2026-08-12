@@ -8,17 +8,27 @@ load_dotenv()
 # Prioriza a URL da nuvem (Neon.tech/Postgres), senão usa SQLite local
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///D:/Programacao/AssistenteCell/agente_local.db")
 
-# Ajuste específico para asyncpg (Neon/Postgres requer sslmode)
-if DATABASE_URL.startswith("postgresql"):
+# Configurações de conexão
+connect_args = {}
+
+# Ajuste específico para asyncpg (Postgres na nuvem)
+if "postgresql" in DATABASE_URL:
+    # O driver asyncpg não aceita 'sslmode' na URL, então removemos a query string
+    if "?" in DATABASE_URL:
+        DATABASE_URL = DATABASE_URL.split("?")[0]
+    
+    # Garante o uso do driver assíncrono asyncpg
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
-    # Neon exige sslmode=require
-    if "sslmode" not in DATABASE_URL:
-        DATABASE_URL += "?sslmode=require"
+    
+    # Ativa SSL via argumentos de conexão para o Neon.tech
+    connect_args["ssl"] = True
+else:
+    # Configuração específica para SQLite local
+    connect_args["check_same_thread"] = False
 
 async_engine = create_async_engine(
     DATABASE_URL, 
-    # check_same_thread apenas para SQLite
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+    connect_args=connect_args,
     echo=False
 )
 
