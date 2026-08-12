@@ -43,6 +43,8 @@ class GerenciadorNotificacoes:
         payload_negocio = payload.get("payload", {})
         dados_para_envio = payload_negocio.copy()
         
+        tipo_ws_original = payload.get("tipo_ws")
+        
         # Identifica se deve ir para o CHAT, preservando se já existir um tipo específico
         if 'tipo_ws' not in dados_para_envio:
             if 'tipo_ws' in payload:
@@ -55,6 +57,9 @@ class GerenciadorNotificacoes:
                     dados_para_envio['tipo_ws'] = 'CHAT_RESPONSE'
                 else:
                     dados_para_envio['tipo_ws'] = 'NOTIFICACAO'
+
+        tipo_ws = dados_para_envio.get("tipo_ws")
+        logger.info(f"📣 [WS] Processando alerta: tipo={tipo_ws}, id={payload.get('correlacao_id')}")
 
         if 'mensagem' in dados_para_envio:
             dados_para_envio['texto'] = dados_para_envio.pop('mensagem')
@@ -73,7 +78,7 @@ class GerenciadorNotificacoes:
         # 1. Se for comando de hardware (PC_COMMAND), manda prioritariamente para o PC Master
         if tipo_ws == "PC_COMMAND" or "comando" in dados_para_envio:
             if self.pc_master:
-                logger.info(f"⚡ [WS] Enviando comando '{dados_para_envio.get('comando')}' para PC Master.")
+                logger.info(f"⚡ [WS] Roteando comando '{dados_para_envio.get('comando')}' para PC Master.")
                 await self._enviar_direto(self.pc_master, dados_para_envio)
                 return
             else:
@@ -82,9 +87,11 @@ class GerenciadorNotificacoes:
         # 2. Se for resposta de chat ou notificação, tenta mandar prioritariamente para o Celular
         if tipo_ws in ["CHAT_RESPONSE", "NOTIFICACAO"]:
             if self.mobile_client:
-                logger.info(f"📱 [WS] Enviando {tipo_ws} para Mobile Client.")
+                logger.info(f"📱 [WS] Roteando {tipo_ws} para Mobile Client.")
                 await self._enviar_direto(self.mobile_client, dados_para_envio)
                 return
+            else:
+                logger.info(f"📡 [WS] Mobile offline, tentando broadcast para {tipo_ws}")
 
         # 3. Fallback: Envia para todos (Broadcast)
         await self._broadcast(dados_para_envio)
