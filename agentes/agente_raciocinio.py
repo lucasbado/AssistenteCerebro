@@ -92,7 +92,7 @@ class AgenteRaciocinio:
             logger.error("❌ [Raciocínio] TIMEOUT da LLM (40s).")
             resultado = {
                 "tipo_interacao": "NOTIFICAR",
-                "mensagem_dinamica": "Tive um lapso de memória aqui, a nuvem tá lenta. Pode repetir?",
+                "mensagem_dinamica": "Vixi, meu cérebro deu uma engasgada aqui na nuvem. Pode repetir, parceiro?",
                 "execucao_direta": None
             }
         except Exception as e:
@@ -101,7 +101,7 @@ class AgenteRaciocinio:
             logger.error(traceback.format_exc())
             resultado = {
                 "tipo_interacao": "NOTIFICAR",
-                "mensagem_dinamica": f"Deu ruim no meu cérebro: {str(e)}",
+                "mensagem_dinamica": "Vish, deu pane no meu sistema aqui! Tenta de novo em um segundinho?",
                 "execucao_direta": None
             }
 
