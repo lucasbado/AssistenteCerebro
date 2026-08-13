@@ -153,10 +153,24 @@ class PcControlService:
         self.executar_comando_direto(path)
 
     def abrir_url(self, url):
-        """Abre uma URL no navegador padrão."""
-        if not url.startswith("http"):
-            url = "https://" + url
-        self.executar_comando_direto(url)
+        """Abre uma URL no navegador padrão com correção de domínio."""
+        url_limpa = url.lower().strip()
+        
+        # Correção para nomes simples (ex: instagram -> instagram.com)
+        dominios_comuns = ["google", "youtube", "instagram", "facebook", "twitter", "whatsapp", "github", "linkedin", "netflix"]
+        
+        if "." not in url_limpa:
+            if url_limpa in dominios_comuns:
+                url_limpa += ".com"
+            else:
+                # Fallback se não souber o que é
+                url_limpa += ".com"
+
+        if not url_limpa.startswith("http"):
+            url_limpa = "https://" + url_limpa
+            
+        logger.info(f"[PCControl] Abrindo URL corrigida: {url_limpa}")
+        self.executar_comando_direto(url_limpa)
 
     def pesquisa_google(self, query):
         """Realiza uma busca no Google abrindo o navegador."""
