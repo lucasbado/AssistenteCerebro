@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import asyncio
 from core.evento import EventoCanonico
 from core.tipos import PrioridadeEvento, OrigemEvento, TipoAcao, CategoriaEvento
 from core.kernel import kernel
@@ -28,21 +29,25 @@ class AgenteRaciocinio:
         if evento.acao != TipoAcao.INTENCAO_RACIOCINIO:
             return
             
-        logger.info(f"🧠 [Raciocínio] Analisando evento: {evento.id[:8]}")
+        logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 1: Iniciando processamento do evento {evento.id[:8]}")
 
         # 🌟 FEEDBACK IMEDIATO: Sinaliza que a Ollie começou a pensar
         if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
-            await kernel.publicar(evento.clonar(
-                categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                acao=TipoAcao.INTENCAO_INTERACAO,
-                origem=OrigemEvento.IA,
-                payload={"tipo_ws": "THINKING", "titulo": "Ollie", "texto": "..."}
-            ))
+            try:
+                await kernel.publicar(evento.clonar(
+                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                    acao=TipoAcao.INTENCAO_INTERACAO,
+                    origem=OrigemEvento.IA,
+                    payload={"tipo_ws": "THINKING", "titulo": "Ollie", "texto": "..."}
+                ))
+                logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 2: Sinal de THINKING enviado.")
+            except Exception as e:
+                logger.error(f"❌ Erro ao enviar sinal de thinking: {e}")
 
         # 1. Recupera Contexto do Obsidian (Long-term)
         try:
             conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
-            logger.info(f"📓 [Raciocínio] Contexto Obsidian carregado.")
+            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 3: Obsidian carregado.")
         except Exception as e:
             logger.warning(f"⚠️ Erro ao ler Obsidian: {e}")
             conhecimento_atual = ""
@@ -57,18 +62,21 @@ class AgenteRaciocinio:
                         self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Usuário: {texto_usuario}"]),
                         timeout=5.0
                     )
+                    logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 4: Conversa salva no DB.")
                 except Exception as e:
                     logger.error(f"❌ [Raciocínio] Falha ao salvar conversa no DB: {e}")
 
         # 3. Recupera contexto histórico
         try:
             historico = await asyncio.wait_for(self.memoria_trabalho.obter_contexto(chave_conversa), timeout=3.0)
+            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 5: Histórico recuperado.")
         except:
             historico = []
 
         # 4. Consulta o Córtex (LLM) com TIMEOUT de 40s
-        logger.info(f"🤖 [Raciocínio] Chamando LLM para {evento.id[:8]}...")
+        logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 6: Chamando LLM...")
         try:
+            start_time = asyncio.get_event_loop().time()
             resultado = await asyncio.wait_for(
                 self.llm.classificar_evento(
                     categoria=evento.categoria.value,
@@ -78,6 +86,8 @@ class AgenteRaciocinio:
                 ),
                 timeout=40.0
             )
+            elapsed = asyncio.get_event_loop().time() - start_time
+            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 7: LLM respondeu em {elapsed:.2f}s")
         except asyncio.TimeoutError:
             logger.error("❌ [Raciocínio] TIMEOUT da LLM (40s).")
             resultado = {
@@ -86,8 +96,14 @@ class AgenteRaciocinio:
                 "execucao_direta": None
             }
         except Exception as e:
-            logger.error(f"❌ [Raciocínio] Erro inesperado na LLM: {e}")
-            resultado = {"tipo_interacao": "IGNORAR"}
+            logger.error(f"❌ [Raciocínio] Erro CRÍTICO na chamada LLM: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            resultado = {
+                "tipo_interacao": "NOTIFICAR",
+                "mensagem_dinamica": f"Deu ruim no meu cérebro: {str(e)}",
+                "execucao_direta": None
+            }
 
         # 🌟 LOG DE DECISÃO: Ver exatamente o que a IA pensou
         logger.info(f"📊 [OLLIE_BRAIN] Raw Decision: {json.dumps(resultado, ensure_ascii=False)}")

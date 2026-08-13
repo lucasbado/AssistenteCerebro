@@ -52,23 +52,24 @@ def _is_duplicate(evento: RequestEvento) -> bool:
     """Verifica se um evento muito parecido foi recebido recentemente."""
     now = datetime.now(timezone.utc)
 
-    # 1. Cria uma chave estável para o evento
+    # 1. Cria uma chave estável para o evento (Ignora pequenas variações de conteúdo se necessário)
+    # Aqui focamos apenas no texto se for comando do usuário
+    texto_puro = evento.conteudo.get("texto", "")
     conteudo_str = json.dumps(evento.conteudo, sort_keys=True)
-    event_key = (evento.categoria, evento.pacote, conteudo_str)
+    
+    if evento.categoria == "SISTEMA_COMANDO_USUARIO" and texto_puro:
+        event_key = (evento.categoria, evento.pacote, texto_puro)
+    else:
+        event_key = (evento.categoria, evento.pacote, conteudo_str)
 
-    # 2. Limpa o cache antigo
-    keys_to_delete = []
-    for key, timestamp in DEDUPLICATION_CACHE.items():
-        if now - timestamp > timedelta(seconds=CACHE_TTL_SECONDS):
-            keys_to_delete.append(key)
-        else:
-            break
+    # 2. Limpa o cache antigo (Janela de 5 segundos é suficiente para flood)
+    keys_to_delete = [k for k, ts in DEDUPLICATION_CACHE.items() if now - ts > timedelta(seconds=5)]
     for key in keys_to_delete:
         del DEDUPLICATION_CACHE[key]
 
     # 3. Verifica se é duplicado
     if event_key in DEDUPLICATION_CACHE:
-        DEDUPLICATION_CACHE.move_to_end(event_key) # Atualiza o tempo
+        logger.warning(f"🛡️ [Anti-Flood] Evento duplicado detectado: {event_key[:2]} - IGNORANDO.")
         return True
 
     # 4. Se não é duplicado, adiciona ao cache

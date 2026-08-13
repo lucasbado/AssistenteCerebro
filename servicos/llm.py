@@ -22,31 +22,41 @@ class ServicoLLM:
         self.api_key = os.getenv("GROQ_API_KEY")
         if self.api_key:
             self.client = AsyncGroq(api_key=self.api_key)
-            self.modelo = "llama-3.3-70b-versatile" # O melhor modelo custo-benefício da sua tabela
+            self.modelo = "llama-3.3-70b-versatile"
             logger.info(f"🚀 [LLM] Groq Cloud ativado com o modelo {self.modelo}")
         else:
-            # Fallback para Ollama local se não houver chave
-            self.url = "http://localhost:11434/api/generate"
-            self.modelo = "qwen2.5:7b"
-            self.http_client = httpx.AsyncClient(timeout=60)
-            logger.warning("⚠️ [LLM] GROQ_API_KEY não encontrada. Usando Ollama local.")
+            # 🌍 SEGURANÇA CLOUD: No Render, não existe Ollama local.
+            if os.getenv("RENDER"):
+                self.client = None
+                self.modelo = None
+                logger.error("❌ [LLM] ERRO CRÍTICO: GROQ_API_KEY não encontrada no Render!")
+            else:
+                # Fallback para Ollama local apenas se não estiver na nuvem
+                self.url = "http://localhost:11434/api/generate"
+                self.modelo = "qwen2.5:7b"
+                self.http_client = httpx.AsyncClient(timeout=30)
+                logger.warning("⚠️ [LLM] GROQ_API_KEY não encontrada. Usando Ollama local.")
 
     async def _gerar_json(self, prompt: str, system: str) -> dict: 
-        if self.api_key:
-            # Chamada Groq com timeout de 35 segundos
-            chat_completion = await self.client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-                model=self.modelo,
-                response_format={"type": "json_object"},
-                temperature=0.1,
-                timeout=35.0 
-            )
-            raw_response = chat_completion.choices[0].message.content
-        else:
-            # Chamada Ollama
+        if self.api_key and self.client:
+            # Chamada Groq com timeout
+            try:
+                chat_completion = await self.client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": prompt},
+                    ],
+                    model=self.modelo,
+                    response_format={"type": "json_object"},
+                    temperature=0.1,
+                    timeout=35.0 
+                )
+                raw_response = chat_completion.choices[0].message.content
+            except Exception as e:
+                logger.error(f"❌ [LLM] Erro na API Groq: {e}")
+                raise
+        elif not os.getenv("RENDER"):
+            # Chamada Ollama (Local)
             payload = {
                 "model": self.modelo,
                 "prompt": prompt,
@@ -55,9 +65,15 @@ class ServicoLLM:
                 "format": "json",
                 "options": {"temperature": 0.1, "num_ctx": 8192}
             }
-            resposta = await self.http_client.post(self.url, json=payload)
-            resposta.raise_for_status()
-            raw_response = resposta.json()["response"]
+            try:
+                resposta = await self.http_client.post(self.url, json=payload)
+                resposta.raise_for_status()
+                raw_response = resposta.json()["response"]
+            except Exception as e:
+                logger.error(f"❌ [LLM] Erro no Ollama Local: {e}")
+                raise
+        else:
+            raise ValueError("Sem serviço de IA disponível na Nuvem (Falta API Key).")
 
         try:
             return json.loads(raw_response)

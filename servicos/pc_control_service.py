@@ -1,32 +1,38 @@
 import os
 import subprocess
 import psutil
-import spotipy
 import toml
-from spotipy.oauth2 import SpotifyOAuth
 import logging
 from typing import List
 
-# Importação condicional para bibliotecas de hardware e serviços externos
 # 🌍 SEGURANÇA CLOUD: Não importa bibliotecas de GUI/Hardware no Render
 if not os.getenv("RENDER"):
     try:
         import pyautogui
     except ImportError:
         pyautogui = None
+    except Exception:
+        pyautogui = None
 
     try:
         import voicemeeterlib
     except ImportError:
         voicemeeterlib = None
+    except Exception:
+        voicemeeterlib = None
+        
+    try:
+        import spotipy
+        from spotipy.oauth2 import SpotifyOAuth
+    except ImportError:
+        spotipy = None
+        SpotifyOAuth = None
+    except Exception:
+        spotipy = None
+        SpotifyOAuth = None
 else:
     pyautogui = None
     voicemeeterlib = None
-
-try:
-    import spotipy
-    from spotipy.oauth2 import SpotifyOAuth
-except ImportError:
     spotipy = None
     SpotifyOAuth = None
 
@@ -62,7 +68,7 @@ class PcControlService:
             # Tenta carregar do caminho absoluto (Local) ou relativo (Cloud/Local)
             path = "D:/Programacao/AssistenteCell/config.toml"
             if not os.path.exists(path):
-                path = "config.toml" # Tenta na raiz do projeto
+                path = "config.toml" 
             
             if os.path.exists(path):
                 config = toml.load(path)
@@ -107,8 +113,8 @@ class PcControlService:
             return False
 
     def _init_spotify(self):
-        if not self.spot_id:
-            logger.warning("[PCControl] Spotify ignorado (sem credenciais no config.toml).")
+        if not spotipy or not self.spot_id:
+            logger.warning("[PCControl] Spotify ignorado (sem credenciais ou biblioteca).")
             return
         try:
             scope = "user-modify-playback-state,user-read-currently-playing,user-read-playback-state,user-library-modify,user-library-read"
@@ -190,7 +196,8 @@ class PcControlService:
 
     def executar_macro(self, macro_key):
         keys = self.macros.get(macro_key)
-        if keys: pyautogui.hotkey(*keys)
+        if keys and pyautogui: 
+            pyautogui.hotkey(*keys)
 
     def set_modo_imersao(self, ativo: bool):
         """Ativa ou desativa o modo imersão."""
@@ -198,7 +205,7 @@ class PcControlService:
         if ativo:
             logger.info("[PCControl] Ativando Modo Imersão...")
             self.vm.set('Strip[0].Mute', 1)
-            pyautogui.hotkey('win', 'd')
+            if pyautogui: pyautogui.hotkey('win', 'd')
             self.set_gain(4, 30)
         else:
             logger.info("[PCControl] Desativando Modo Imersão...")
@@ -207,6 +214,7 @@ class PcControlService:
 
     def janela_fullscreen(self, alvo: str = None):
         """Tenta colocar a janela atual ou um alvo específico em tela cheia."""
+        if not pyautogui: return
         if alvo and not self.focar_janela(alvo):
             logger.warning(f"[PCControl] Cancelando Fullscreen: Alvo '{alvo}' não encontrado.")
             return
@@ -217,6 +225,7 @@ class PcControlService:
 
     def janela_maximizar(self, alvo: str = None):
         """Maximiza a janela atual ou um alvo específico."""
+        if not pyautogui: return
         if alvo and not self.focar_janela(alvo):
             logger.warning(f"[PCControl] Cancelando Maximizar: Alvo '{alvo}' não encontrado.")
             return
@@ -226,6 +235,7 @@ class PcControlService:
 
     def janela_minimizar(self, alvo: str = None):
         """Minimiza a janela atual ou um alvo específico."""
+        if not pyautogui: return
         if alvo and not self.focar_janela(alvo):
             logger.warning(f"[PCControl] Cancelando Minimizar: Alvo '{alvo}' não encontrado.")
             return
@@ -271,7 +281,7 @@ class PcControlService:
         """
 
         try:
-            pyautogui.press('alt')
+            if pyautogui: pyautogui.press('alt')
             result = subprocess.run(["powershell", "-Command", ps_script_titulo], capture_output=True, text=True)
             if "True" in result.stdout:
                 logger.info(f"✅ [PCControl] Conteúdo '{termo_limpo}' encontrado e focado.")
