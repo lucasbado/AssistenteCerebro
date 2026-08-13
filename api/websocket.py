@@ -47,8 +47,13 @@ class GerenciadorNotificacoes:
         categoria = payload.get("categoria")
         
         # 🌟 REGRA DE OURO DE ROTEAMENTO:
-        # Se tem um comando, o destino principal é SEMPRE o PC.
-        tem_comando = "comando" in dados_para_envio or categoria == "SISTEMA_COMANDO_PC"
+        # Se tem um comando que NÃO é mobile, o destino principal é o PC.
+        comando_nome = str(dados_para_envio.get("comando", "")).lower()
+        categoria_pc = categoria == "SISTEMA_COMANDO_PC"
+        
+        is_mobile_cmd = "_mobile" in comando_nome or "abrir_app" in comando_nome and "pacote" in dados_para_envio
+        
+        tem_comando_pc = ("comando" in dados_para_envio and not is_mobile_cmd) or categoria_pc
         
         # Identifica se deve ir para o CHAT, preservando se já existir um tipo específico
         if 'tipo_ws' not in dados_para_envio:
@@ -78,7 +83,7 @@ class GerenciadorNotificacoes:
 
         # ROTEAMENTO INTELIGENTE:
         # 1. Prioridade Máxima: Comandos de Hardware vão para o PC Master
-        if tem_comando:
+        if tem_comando_pc:
             if self.pc_master:
                 logger.info(f"⚡ [WS] Roteando comando '{dados_para_envio.get('comando')}' via WebSocket para PC Master.")
                 await self._enviar_direto(self.pc_master, dados_para_envio)
