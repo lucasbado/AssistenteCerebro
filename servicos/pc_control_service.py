@@ -136,6 +136,35 @@ class PcControlService:
             db = -60.0 + (valor_porcentagem * self.fator_vol)
             self.vm.set(f"Strip[{canal}].Gain", db)
 
+    def ciclar_saida(self, canal=3):
+        """Cicla as saídas de áudio A1 -> A2 -> A3 no Voicemeeter."""
+        if not self.vm:
+            logger.warning("[PCControl] Voicemeeter não conectado para ciclar saída.")
+            return False
+            
+        try:
+            a1 = int(self.vm.get(f'Strip[{canal}].A1'))
+            a2 = int(self.vm.get(f'Strip[{canal}].A2'))
+            a3 = int(self.vm.get(f'Strip[{canal}].A3'))
+
+            # Lógica de Ciclagem: A1 -> A2 -> A3 -> A1
+            if a1 == 1:
+                self.toggle_rota(canal, "A1", False)
+                self.toggle_rota(canal, "A2", True)
+                logger.info(f"🔊 [PCControl] Ciclou para A2 no canal {canal}")
+            elif a2 == 1:
+                self.toggle_rota(canal, "A2", False)
+                self.toggle_rota(canal, "A3", True)
+                logger.info(f"🔊 [PCControl] Ciclou para A3 no canal {canal}")
+            else: 
+                self.toggle_rota(canal, "A3", False)
+                self.toggle_rota(canal, "A1", True)
+                logger.info(f"🔊 [PCControl] Ciclou para A1 no canal {canal}")
+            return True
+        except Exception as e:
+            logger.error(f"Erro ao ciclar saída: {e}")
+            return False
+
     def toggle_rota(self, canal, saida, estado):
         if self.vm:
             self.vm.set(f"Strip[{canal}].{saida.upper()}", 1 if estado else 0)

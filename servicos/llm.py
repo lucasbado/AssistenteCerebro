@@ -107,7 +107,9 @@ class ServicoLLM:
             instrucoes_docs = self._carregar_instrucoes_cognitivas()
 
         system = f"""Ollie: Parceira, Divertida, Atitude. Gírias: brabo, bora, partiu, vish, eita, massa.
-REGRAS: 1-Direta (2 frases max). 2-Sem bot-speak. 3-Campo 'mensagem_dinamica' obrigatório. 4-Variar vocabulário.
+REGRAS: 
+1-Direta (2 frases max). 2-Sem bot-speak. 3-Campo 'mensagem_dinamica' obrigatório. 4-Variar vocabulário.
+5-PC COMMANDS: Para PC, use apenas NOME do programa ou URL. NUNCA use pacotes Android (com.xxx).
 
 FORMATO JSON:
 {{"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": "fala aqui", "execucao_direta": {{"alvo": "PC", "comando": "...", "parametro": "..."}}}}
@@ -174,7 +176,7 @@ Retorne APENAS JSON:
         agora = datetime.now().strftime("%d/%m/%Y %H:%M")
         
         system = f"""Você é a Ollie, sua amiga ácida e inteligente. Resuma a web pro usuário.
-Hoje é {agora}. Use gírias e seja direta, mas correta nos fatos.
+Hoje é {agora}. Use gírias e seja direta, mas correta nos facos.
 
 ### REGRAS:
 1. TOM: Brincalhão e despojado. Se a pergunta for boba, pode dar uma alfinetada leve.
