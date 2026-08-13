@@ -174,11 +174,18 @@ class PcControlService:
         
         try:
             # Método 1: Webbrowser (Padrão Python)
-            webbrowser.open(url_limpa)
+            # 🛡️ Otimização para Windows: força o uso do sistema se o webbrowser falhar
+            if not webbrowser.open(url_limpa):
+                raise Exception("webbrowser.open retornou False")
         except Exception as e:
-            logger.warning(f"Falha no webbrowser.open: {e}. Tentando fallback...")
-            # Fallback: os.startfile ou subprocess
-            self.executar_comando_direto(url_limpa)
+            logger.warning(f"Falha no webbrowser.open: {e}. Tentando shell start...")
+            # Fallback 2: Comando 'start' do Windows (Ultra-robusto)
+            try:
+                os.system(f'start "" "{url_limpa}"')
+            except Exception as e2:
+                logger.error(f"Falha total ao abrir URL: {e2}")
+                # Fallback final
+                self.executar_comando_direto(url_limpa)
 
     def pesquisa_google(self, query):
         """Realiza uma busca no Google abrindo o navegador."""
@@ -202,6 +209,25 @@ class PcControlService:
             except Exception as e:
                 logger.error(f"Erro ao vasculhar {base}: {e}")
         return found
+
+    def bloquear_pc(self):
+        """Bloqueia a sessão do Windows."""
+        logger.info("[PCControl] Bloqueando PC...")
+        os.system("rundll32.exe user32.dll,LockWorkStation")
+
+    def dormir_pc(self):
+        """Coloca o Windows em modo de suspensão."""
+        logger.info("[PCControl] Colocando PC para dormir...")
+        os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
+
+    def mouse_move(self, dx, dy):
+        if pyautogui: pyautogui.moveRel(dx, dy)
+
+    def mouse_click(self, botao="left"):
+        if pyautogui: pyautogui.click(button=botao)
+
+    def mouse_scroll(self, quantidade):
+        if pyautogui: pyautogui.scroll(quantidade)
 
     def executar_comando_direto(self, alvo):
         try:
