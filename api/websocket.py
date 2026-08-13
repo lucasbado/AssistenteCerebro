@@ -44,6 +44,11 @@ class GerenciadorNotificacoes:
         dados_para_envio = payload_negocio.copy()
         
         tipo_ws_original = payload.get("tipo_ws")
+        categoria = payload.get("categoria")
+        
+        # 🌟 REGRA DE OURO DE ROTEAMENTO:
+        # Se tem um comando, o destino principal é SEMPRE o PC.
+        tem_comando = "comando" in dados_para_envio or categoria == "SISTEMA_COMANDO_PC"
         
         # Identifica se deve ir para o CHAT, preservando se já existir um tipo específico
         if 'tipo_ws' not in dados_para_envio:
@@ -51,7 +56,6 @@ class GerenciadorNotificacoes:
                 dados_para_envio['tipo_ws'] = payload['tipo_ws']
             else:
                 origem = payload.get("origem")
-                categoria = payload.get("categoria")
                 metadados = payload.get("metadados", {})
                 if metadados.get("tipo_destino") == "CHAT" or origem == "IA" or categoria == "INTENCAO_NOTIFICACAO":
                     dados_para_envio['tipo_ws'] = 'CHAT_RESPONSE'
@@ -73,18 +77,16 @@ class GerenciadorNotificacoes:
         dados_para_envio['correlacao_id'] = str(payload.get('correlacao_id', ''))
 
         # ROTEAMENTO INTELIGENTE:
-        tipo_ws = dados_para_envio.get("tipo_ws")
-
-        # 1. Se for comando de hardware (PC_COMMAND), manda prioritariamente para o PC Master
-        if tipo_ws == "PC_COMMAND" or "comando" in dados_para_envio:
+        # 1. Prioridade Máxima: Comandos de Hardware vão para o PC Master
+        if tem_comando:
             if self.pc_master:
-                logger.info(f"⚡ [WS] Roteando comando '{dados_para_envio.get('comando')}' para PC Master.")
+                logger.info(f"⚡ [WS] Roteando comando '{dados_para_envio.get('comando')}' via WebSocket para PC Master.")
                 await self._enviar_direto(self.pc_master, dados_para_envio)
                 return
             else:
                 logger.warning(f"⚠️ [WS] Comando recebido mas PC Master está offline.")
         
-        # 2. Se for resposta de chat ou notificação, tenta mandar prioritariamente para o Celular
+        # 2. Se for resposta de chat, notificação ou thinking, manda para o Celular
         if tipo_ws in ["CHAT_RESPONSE", "NOTIFICACAO", "THINKING"]:
             if self.mobile_client:
                 logger.info(f"📱 [WS] Roteando {tipo_ws} para Mobile Client (Handshake OK).")

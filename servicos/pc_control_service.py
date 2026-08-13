@@ -3,6 +3,7 @@ import subprocess
 import psutil
 import toml
 import logging
+import webbrowser
 from typing import List
 
 # 🌍 SEGURANÇA CLOUD: Não importa bibliotecas de GUI/Hardware no Render
@@ -153,7 +154,7 @@ class PcControlService:
         self.executar_comando_direto(path)
 
     def abrir_url(self, url):
-        """Abre uma URL no navegador padrão com correção de domínio."""
+        """Abre uma URL no navegador padrão com correção de domínio e múltiplos métodos."""
         url_limpa = url.lower().strip()
         
         # Correção para nomes simples (ex: instagram -> instagram.com)
@@ -170,7 +171,14 @@ class PcControlService:
             url_limpa = "https://" + url_limpa
             
         logger.info(f"[PCControl] Abrindo URL corrigida: {url_limpa}")
-        self.executar_comando_direto(url_limpa)
+        
+        try:
+            # Método 1: Webbrowser (Padrão Python)
+            webbrowser.open(url_limpa)
+        except Exception as e:
+            logger.warning(f"Falha no webbrowser.open: {e}. Tentando fallback...")
+            # Fallback: os.startfile ou subprocess
+            self.executar_comando_direto(url_limpa)
 
     def pesquisa_google(self, query):
         """Realiza uma busca no Google abrindo o navegador."""
