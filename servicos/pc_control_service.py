@@ -176,6 +176,15 @@ class PcControlService:
 
     # --- AÇÕES DE SISTEMA ---
     def abrir_app(self, app_key):
+        # 🛡️ TRADUTOR INTELIGENTE: Se a Ollie mandou um pacote Android (com.xxx),
+        # traduz para o site correspondente no PC.
+        if "com.instagram" in app_key: return self.abrir_url("instagram.com")
+        if "com.facebook" in app_key: return self.abrir_url("facebook.com")
+        if "com.youtube" in app_key: return self.abrir_url("youtube.com")
+        if "com.whatsapp" in app_key: return self.abrir_url("web.whatsapp.com")
+        if "com.spotify" in app_key: return self.abrir_url("open.spotify.com")
+        if "com.netflix" in app_key: return self.abrir_url("netflix.com")
+        
         path = self.app_paths.get(app_key)
         if not path:
             self.executar_comando_direto(app_key)
