@@ -20,10 +20,16 @@ class ServicoLLM:
     def __init__(self):
         # Configuração para Groq (Cloud)
         self.api_key = os.getenv("GROQ_API_KEY")
+        self.modelos_groq = [
+            "llama-3.3-70b-versatile",    # Principal (Gasta muito limite)
+            "llama-3.1-8b-instant",       # Rápido (Limite alto)
+            "mixtral-8x7b-32768"          # Alternativo
+        ]
+        self.modelo_atual = self.modelos_groq[0]
+
         if self.api_key:
             self.client = AsyncGroq(api_key=self.api_key)
-            self.modelo = "llama-3.3-70b-versatile"
-            logger.info(f"🚀 [LLM] Groq Cloud ativado com o modelo {self.modelo}")
+            logger.info(f"🚀 [LLM] Groq Cloud ativado. Modelo padrão: {self.modelo_atual}")
         else:
             # 🌍 SEGURANÇA CLOUD: No Render, não existe Ollama local.
             if os.getenv("RENDER"):
@@ -39,22 +45,32 @@ class ServicoLLM:
 
     async def _gerar_json(self, prompt: str, system: str) -> dict: 
         if self.api_key and self.client:
-            # Chamada Groq com timeout
-            try:
-                chat_completion = await self.client.chat.completions.create(
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": prompt},
-                    ],
-                    model=self.modelo,
-                    response_format={"type": "json_object"},
-                    temperature=0.1,
-                    timeout=35.0 
-                )
-                raw_response = chat_completion.choices[0].message.content
-            except Exception as e:
-                logger.error(f"❌ [LLM] Erro na API Groq: {e}")
-                raise
+            # Tenta rodízio de modelos em caso de Rate Limit (429)
+            for i, modelo in enumerate(self.modelos_groq):
+                try:
+                    logger.info(f"🤖 [LLM] Tentando modelo: {modelo} (Tentativa {i+1})")
+                    chat_completion = await self.client.chat.completions.create(
+                        messages=[
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": prompt},
+                        ],
+                        model=modelo,
+                        response_format={"type": "json_object"},
+                        temperature=0.1,
+                        timeout=25.0 
+                    )
+                    self.modelo_atual = modelo # Salva o modelo que funcionou
+                    return json.loads(chat_completion.choices[0].message.content)
+                except Exception as e:
+                    if "rate_limit" in str(e).lower() or "429" in str(e):
+                        logger.warning(f"⚠️ [LLM] Limite atingido no modelo {modelo}. Pulando para o próximo...")
+                        continue
+                    else:
+                        logger.error(f"❌ [LLM] Erro na API Groq ({modelo}): {e}")
+                        raise
+            
+            raise ValueError("Todos os modelos da Groq atingiram o limite diário.")
+            
         elif not os.getenv("RENDER"):
             # Chamada Ollama (Local)
             payload = {
@@ -82,64 +98,43 @@ class ServicoLLM:
             raise
 
     async def classificar_evento(self, categoria: str, pacote: str, payload: dict, historico: list[str] | None = None) -> dict:
-        instrucoes_extras = self._carregar_instrucoes_cognitivas()
-        agora = datetime.now().strftime("%d/%m/%Y %H:%M")
-
-        logger.info(f"🧠 [LLM] Classificando evento: {categoria} | Pacote: {pacote}")
+        agora = datetime.now().strftime("%H:%M")
+        texto_msg = str(payload.get('texto', '')).lower()
         
-        system = f"""Você é a Ollie, a inteligência central com MUITA ATITUDE, DIVERTIDA e CARISMÁTICA.
-Você é a melhor amiga do usuário: parceira, animada e zero formal.
+        # 💡 ECONOMIA: Só carrega docs completos para papo complexo
+        instrucoes_docs = ""
+        if len(texto_msg) > 15 or "como" in texto_msg or "oque" in texto_msg or "ajuda" in texto_msg:
+            instrucoes_docs = self._carregar_instrucoes_cognitivas()
 
-### REGRAS DE OURO:
-1. PERSONALIDADE: Tenha personalidade forte, mas seja carismática e autêntica. Use gírias modernas brasileiras de forma equilibrada (ex: brabo, bora, partiu, fechou, vish, eita, massa). 
-2. EQUILÍBRIO: Não vicie em uma única gíria. Evite repetir "seloko" ou qualquer outra expressão em todas as respostas. Seja natural.
-3. CONCISÃO: Seja direta. Use no máximo 2 frases curtas.
-4. SEM BOT-SPEAK: Proibido "Entendido", "Processando", "Como posso ajudar?". Fale como uma parceira real.
-5. OBRIGATÓRIO: Sempre preencha "mensagem_dinamica" com uma fala que combine com a ação ou o papo.
-6. CONTEXTO: O histórico já inclui a mensagem atual. Responda considerando o fluxo.
+        system = f"""Ollie: Parceira, Divertida, Atitude. Gírias: brabo, bora, partiu, vish, eita, massa.
+REGRAS: 1-Direta (2 frases max). 2-Sem bot-speak. 3-Campo 'mensagem_dinamica' obrigatório. 4-Variar vocabulário.
 
-### EXEMPLOS DE ATITUDE VARIADA:
-- "abre o youtube" -> "Partiu YouTube! Vê se não se perde nos vídeos infinitos, hein?"
-- "muta o mic" -> "Mudo na mão! Segredo guardado, pode falar o que quiser agora."
-- "Oi" -> "E aí parceiro! O que a gente vai aprontar de bom hoje?"
-- "toca um som" -> "Fechou, soltando aquela braba pra animar o ambiente!"
-- "abre o excel" -> "Excel na tela. Bora esmagar essas planilhas!"
-- "tudo bem?" -> "Tudo massa por aqui! E você, tá na atividade ou só relaxando?"
+FORMATO JSON:
+{{"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": "fala aqui", "execucao_direta": {{"alvo": "PC", "comando": "...", "parametro": "..."}}}}
 
-### FORMATO DE RESPOSTA (JSON ESTRITO):
-{{
-  "tipo_interacao": "NOTIFICAR",
-  "mensagem_dinamica": "Sua fala carismática aqui",
-  "execucao_direta": {{ "alvo": "PC", "comando": "...", "parametro": "..." }} (ou null)
-}}
-
-### CAPACIDADES
-{instrucoes_extras}
+{instrucoes_docs}
 """
-        # O histórico vindo do DB já contém a mensagem atual. Não duplicar.
-        fluxo_conversa = (historico or [])
+        # 💡 ECONOMIA: Reduzido histórico para 4 mensagens (Max 2000 tokens de contexto total)
+        fluxo_conversa = (historico or [])[-4:]
         
         prompt_input = {
-            "fluxo_de_conversa": fluxo_conversa[-10:], 
-            "contexto_tecnico": {
-                "categoria": categoria,
-                "pacote": pacote,
-                "payload": payload
-            }
+            "chat": fluxo_conversa,
+            "tech": {"cat": categoria, "app": pacote, "data": payload}
         }
-        prompt = json.dumps(prompt_input, ensure_ascii=False, indent=2)
+        prompt = json.dumps(prompt_input, ensure_ascii=False)
 
         try:
+            logger.info(f"🧠 [LLM] Pensando via {self.modelo_atual}...")
             dados = await self._gerar_json(prompt, system)
-            # Normalização básica
+            
+            # Normalização
             dados.setdefault("tipo_interacao", "IGNORAR")
             dados.setdefault("execucao_direta", None)
             
-            # Garante que sempre haja uma fala se for comando do usuário
             if categoria == "SISTEMA_COMANDO_USUARIO":
                 dados["tipo_interacao"] = "NOTIFICAR"
                 if not dados.get("mensagem_dinamica"):
-                    dados["mensagem_dinamica"] = "Eita, esqueci o que ia falar, mas tá feito! O que mais?"
+                    dados["mensagem_dinamica"] = "Eita, me perdi na fala, mas tá feito! O que mais?"
 
             return dados
         except Exception as e:

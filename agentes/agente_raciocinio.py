@@ -74,7 +74,7 @@ class AgenteRaciocinio:
             historico = []
 
         # 4. Consulta o Córtex (LLM) com TIMEOUT de 40s
-        logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 6: Chamando LLM...")
+        logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 6: Chamando LLM ({self.llm.modelo_atual})...")
         try:
             start_time = asyncio.get_event_loop().time()
             resultado = await asyncio.wait_for(
@@ -87,7 +87,7 @@ class AgenteRaciocinio:
                 timeout=40.0
             )
             elapsed = asyncio.get_event_loop().time() - start_time
-            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 7: LLM respondeu em {elapsed:.2f}s")
+            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 7: LLM ({self.llm.modelo_atual}) respondeu em {elapsed:.2f}s")
         except asyncio.TimeoutError:
             logger.error("❌ [Raciocínio] TIMEOUT da LLM (40s).")
             resultado = {
