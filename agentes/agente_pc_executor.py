@@ -74,6 +74,20 @@ class AgentePcExecutor:
                         pc_control_service.toggle_rota(canal, "A1", True)
                         logger.info(f"🔊 [Agente PC] Ciclou para A1 no canal {canal}")
 
+            elif comando == "voicemeeter":
+                # 🚀 CARGA UNIVERSAL: Suporta Macro direta ou parâmetros estruturados
+                macro = evento.payload.get("macro")
+                if macro:
+                    pc_control_service.voicemeeter_set(macro)
+                else:
+                    canal = evento.payload.get("canal") or evento.payload.get("index", 3)
+                    saida = evento.payload.get("saida") or evento.payload.get("param") or evento.payload.get("parametro")
+                    valor = evento.payload.get("valor") or evento.payload.get("value") or evento.payload.get("estado", 1)
+                    
+                    if saida and canal is not None:
+                        pc_control_service.toggle_rota(canal, saida, int(valor) == 1)
+                        logger.info(f"🔊 [Agente PC] Rota {saida} setada para {valor} no canal {canal}")
+
             # --- COMANDOS SPOTIFY ---
             elif comando.startswith("spotify_"):
                 if comando == "spotify_next": pc_control_service.spotify_next()

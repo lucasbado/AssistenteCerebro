@@ -167,7 +167,27 @@ class PcControlService:
 
     def toggle_rota(self, canal, saida, estado):
         if self.vm:
-            self.vm.set(f"Strip[{canal}].{saida.upper()}", 1 if estado else 0)
+            try:
+                self.vm.set(f"Strip[{canal}].{saida.upper()}", 1 if estado else 0)
+            except Exception as e:
+                logger.error(f"Erro ao setar rota Strip[{canal}].{saida}: {e}")
+
+    def voicemeeter_set(self, instruction: str):
+        """Executa uma instrução bruta na API do Voicemeeter (Ex: 'Strip[0].A1=1')"""
+        if self.vm:
+            try:
+                self.vm.set(instruction, 1) # Assume 1 se for apenas o nome do parâmetro
+                logger.info(f"✅ [PCControl] Macro executada: {instruction}")
+                return True
+            except Exception as e:
+                # Tenta como comando puro se falhar
+                try:
+                    self.vm.sendtext(instruction)
+                    logger.info(f"✅ [PCControl] Comando enviado: {instruction}")
+                    return True
+                except:
+                    logger.error(f"❌ Erro ao executar macro Voicemeeter '{instruction}': {e}")
+        return False
 
     def mutar_mic(self):
         if self.vm:
