@@ -176,15 +176,14 @@ class PcControlService:
 
     def match_inteligente(self, termo: str, candidatos: List[str]) -> str:
         """
-        Scoring semântico para encontrar o melhor app.
-        Evita falsos positivos baseados em sufixos (ex: "Spider-man 2" vs "Borderlands 2").
+        Scoring semântico para encontrar o melhor app com rigor de palavras-chave.
         """
         if not candidatos: return None
         
         termo = termo.lower().strip()
         palavras_termo = set(re.findall(r'\w+', termo))
-        # Remove números sozinhos do conjunto de palavras primárias para evitar match por sufixo
-        palavras_primarias = {p for p in palavras_termo if not p.isdigit()}
+        # Palavras primárias = não numéricas
+        palavras_primarias = {p for p in palavras_termo if not p.isdigit() and len(p) > 1}
         
         melhor_match = None
         highest_score = -1
@@ -198,33 +197,34 @@ class PcControlService:
             # 1. Base Score: Difflib Sequence Match (Typos)
             seq_match = difflib.SequenceMatcher(None, termo, cand_lower).ratio()
             
-            # 2. Keyword Match: Quantas palavras do termo estão no candidato?
+            # 2. Keyword Match
             overlap = len(palavras_termo.intersection(palavras_cand))
             keyword_score = overlap / len(palavras_termo) if palavras_termo else 0
             
             # 3. RIGOR: Se o termo tem palavras (não números) e nenhuma bate, score cai drasticamente
             overlap_primario = len(palavras_primarias.intersection(palavras_cand))
-            if palavras_primarias and overlap_primario == 0:
-                keyword_score *= 0.1
-                logger.debug(f"   ❌ Rejeitado: '{cand}' (Nenhuma palavra primária bate)")
+            if palavras_primarias:
+                rigor_overlap = overlap_primario / len(palavras_primarias)
+                if rigor_overlap < 0.6: # Exige que pelo menos 60% das palavras principais batam
+                    keyword_score *= 0.1
+                    logger.debug(f"   ❌ Rigor insuficiente: '{cand}' (Overlap primário: {rigor_overlap:.2f})")
             
-            # 4. Sufixo Penalty: " 2", " 3" etc não devem carregar o match sozinhos
+            # 4. Sufixo Penalty: Evita match por número (ex: Borderlands 2 vs Spider-man 2)
             sufixo_penalty = 0
             if overlap_primario == 0 and overlap > 0:
-                sufixo_penalty = 0.6 # Punição pesada se só bateu o número
+                sufixo_penalty = 0.8 # Quase mata o match se só bater o número
             
-            # Final Score Calculation
             final_score = (keyword_score * 0.7) + (seq_match * 0.3) - sufixo_penalty
             
             if final_score > highest_score:
                 highest_score = final_score
                 melhor_match = cand
                 
-        if highest_score < 0.55:
-            logger.info(f"⚠️ [PCControl] Match recusado para '{termo}'. Melhor candidato '{melhor_match}' teve score insuficiente ({highest_score:.2f})")
+        if highest_score < 0.6:
+            logger.info(f"⚠️ [PCControl] Nenhum candidato qualificado para '{termo}'. Melhor: '{melhor_match}' ({highest_score:.2f})")
             return None
             
-        logger.info(f"✅ [PCControl] Match aceito: '{melhor_match}' (Score: {highest_score:.2f})")
+        logger.info(f"✅ [PCControl] Match vitorioso: '{melhor_match}' (Score: {highest_score:.2f})")
         return melhor_match
 
     def deep_search_disk(self, nome: str) -> str:
