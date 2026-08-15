@@ -182,13 +182,16 @@ class PcControlService:
         
         termo = termo.lower().strip()
         palavras_termo = set(re.findall(r'\w+', termo))
-        # Palavras primárias = não numéricas
+        # Palavras primárias = não numéricas e com mais de 1 letra
         palavras_primarias = {p for p in palavras_termo if not p.isdigit() and len(p) > 1}
         
         melhor_match = None
         highest_score = -1
         
         logger.info(f"🧠 [PCControl] Raciocinando sobre match para '{termo}'...")
+        
+        # Ajuste de Rigor: Se for uma palavra só (ex: excel), somos mais flexíveis
+        min_rigor = 0.4 if len(palavras_primarias) <= 1 else 0.6
         
         for cand in candidatos:
             cand_lower = cand.lower()
@@ -201,18 +204,18 @@ class PcControlService:
             overlap = len(palavras_termo.intersection(palavras_cand))
             keyword_score = overlap / len(palavras_termo) if palavras_termo else 0
             
-            # 3. RIGOR: Se o termo tem palavras (não números) e nenhuma bate, score cai drasticamente
+            # 3. RIGOR: Se o termo tem palavras principais e nenhuma bate, score cai drasticamente
             overlap_primario = len(palavras_primarias.intersection(palavras_cand))
             if palavras_primarias:
                 rigor_overlap = overlap_primario / len(palavras_primarias)
-                if rigor_overlap < 0.6: # Exige que pelo menos 60% das palavras principais batam
+                if rigor_overlap < min_rigor:
                     keyword_score *= 0.1
-                    logger.debug(f"   ❌ Rigor insuficiente: '{cand}' (Overlap primário: {rigor_overlap:.2f})")
+                    logger.debug(f"   ❌ Rigor insuficiente: '{cand}' ({rigor_overlap:.2f} < {min_rigor})")
             
             # 4. Sufixo Penalty: Evita match por número (ex: Borderlands 2 vs Spider-man 2)
             sufixo_penalty = 0
             if overlap_primario == 0 and overlap > 0:
-                sufixo_penalty = 0.8 # Quase mata o match se só bater o número
+                sufixo_penalty = 0.8
             
             final_score = (keyword_score * 0.7) + (seq_match * 0.3) - sufixo_penalty
             
@@ -220,7 +223,7 @@ class PcControlService:
                 highest_score = final_score
                 melhor_match = cand
                 
-        if highest_score < 0.6:
+        if highest_score < 0.5:
             logger.info(f"⚠️ [PCControl] Nenhum candidato qualificado para '{termo}'. Melhor: '{melhor_match}' ({highest_score:.2f})")
             return None
             
@@ -232,9 +235,26 @@ class PcControlService:
         Busca física em todos os drives por pastas que combinem com o nome.
         """
         logger.info(f"🕵️ [DeepSearch] Iniciando crawler em discos locais para: {nome}")
-        drives = ['D:', 'C:', 'G:', 'E:', 'F:']
+        # Ordem de busca: Prioridade para o que é mais provável ser um jogo/app instalado
+        drives = ['D:', 'G:', 'C:', 'E:', 'F:']
         termo = nome.lower().strip()
         
+        # 1. TENTA PRIMEIRO NO MENU INICIAR (Mais rápido e preciso para apps como Excel)
+        search_paths = [
+            os.path.join(os.environ.get('APPDATA', ''), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+            os.path.join(os.environ.get('PROGRAMDATA', ''), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+        ]
+        for base_path in search_paths:
+            if not os.path.exists(base_path): continue
+            for root, _, files in os.walk(base_path):
+                for file in files:
+                    if file.lower().endswith(('.lnk', '.exe')):
+                        name = file.rsplit('.', 1)[0].lower()
+                        if termo in name or name in termo:
+                             logger.info(f"📍 [DeepSearch] App encontrado no Menu Iniciar: {file}")
+                             return os.path.join(root, file)
+
+        # 2. SE NÃO ACHOU, VAI PARA OS DISCOS (Crawler de Pastas)
         for drive in drives:
             drive_path = drive + "\\"
             if not os.path.exists(drive_path): continue
