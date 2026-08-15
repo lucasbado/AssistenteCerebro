@@ -58,6 +58,8 @@ class ConscienciaSituacional:
                 apps = pc.get("apps_disponiveis", [])
                 if apps:
                     resumo.append(f"- Apps/Jogos Prontos: {', '.join(apps)}")
+                else:
+                    resumo.append("- Apps/Jogos: Nenhum detectado ainda. (NÃO INVENTE JOGOS)")
 
         if not resumo:
             return "Ambiente atual: Desconhecido (Sem sensores)."

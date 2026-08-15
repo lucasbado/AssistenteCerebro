@@ -235,8 +235,20 @@ async def websocket_endpoint(websocket: WebSocket):
                         central_alertas.pc_master = websocket
                         logger.info("🖥️ [WS] PC Master auto-registrado via Status.")
                     
+                    # 🧠 CONSCIÊNCIA: Atualiza a consciência situacional com os dados do PC
+                    from servicos.consciencia import consciencia
+                    stats = msg.get("stats", {})
+                    consciencia.atualizar({
+                        "pc_state": {
+                            "is_online": stats.get("online", True),
+                            "cpu": stats.get("cpu", 0),
+                            "ram": stats.get("ram", 0),
+                            "apps_disponiveis": stats.get("apps_disponiveis", [])
+                        }
+                    })
+
                     # Retransmite o status do PC para todos (especialmente para o Celular)
-                    logger.info(f"🖥️ [WS] Status do PC recebido: {msg.get('stats')}")
+                    logger.info(f"🖥️ [WS] Status do PC recebido: {stats}")
                     await central_alertas._broadcast(msg)
                     
             except Exception as e:
