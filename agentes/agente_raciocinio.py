@@ -39,19 +39,6 @@ class AgenteRaciocinio:
             
         logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 1: Iniciando processamento do evento {evento.id[:8]}")
 
-        # 🌟 FEEDBACK IMEDIATO: Sinaliza que a Ollie começou a pensar
-        if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
-            try:
-                await kernel.publicar(evento.clonar(
-                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                    acao=TipoAcao.INTENCAO_INTERACAO,
-                    origem=OrigemEvento.IA,
-                    payload={"tipo_ws": "THINKING", "titulo": "Ollie", "texto": "..."}
-                ))
-                logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 2: Sinal de THINKING enviado.")
-            except Exception as e:
-                logger.error(f"❌ Erro ao enviar sinal de thinking: {e}")
-
         # 1. Recupera Contexto do Obsidian (Long-term)
         try:
             conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
@@ -59,6 +46,19 @@ class AgenteRaciocinio:
         except Exception as e:
             logger.warning(f"⚠️ Erro ao ler Obsidian: {e}")
             conhecimento_atual = ""
+            
+        # 🌟 FEEDBACK IMEDIATO (Silencioso para comandos rápidos)
+        # Se for comando de luz, não manda sinal de thinking para não poluir o chat
+        texto_msg = str(evento.payload.get("texto", "")).lower()
+        if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO and not any(x in texto_msg for x in ["luz", "lampada", "apaga", "liga"]):
+            try:
+                await kernel.publicar(evento.clonar(
+                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                    acao=TipoAcao.INTENCAO_INTERACAO,
+                    origem=OrigemEvento.IA,
+                    payload={"tipo_ws": "THINKING", "titulo": "Ollie", "texto": "..."}
+                ))
+            except: pass
 
         # 2. Salva a mensagem do usuário com TIMEOUT
         chave_conversa = "br.com.assistentecell.chat" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else evento.pacote

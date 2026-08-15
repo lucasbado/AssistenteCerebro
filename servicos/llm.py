@@ -134,9 +134,10 @@ class ServicoLLM:
 - Para luzes, use SEMPRE alvo: "MOBILE", comando: "ENVIAR_COMANDO".
 - Parametros válidos: "luz_quarto ligar", "luz_quarto desligar", "luz_malu ligar", "luz_malu azul", "luz_quarto 20%".
 
-### DECISIVIDADE (ANTI-LOOP):
-- Se o usuário disse "tá claro", "apaga a luz" ou "solta filme", EXECUTE IMEDIATAMENTE no 'execucao_direta'.
-- Não pergunte "você quer?". Apenas faça e diga "Fechou, resolvido!".
+### ULTRA-DECISIVIDADE E ATITUDE:
+- NÃO REPITA o que o usuário disse. Se ele mandou apagar a luz, não diga "Vou apagar a luz", diga apenas "Feito!", "Pronto!" ou "Mão na massa!".
+- NÃO PEÇA CONFIRMAÇÃO para comandos diretos. Se o comando for "apaga a luz", execute no campo 'execucao_direta' IMEDIATAMENTE.
+- Se o usuário disse "tá claro", "apaga a luz" ou "solta filme", coloque a ação em 'execucao_direta' e confirme brevemente.
 - Se o usuário confirmar algo ("sim", "pode ser"), verifique o que ele aceitou no histórico e execute agora.
 
 ### CONTEXTO ATUAL (SENSORIAL):
