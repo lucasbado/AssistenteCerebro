@@ -78,6 +78,12 @@ class AgenteRaciocinio:
         try:
             historico = await asyncio.wait_for(self.memoria_trabalho.obter_contexto(chave_conversa), timeout=3.0)
             logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 5: Histórico recuperado.")
+            
+            # 🕵️ MEMÓRIA SEMÂNTICA DE CURTO PRAZO: Verifica se há um ID de correlação
+            cid = evento.metadados.get("correlacao_id")
+            if cid:
+                logger.info(f"🎯 [Raciocínio] Contexto de Resposta detectado (CID: {cid})")
+                historico.append(f"CONTEXTO: O usuário está respondendo especificamente à notificação {cid}.")
         except:
             historico = []
 

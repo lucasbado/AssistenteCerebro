@@ -26,6 +26,7 @@ CACHE_TTL_SECONDS = 10  # Ignora eventos idênticos em uma janela de 10 segundos
 class RequestEvento(BaseModel):
     categoria: str
     pacote: str | None = None
+    correlacao_id: str | None = None
     conteudo: dict[str, Any]
 
     @model_validator(mode="before")
@@ -101,6 +102,9 @@ async def receber_evento(request: Request):
         pacote=evento.pacote or "br.com.ollie.sensor.sistema",
         payload=evento.conteudo
     )
+    
+    if evento.correlacao_id:
+        evento_canonico.metadados["correlacao_id"] = evento.correlacao_id
 
     # 2. O Pipeline de Atenção avalia e enriquece o evento
     resultado_atencao = pipeline_atencao.avaliar(evento_canonico)
