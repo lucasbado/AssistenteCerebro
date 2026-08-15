@@ -127,23 +127,18 @@ class AgenteRaciocinio:
             exec_direta_lista = [exec_direta_raw]
 
         for exec_direta in exec_direta_lista:
-            # 🛡️ DEFESA: Se a IA retornar lixo ou string em vez de objeto
             if not isinstance(exec_direta, dict):
-                logger.warning(f"⚠️ [Raciocínio] Item de execução inválido (não é dict): {exec_direta}")
                 continue
                 
             if evento.categoria in [CategoriaEvento.NOTIFICACAO, CategoriaEvento.APP_FOREGROUND, CategoriaEvento.MEDIA]:
                 logger.info(f"🛡️ [Raciocínio] Execução direta BLOQUEADA para evento ambiente ({evento.categoria}).")
                 continue
             
-            alvo = str(exec_direta.get("alvo", "PC")).upper().strip()
-            comando = str(exec_direta.get("comando", "")).lower().strip() 
+            alvo = str(exec_direta.get("alvo", "")).upper().strip()
+            comando = str(exec_direta.get("comando", "")).lower().strip() # Forçamos lowercase
             param = str(exec_direta.get("parametro", "")).strip()
 
-            if not comando:
-                continue
-
-            logger.info(f"⚡ [Raciocínio] Executando: {alvo} -> {comando}({param})")
+            logger.info(f"⚡ [Raciocínio] Decisão de Execução Direta: {alvo} -> {comando}({param})")
 
             # 🌟 CASO 1: Pesquisa Web
             if "pesquisa_web" in comando:
