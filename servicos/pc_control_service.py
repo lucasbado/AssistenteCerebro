@@ -261,15 +261,17 @@ class PcControlService:
     def _encontrar_executavel_principal(self, pasta: str, termo: str) -> str:
         """Analisa a pasta e escolhe o .exe mais relevante."""
         candidatos = []
+        logger.info(f"📁 [Scoring] Analisando executáveis em: {pasta}")
+        
         for root, dirs, files in os.walk(pasta):
             # Ignora subpastas irrelevantes
-            if any(x in root.lower() for x in ['engine', 'redist', 'anticheat', 'tools', 'crash', 'logs']):
+            if any(x in root.lower() for x in ['engine', 'redist', 'anticheat', 'tools', 'crash', 'logs', 'binaries']):
                 continue
                 
             for file in files:
                 if file.lower().endswith('.exe'):
                     name = file.rsplit('.', 1)[0].lower()
-                    if any(x in name for x in ['unins', 'crash', 'setup', 'helper', 'dxwebsetup', 'report']):
+                    if any(x in name for x in ['unins', 'crash', 'setup', 'helper', 'dxwebsetup', 'report', 'unity', 'launcher_']):
                         continue
                     candidatos.append(os.path.join(root, file))
 
@@ -281,19 +283,27 @@ class PcControlService:
         nome_pasta_pai = os.path.basename(pasta).lower()
         
         for path in candidatos:
-            name = os.path.basename(path).lower()
+            name = os.path.basename(path).lower().rsplit('.', 1)[0]
             score = 0
-            if termo in name: score += 10
-            if name in termo: score += 5
-            if nome_pasta_pai in name: score += 15
             
-            # Penaliza nomes genéricos ou muito curtos
-            if name in ['launcher', 'game', 'play', 'start']: score += 2
+            # Bônus se o nome do EXE for igual ao da PASTA (Muito comum em jogos)
+            if name == nome_pasta_pai: score += 30
+            elif name in nome_pasta_pai or nome_pasta_pai in name: score += 15
+            
+            # Bônus se bater com o termo de busca do usuário
+            if termo in name: score += 10
+            
+            # Penaliza nomes genéricos
+            if name in ['launcher', 'game', 'play', 'start', 'shipping', 'client']: score -= 5
+            
+            logger.debug(f"   ⚖️  EXE: {name} | Score: {score}")
             
             if score > highest_score:
                 highest_score = score
                 best_path = path
-                
+        
+        if best_path:
+            logger.info(f"🎯 [Scoring] Vencedor: {os.path.basename(best_path)} (Score: {highest_score})")
         return best_path
 
     def inicializar(self):

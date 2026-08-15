@@ -185,17 +185,17 @@ class AgenteRaciocinio:
 
             # 🌟 CASO 3: Comandos Mobile
             elif alvo == "MOBILE":
-                payload_mob = {"tipo_ws": "COMANDO_SISTEMA", "acao": comando.upper(), "parametro": param}
+                # Alinhamento de nomes com o Android SystemCommandHandler
+                acao_ajustada = comando.upper()
+                if acao_ajustada == "SET_ALARM": acao_ajustada = "CONFIGURAR_DESPERTAR"
+                
+                payload_mob = {"tipo_ws": "COMANDO_SISTEMA", "acao": acao_ajustada, "parametro": param}
                 if "abrir_app" in comando: payload_mob["pacote"] = param
-                elif "set_alarm" in comando or "alarme" in comando:
-                    # Tenta extrair hora/min do parametro
-                    payload_mob["acao"] = "SET_ALARM"
-                    payload_mob["parametro"] = param
-
+                
                 # Envia via WebSocket para o Celular
                 from api.websocket import central_alertas
                 await central_alertas._broadcast(payload_mob)
-                logger.info(f"📱 [Raciocínio] Comando Mobile enviado: {comando}")
+                logger.info(f"📱 [Raciocínio] Comando Mobile enviado: {acao_ajustada}({param})")
 
             # 🌟 CASO 4: Gerenciamento de Macros
             if comando == "criar_macro":
