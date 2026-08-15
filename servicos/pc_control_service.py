@@ -223,7 +223,7 @@ class PcControlService:
                 highest_score = final_score
                 melhor_match = cand
                 
-        if highest_score < 0.5:
+        if highest_score < 0.65:
             logger.info(f"⚠️ [PCControl] Nenhum candidato qualificado para '{termo}'. Melhor: '{melhor_match}' ({highest_score:.2f})")
             return None
             
