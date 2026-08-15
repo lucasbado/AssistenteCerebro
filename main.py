@@ -183,6 +183,18 @@ app.add_middleware(
 async def root():
     return {"status": "AssistenteCell Ecosystem is Live", "version": "0.3.0-beta"}
 
+# 🧠 SNAPSHOT DE CONTEXTO (Direto no Main para evitar 404)
+@app.post("/api/v1/contexto/snapshot", tags=["Contexto"])
+async def receber_snapshot_direto(request: Request):
+    from servicos.consciencia import consciencia
+    try:
+        body = await request.json()
+        consciencia.atualizar(body)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Erro no snapshot: {e}")
+        return {"status": "error", "message": str(e)}
+
 app.include_router(eventos_router, tags=["Gateway"])
 app.include_router(ws_router, prefix="/api/v1", tags=["WebSocket"])
 app.include_router(testes_router, tags=["Testes"])

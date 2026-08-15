@@ -125,13 +125,22 @@ class AgenteRaciocinio:
         # 🚀 EXTRAÇÃO ROBUSTA (SCAVENGER): Procura campos em qualquer nível do JSON
         def buscar_campo(obj, campo):
             if isinstance(obj, dict):
-                # 🌟 PRIORIDADE: Se encontrar uma LISTA com itens, retorna ela imediatamente
-                if campo in obj:
-                    val = obj[campo]
-                    if val is not None:
-                        if isinstance(val, list) and len(val) > 0: return val
-                        if isinstance(val, str) and len(val) > 0: return val
+                # Procura aliases comuns para mensagens e comandos
+                aliases = {
+                    "execucao_direta": ["execucao_direta", "comandos", "actions", "exec"],
+                    "mensagem_dinamica": ["mensagem_dinamica", "mensagem", "texto", "chat", "chat_response", "resposta"]
+                }
                 
+                alvos = aliases.get(campo, [campo])
+                for alvo in alvos:
+                    if alvo in obj and obj[alvo] is not None:
+                        val = obj[alvo]
+                        # Se for uma lista de strings (como o campo 'chat' às vezes vem), junta elas
+                        if campo == "mensagem_dinamica" and isinstance(val, list):
+                            return " ".join([str(x) for x in val])
+                        if val: return val
+                
+                # Busca profunda se não achou no nível atual
                 for v in obj.values():
                     if isinstance(v, (dict, list)):
                         res = buscar_campo(v, campo)
@@ -144,12 +153,7 @@ class AgenteRaciocinio:
 
         # Captura os valores reais (Scavenger)
         scavenged_exec = buscar_campo(resultado, "execucao_direta")
-        scavenged_msg = (
-            buscar_campo(resultado, "mensagem_dinamica") or 
-            buscar_campo(resultado, "mensagem") or 
-            buscar_campo(resultado, "texto") or
-            buscar_campo(resultado, "chat_response")
-        )
+        scavenged_msg = buscar_campo(resultado, "mensagem_dinamica")
         
         # 🌟 SINCRONIZAÇÃO: Atualiza o objeto 'resultado' para que o restante do código funcione
         if scavenged_exec: resultado["execucao_direta"] = scavenged_exec
