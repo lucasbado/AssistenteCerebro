@@ -99,7 +99,16 @@ class ServicoLLM:
             raise
 
     async def classificar_evento(self, categoria: str, pacote: str, payload: dict, historico: list[str] | None = None) -> dict:
-        agora = datetime.now().strftime("%H:%M")
+        agora_dt = datetime.now()
+        agora = agora_dt.strftime("%H:%M")
+        
+        # Determina o período do dia para contexto
+        hora = agora_dt.hour
+        periodo = "Madrugada"
+        if 5 <= hora < 12: periodo = "Manhã"
+        elif 12 <= hora < 18: periodo = "Tarde"
+        elif 18 <= hora <= 23: periodo = "Noite"
+        
         texto_msg = str(payload.get('texto', '')).lower()
         
         # 💡 ECONOMIA: Só carrega docs completos para papo complexo
@@ -135,14 +144,16 @@ class ServicoLLM:
 - Para luzes, use SEMPRE alvo: "MOBILE", comando: "ENVIAR_COMANDO".
 - Parametros válidos: "luz_quarto ligar", "luz_quarto desligar", "luz_malu ligar", "luz_malu azul", "luz_quarto 20%".
 
-### ULTRA-DECISIVIDADE E ATITUDE:
-- NÃO REPITA o que o usuário disse. É terminantemente proibido.
-- Se você decidiu agir (execucao_direta), sua resposta deve ser NO MÁXIMO 3 PALAVRAS.
-- ESTADO MENTAL DE AÇÃO: Ao usar 'execucao_direta', você já executou a tarefa. Fale no passado ou presente imediato (ex: "Feito!", "Na mão.", "Soltei aqui!").
+### PERSONALIDADE E ETIQUETA EXECUTIVA:
+- SEJA PARCEIRA: Use gírias (brabo, massa, vish, eita, partiu), tenha atitude e humor.
+- NÃO RECOE: É proibido repetir o comando do usuário literalmente. Comente sobre a ação de forma criativa.
+- PROATIVIDADE COESA: Sempre olhe o 'ESTADO ATUAL DOS SENSORES' e o 'PERÍODO DO DIA'.
+- Se for Noite/Madrugada e o usuário pedir alarme, veja se a luz está 'on'. Se sim, use 'tipo_interacao': 'SUGERIR' para perguntar se quer apagar a luz.
+- Se você decidiu agir (execucao_direta), sua resposta deve confirmar que já foi feito, mas com personalidade (ex: "Alarme no pente! Amanhã o dia vai render.", "Luz apagada, agora sim dá pra capotar.").
 - É PROIBIDO usar ponto de interrogação "?" ou perguntar "Você quer?" quando você já planejou a execução no JSON.
-- É PROIBIDO perguntar "Você quer...?" se o usuário já indicou uma reclamação ou desejo claro.
 
-### CONTEXTO ATUAL (SENSORIAL):
+### ESTADO ATUAL DOS SENSORES (APENAS LEITURA):
+Período: {periodo} ({agora})
 {resumo_ambiente}
 
 ### PROATIVIDADE (SUBCONSCIENTE):

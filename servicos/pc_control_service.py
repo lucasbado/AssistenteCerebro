@@ -180,8 +180,9 @@ class PcControlService:
         """
         if not candidatos: return None
         
-        termo = termo.lower().strip()
-        palavras_termo = set(re.findall(r'\w+', termo))
+        # 🧹 NORMALIZAÇÃO: Remove underlines e hífens para comparação limpa
+        termo = termo.lower().replace("_", " ").replace("-", " ").strip()
+        palavras_termo = set(re.findall(r'[a-zA-Z0-9]+', termo))
         # Palavras primárias = não numéricas e com mais de 1 letra
         palavras_primarias = {p for p in palavras_termo if not p.isdigit() and len(p) > 1}
         
@@ -194,11 +195,12 @@ class PcControlService:
         min_rigor = 0.4 if len(palavras_primarias) <= 1 else 0.6
         
         for cand in candidatos:
-            cand_lower = cand.lower()
-            palavras_cand = set(re.findall(r'\w+', cand_lower))
+            # Normaliza o candidato também para a comparação de palavras
+            cand_norm = cand.lower().replace("_", " ").replace("-", " ")
+            palavras_cand = set(re.findall(r'[a-zA-Z0-9]+', cand_norm))
             
             # 1. Base Score: Difflib Sequence Match (Typos)
-            seq_match = difflib.SequenceMatcher(None, termo, cand_lower).ratio()
+            seq_match = difflib.SequenceMatcher(None, termo, cand_norm).ratio()
             
             # 2. Keyword Match
             overlap = len(palavras_termo.intersection(palavras_cand))
@@ -210,20 +212,14 @@ class PcControlService:
                 rigor_overlap = overlap_primario / len(palavras_primarias)
                 if rigor_overlap < min_rigor:
                     keyword_score *= 0.1
-                    logger.debug(f"   ❌ Rigor insuficiente: '{cand}' ({rigor_overlap:.2f} < {min_rigor})")
             
-            # 4. Sufixo Penalty: Evita match por número (ex: Borderlands 2 vs Spider-man 2)
-            sufixo_penalty = 0
-            if overlap_primario == 0 and overlap > 0:
-                sufixo_penalty = 0.8
-            
-            final_score = (keyword_score * 0.7) + (seq_match * 0.3) - sufixo_penalty
+            final_score = (keyword_score * 0.8) + (seq_match * 0.2)
             
             if final_score > highest_score:
                 highest_score = final_score
                 melhor_match = cand
                 
-        if highest_score < 0.65:
+        if highest_score < 0.60: # Score levemente reduzido para ser mais tolerante
             logger.info(f"⚠️ [PCControl] Nenhum candidato qualificado para '{termo}'. Melhor: '{melhor_match}' ({highest_score:.2f})")
             return None
             

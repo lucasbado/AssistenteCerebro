@@ -125,11 +125,17 @@ class AgenteRaciocinio:
         # 🚀 EXTRAÇÃO ROBUSTA (SCAVENGER): Procura campos em qualquer nível do JSON
         def buscar_campo(obj, campo):
             if isinstance(obj, dict):
-                # 🌟 CORREÇÃO: Verifica se o campo existe E não é None
-                if campo in obj and obj[campo] is not None: return obj[campo]
+                # 🌟 PRIORIDADE: Se encontrar uma LISTA com itens, retorna ela imediatamente
+                if campo in obj:
+                    val = obj[campo]
+                    if val is not None:
+                        if isinstance(val, list) and len(val) > 0: return val
+                        if isinstance(val, str) and len(val) > 0: return val
+                
                 for v in obj.values():
-                    res = buscar_campo(v, campo)
-                    if res: return res
+                    if isinstance(v, (dict, list)):
+                        res = buscar_campo(v, campo)
+                        if res: return res
             elif isinstance(obj, list):
                 for item in obj:
                     res = buscar_campo(item, campo)
@@ -179,10 +185,16 @@ class AgenteRaciocinio:
         
         # 🧠 CONSCIÊNCIA DE AÇÃO: Se a IA planejou executar algo, a mensagem NÃO PODE ser uma pergunta.
         if exec_direta_raw and msg_ia:
-            if "?" in msg_ia or "quer" in msg_ia.lower() or "gostaria" in msg_ia.lower():
-                # Transforma pergunta em afirmação de ação
-                logger.info(f"🧠 [Consciência] Corrigindo hesitação da IA: '{msg_ia}' -> Ação detectada.")
-                msg_ia = "Fechou, fazendo isso agora!"
+            msg_ia_low = msg_ia.lower()
+            
+            # 🛡️ FILTRO DE HESITAÇÃO (Sem mordaça de eco)
+            hesitacao = "?" in msg_ia or any(x in msg_ia_low for x in ["quer", "gostaria", "deseja", "pode ser"])
+
+            if hesitacao:
+                logger.info(f"🧠 [Consciência] Removendo dúvida de ação já disparada: '{msg_ia}'")
+                # Se ela hesitou em algo que já vai fazer, limpamos apenas a dúvida
+                msg_ia = msg_ia.split("?")[0].strip() + "!"
+                if len(msg_ia) < 3: msg_ia = "Fechou, tá na mão!"
                 resultado["mensagem_dinamica"] = msg_ia
 
         if not msg_ia:
