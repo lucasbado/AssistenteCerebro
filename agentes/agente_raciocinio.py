@@ -96,7 +96,8 @@ class AgenteRaciocinio:
                     categoria=evento.categoria.value,
                     pacote=evento.pacote,
                     payload=evento.payload,
-                    historico=historico
+                    historico=historico,
+                    timestamp_dispositivo=evento.timestamp # 🕒 SINCRONIZAÇÃO DE TEMPO
                 ),
                 timeout=40.0
             )

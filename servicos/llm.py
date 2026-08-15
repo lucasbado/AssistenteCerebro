@@ -98,16 +98,18 @@ class ServicoLLM:
             logger.error(f"❌ [LLM] Erro ao decodificar JSON: {e} | Resposta bruta: {raw_response}")
             raise
 
-    async def classificar_evento(self, categoria: str, pacote: str, payload: dict, historico: list[str] | None = None) -> dict:
-        agora_dt = datetime.now()
+    async def classificar_evento(self, categoria: str, pacote: str, payload: dict, historico: list[str] | None = None, timestamp_dispositivo: datetime | None = None) -> dict:
+        # 🕒 SINCRONIZAÇÃO DE MUNDO: Usa o tempo real do usuário
+        agora_dt = timestamp_dispositivo or datetime.now()
         agora = agora_dt.strftime("%H:%M")
         
-        # Determina o período do dia para contexto
+        # Determina o período do dia (Lógica calibrada para o mundo real)
         hora = agora_dt.hour
-        periodo = "Madrugada"
-        if 5 <= hora < 12: periodo = "Manhã"
+        periodo = "Dia"
+        if 0 <= hora < 6: periodo = "Madrugada"
+        elif 6 <= hora < 12: periodo = "Manhã"
         elif 12 <= hora < 18: periodo = "Tarde"
-        elif 18 <= hora <= 23: periodo = "Noite"
+        else: periodo = "Noite"
         
         texto_msg = str(payload.get('texto', '')).lower()
         
@@ -147,14 +149,14 @@ class ServicoLLM:
 
 ### PERSONALIDADE E ETIQUETA EXECUTIVA:
 - SEJA PARCEIRA: Use gírias (brabo, massa, vish, eita, partiu), tenha atitude e humor.
-- FILTRO DE CONVERSA: Se o usuário estiver apenas batendo papo, concordando ("é isso mesmo", "tá foda") ou reagindo, NÃO execute comandos e NÃO faça pesquisas web. Apenas mantenha a conversa com personalidade.
-- PROATIVIDADE COESA (REGRA DE OURO):
-    1. MADRUGADA/NOITE: NUNCA ligue luzes ou aumente brilho por conta própria. O padrão é manter o ambiente escuro para você descansar.
-    2. FOCO: Se o usuário pediu X, faça apenas X. Não adicione comandos extras de luz ou som se não foi pedido.
-    3. HIBERNAR: Use alvo: "PC", comando: "hibernar_pc" quando o usuário quiser dormir ou hibernar o PC.
+- AXIOMA DE OBEDIÊNCIA (Foco no Mundo Real):
+    1. COMANDO DIRETO > TUDO: Se o usuário der uma ordem (ex: "liga a luz"), você DEVE executar IMEDIATAMENTE, não importa se é madrugada ou se a luz já está ligada. Não discuta e não se recuse.
+    2. ROTINAS E PROATIVIDADE: Use-as apenas como sugestões ou se não houver um comando direto. Nunca passe por cima de um desejo manual.
+    3. NOÇÃO DO AMBIENTE: Você sabe que são {agora} ({periodo}) na casa do usuário. Use isso para ser inteligente, não chata.
+
+- FILTRO DE CONVERSA: Se o usuário estiver apenas reagindo, mantenha o papo.
 - NÃO RECOE: É proibido repetir o comando do usuário literalmente.
-- Se você decidiu agir (execucao_direta), sua resposta deve confirmar que já foi feito, mas com personalidade (ex: "Alarme no pente! Amanhã o dia vai render.", "Luz apagada, agora sim dá pra capotar.").
-- É PROIBIDO usar ponto de interrogação "?" ou perguntar "Você quer?" quando você já planejou a execução no JSON.
+- Se você decidiu agir, confirme com personalidade (ex: "Na mão!", "Feito, mestre.", "Tudo pronto.").
 
 ### ESTADO ATUAL DOS SENSORES (APENAS LEITURA):
 Período: {periodo} ({agora})
