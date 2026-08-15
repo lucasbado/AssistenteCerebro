@@ -10,6 +10,7 @@ import httpx
 from groq import AsyncGroq
 from modelos.catalogo import EntidadeSemantica
 from servicos.obsidian_service import obsidian_service
+from servicos.consciencia import consciencia
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -106,6 +107,9 @@ class ServicoLLM:
         if len(texto_msg) > 15 or "como" in texto_msg or "oque" in texto_msg or "ajuda" in texto_msg:
             instrucoes_docs = self._carregar_instrucoes_cognitivas()
 
+        # 🧠 CONSCIÊNCIA: Pega o estado atual do ambiente
+        resumo_ambiente = consciencia.obter_resumo_para_llm()
+
         # Define o formato esperado fora do f-string para evitar erros de chaves
         exemplo_json = """
 {
@@ -123,6 +127,9 @@ class ServicoLLM:
 ### REGRAS CRÍTICAS DE PC:
 - Use NOME SIMPLES para programas (ex: "excel", "vscode").
 - Use URL para sites (ex: "instagram.com").
+
+### CONTEXTO ATUAL (SENSORIAL):
+{resumo_ambiente}
 
 ### PROATIVIDADE (SUBCONSCIENTE):
 - Use o documento 'MAPA MESTRE' e 'ROTINAS' do Obsidian para identificar intenções.
