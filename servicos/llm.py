@@ -118,6 +118,7 @@ class ServicoLLM:
 - Se um evento (notificação/app aberto) bater com a 'Matriz de Coligação', mude 'tipo_interacao' para 'SUGERIR'.
 - Em modo 'SUGERIR', a 'mensagem_dinamica' deve ser uma pergunta: "Vi que você abriu X, quer que eu faça Y?".
 - Inclua o comando sugerido em 'execucao_direta' normalmente.
+- INTERAÇÃO: O usuário pode responder diretamente da notificação ou clicar no botão 'Bora!'. 
 
 ### REGRAS GERAIS: 
 1-Direta (2 frases max). 2-Sem bot-speak. 3-Campo 'mensagem_dinamica' obrigatório. 4-Variar vocabulário.
