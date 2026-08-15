@@ -240,6 +240,13 @@ class AgenteRaciocinio:
 
             # 🌟 CASO 1: Pesquisa Web
             if "pesquisa_web" in comando:
+                # 🛡️ ANTI-LOOP DE PESQUISA: Se a IA está tentando pesquisar algo que ela já falou recentemente
+                if any(x in param.lower() for x in ["chuva", "clima", "tempo"]):
+                    historico_recente = " ".join(historico or []).lower()
+                    if "ollie: eita" in historico_recente or "ollie: parece que" in historico_recente:
+                        logger.info(f"🛡️ [Raciocínio] Bloqueando pesquisa redundante sobre '{param}'.")
+                        continue
+
                 logger.info(f"🌐 [Raciocínio] Escalando para AgentePesquisa: {param}")
                 
                 # 🛡️ Feedback imediato via Chat para manter a constância
