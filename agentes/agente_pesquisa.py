@@ -19,11 +19,10 @@ logger = logging.getLogger(__name__)
 class AgentePesquisa:
     def __init__(self, max_results=2):
         self.max_results = max_results
-        self.ddgs = DDGS(timeout=10)
 
     def _executar_busca(self, query: str):
         """Executa a busca síncrona no DuckDuckGo."""
-        with DDGS() as ddgs:
+        with DDGS(timeout=10) as ddgs:
             return list(ddgs.text(query, max_results=self.max_results))
 
     async def processar(self, evento: EventoCanonico):

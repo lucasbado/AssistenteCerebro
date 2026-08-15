@@ -250,17 +250,29 @@ class AgenteRaciocinio:
         # 5. LÓGICA DE INTERAÇÃO (Notificações e Sugestões)
         tipo_interacao = resultado.get("tipo_interacao")
         
+        # 🛡️ ROBUSTEZ: Tenta extrair a mensagem de várias chaves comuns em modelos menores
+        mensagem = (
+            resultado.get("mensagem_dinamica") or 
+            resultado.get("mensagem") or 
+            resultado.get("texto") or
+            resultado.get("chat_response")
+        )
+        
         # 🌟 SEM FALLBACK: Se for comando do usuário, a IA é obrigada a ter mensagem_dinamica.
         if tipo_interacao in ["NOTIFICAR", "SUGERIR"]:
-            mensagem = resultado.get("mensagem_dinamica")
-            
             # 🛡️ RECUPERAÇÃO: Se a IA esqueceu o texto mas planejou uma ação, usa confirmação padrão
-            if not mensagem and exec_direta_lista:
-                if tipo_interacao == "SUGERIR":
-                    mensagem = "Notei algo aqui, quer uma ajuda com isso?"
-                else:
-                    mensagem = "Massa, fazendo isso agora mesmo!"
-                logger.info(f"🩹 [Raciocínio] Texto recuperado via fallback: {mensagem}")
+            if not mensagem:
+                if exec_direta_lista:
+                    if tipo_interacao == "SUGERIR":
+                        mensagem = "Notei algo aqui, quer uma ajuda com isso?"
+                    else:
+                        mensagem = "Massa, fazendo isso agora mesmo!"
+                elif evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+                    # 🚨 ÚLTIMO RECURSO: Nunca deixar o usuário no vácuo
+                    mensagem = "Entendi! O que mais posso fazer?"
+                
+                if mensagem:
+                    logger.info(f"🩹 [Raciocínio] Texto recuperado via fallback: {mensagem}")
 
             if mensagem:
                 # 🛡️ CENSURA DE NOME: Remove apresentações em conversas contínuas

@@ -30,9 +30,13 @@ async def speak(text: str, voice: str = DEFAULT_VOICE, rate: float = 1.0, pitch:
         
         audio_stream = io.BytesIO()
         async for chunk in communicate.stream():
-            # 🌟 CORREÇÃO: O chunk é um dicionário que pode ter metadados. Só gravamos se for áudio.
-            if chunk.get("type") == "audio":
-                audio_stream.write(chunk["data"])
+            # 🌟 CORREÇÃO ROBUSTA: Verifica se o chunk é um dicionário e tem dados de áudio
+            if isinstance(chunk, dict):
+                if chunk.get("type") == "audio" and "data" in chunk:
+                    audio_stream.write(chunk["data"])
+                elif "data" in chunk and not chunk.get("type"):
+                    # Fallback para versões onde o tipo não vem explícito
+                    audio_stream.write(chunk["data"])
         
         audio_stream.seek(0)
         
