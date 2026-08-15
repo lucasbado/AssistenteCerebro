@@ -138,6 +138,7 @@ class ServicoLLM:
 - Use URL para sites (ex: "instagram.com").
 - FILMES: Se o usuário quer ver um filme, use "pesquisa_google" com o nome do filme.
 - MÚSICA: Para tocar músicas ou artistas específicos, use alvo: "PC", comando: "spotify_play", parametro: "nome da musica/artista".
+- HARDWARE (ALVO: PC): "mutar_mic", "trocar_saida" (ciclagem), "bloquear_pc", "dormir_pc" (sleep), "hibernar_pc" (hibernate), "janela_fullscreen", "janela_maximizar", "janela_minimizar".
 
 ### REGRAS SMART HOME (XIAOMI):
 - NÃO INVENTE APPS (ex: não use "com.example.luz").

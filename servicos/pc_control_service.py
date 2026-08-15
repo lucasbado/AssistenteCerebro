@@ -542,7 +542,12 @@ class PcControlService:
         os.system("rundll32.exe user32.dll,LockWorkStation")
 
     def dormir_pc(self):
+        # Suspender (Sleep)
         os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
+
+    def hibernar_pc(self):
+        # Hibernar (Hibernate) - Salva estado no disco
+        os.system("shutdown /h")
 
     def executar_macro(self, macro_key):
         keys = self.macros.get(macro_key)

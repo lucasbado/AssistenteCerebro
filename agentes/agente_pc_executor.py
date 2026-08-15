@@ -122,6 +122,8 @@ class AgentePcExecutor:
                 pc_control_service.bloquear_pc()
             elif comando == "dormir_pc":
                 pc_control_service.dormir_pc()
+            elif comando == "hibernar_pc":
+                pc_control_service.hibernar_pc()
             elif comando == "modo_imersao":
                 # Se não passar estado, assume True para ligar
                 estado = evento.payload.get("estado", True)
