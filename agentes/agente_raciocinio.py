@@ -148,7 +148,20 @@ class AgenteRaciocinio:
         logger.info(f"🤔 [Raciocínio] LLM Decidiu: Interação={tipo_interacao} | Exec={exec_direta_raw is not None}")
         
         # 🌟 DEBUG: Log do que a IA disse
-        msg_ia = resultado.get("mensagem_dinamica")
+        msg_ia = (
+            resultado.get("mensagem_dinamica") or 
+            resultado.get("mensagem") or 
+            resultado.get("texto")
+        )
+        
+        # 🧠 CONSCIÊNCIA DE AÇÃO: Se a IA planejou executar algo, a mensagem NÃO PODE ser uma pergunta.
+        if exec_direta_raw and msg_ia:
+            if "?" in msg_ia or "quer" in msg_ia.lower() or "gostaria" in msg_ia.lower():
+                # Transforma pergunta em afirmação de ação
+                logger.info(f"🧠 [Consciência] Corrigindo hesitação da IA: '{msg_ia}' -> Ação detectada.")
+                msg_ia = "Fechou, fazendo isso agora!"
+                resultado["mensagem_dinamica"] = msg_ia
+
         if not msg_ia:
             logger.warning(f"⚠️ [Raciocínio] A IA não gerou uma mensagem dinâmica para {evento.categoria.value}")
         else:
