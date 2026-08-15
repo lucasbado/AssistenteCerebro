@@ -118,13 +118,22 @@ class AgenteRaciocinio:
             logger.info(f"💬 [IA] Respondeu: '{msg_ia[:50]}...'")
 
         # 4. LÓGICA DE EXECUÇÃO DIRETA (Prioridade Máxima)
-        exec_direta = resultado.get("execucao_direta")
-        if exec_direta and isinstance(exec_direta, dict):
+        exec_direta_raw = resultado.get("execucao_direta")
+        if not exec_direta_raw:
+            exec_direta_lista = []
+        elif isinstance(exec_direta_raw, list):
+            exec_direta_lista = exec_direta_raw
+        else:
+            exec_direta_lista = [exec_direta_raw]
+
+        for exec_direta in exec_direta_lista:
+            if not isinstance(exec_direta, dict):
+                continue
+                
             if evento.categoria in [CategoriaEvento.NOTIFICACAO, CategoriaEvento.APP_FOREGROUND, CategoriaEvento.MEDIA]:
                 logger.info(f"🛡️ [Raciocínio] Execução direta BLOQUEADA para evento ambiente ({evento.categoria}).")
-                exec_direta = None
+                continue
             
-        if exec_direta and isinstance(exec_direta, dict):
             alvo = str(exec_direta.get("alvo", "")).upper().strip()
             comando = str(exec_direta.get("comando", "")).lower().strip() # Forçamos lowercase
             param = str(exec_direta.get("parametro", "")).strip()
@@ -150,7 +159,7 @@ class AgenteRaciocinio:
                     origem=OrigemEvento.IA,
                     payload={"query": param}
                 ))
-                return
+                continue # Próximo comando na lista
 
             # 🌟 CASO 2: Comandos de PC
             elif alvo == "PC":
@@ -176,16 +185,17 @@ class AgenteRaciocinio:
 
             # 🌟 CASO 3: Comandos Mobile
             elif alvo == "MOBILE":
-                payload_mob = {"comando": comando + "_mobile"} if not comando.endswith("_mobile") else {"comando": comando}
+                payload_mob = {"tipo_ws": "COMANDO_SISTEMA", "acao": comando.upper(), "parametro": param}
                 if "abrir_app" in comando: payload_mob["pacote"] = param
-                elif "abrir_url" in comando: payload_mob["url"] = param
-                
-                await kernel.publicar(evento.clonar(
-                    categoria=CategoriaEvento.SISTEMA_COMANDO_PC,
-                    acao=TipoAcao.NORMAL,
-                    origem=OrigemEvento.IA,
-                    payload=payload_mob
-                ))
+                elif "set_alarm" in comando or "alarme" in comando:
+                    # Tenta extrair hora/min do parametro
+                    payload_mob["acao"] = "SET_ALARM"
+                    payload_mob["parametro"] = param
+
+                # Envia via WebSocket para o Celular
+                from api.websocket import central_alertas
+                await central_alertas._broadcast(payload_mob)
+                logger.info(f"📱 [Raciocínio] Comando Mobile enviado: {comando}")
 
             # 🌟 CASO 4: Gerenciamento de Macros
             if comando == "criar_macro":

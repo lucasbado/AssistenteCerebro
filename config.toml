@@ -8,3 +8,8 @@ vault_path = "D:/Programacao/AssistenteCell/Ollie"
 client_id = "f3057b1a89eb42a48517096408a6c608"
 client_secret = "c6bb12d8f0c64f799e842dacd3c63d5b"
 redirect_uri = "http://127.0.0.1:8888/callback"
+
+[apps_mapeados]
+assassinscreedshadow = "D:\\games\\Assassins Creed Shadows\\ACShadows.exe"
+"spider-man 2" = "D:\\SteamLibrary\\steamapps\\common\\Borderlands 2\\Binaries\\Win32\\Borderlands2.exe"
+assassinscreed = "D:\\games\\Assassins Creed Shadows\\ACShadows.exe"

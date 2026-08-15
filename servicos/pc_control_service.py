@@ -4,6 +4,9 @@ import psutil
 import toml
 import logging
 import webbrowser
+import threading
+import difflib
+import re
 from typing import List
 
 # 🌍 SEGURANÇA CLOUD: Não importa bibliotecas de GUI/Hardware no Render
@@ -45,8 +48,9 @@ class PcControlService:
         self.sp = None
         self.fator_vol = 0.72
         self.mobile_apps = [] 
-        self._carregar_config()
+        self.indexed_apps = {} # Cache de descoberta em 2º plano
         
+        # Mapeamentos Base (Fixos)
         self.app_paths = {
             "vscode": "code",
             "spotify": "C:\\Users\\lucba\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Spotify.lnk",
@@ -55,6 +59,10 @@ class PcControlService:
             "pasta_jogos": "D:\\games",
             "discord": "C:\\Users\\lucba\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Discord Inc\\Discord.lnk"
         }
+        self.app_paths = {k.lower(): v for k, v in self.app_paths.items()}
+        
+        self._carregar_config()
+        
         self.macros = {
             "alt_tab": ["alt", "tab"],
             "win_d": ["win", "d"],
@@ -66,26 +74,230 @@ class PcControlService:
 
     def _carregar_config(self):
         try:
-            # Tenta carregar do caminho absoluto (Local) ou relativo (Cloud/Local)
             path = "D:/Programacao/AssistenteCell/config.toml"
-            if not os.path.exists(path):
-                path = "config.toml" 
+            if not os.path.exists(path): path = "config.toml" 
             
             if os.path.exists(path):
                 config = toml.load(path)
                 self.spot_id = config.get("spotify", {}).get("client_id")
                 self.spot_secret = config.get("spotify", {}).get("client_secret")
                 self.spot_uri = config.get("spotify", {}).get("redirect_uri", "http://127.0.0.1:8888/callback")
+                
+                # Carrega mapeamentos dinâmicos
+                apps_extras = config.get("apps_mapeados", {})
+                for k, v in apps_extras.items():
+                    self.app_paths[k.lower()] = v
+                if apps_extras:
+                    logger.info(f"[PCControl] {len(apps_extras)} apps extras carregados do config.toml")
             else:
-                logger.warning("Arquivo config.toml não encontrado.")
                 self.spot_id = None
         except Exception as e:
             logger.error(f"Erro ao carregar config.toml: {e}")
-            self.spot_id = None
+
+    def salvar_mapeamento(self, nome, path_alvo):
+        try:
+            config_path = "D:/Programacao/AssistenteCell/config.toml"
+            if not os.path.exists(config_path): config_path = "config.toml"
+            
+            config = {}
+            if os.path.exists(config_path):
+                config = toml.load(config_path)
+            
+            if "apps_mapeados" not in config:
+                config["apps_mapeados"] = {}
+                
+            config["apps_mapeados"][nome.lower()] = path_alvo
+            
+            with open(config_path, "w", encoding="utf-8") as f:
+                toml.dump(config, f)
+            logger.info(f"[PCControl] Mapeamento salvo no config.toml: {nome}")
+        except Exception as e:
+            logger.error(f"Erro ao salvar mapeamento: {e}")
+
+    def mapear_todos_apps(self):
+        """
+        Varre o PC em busca de todos os atalhos e programas instalados.
+        Roda em segundo plano para não travar a interface.
+        """
+        logger.info("[PCControl] 🔍 Iniciando mapeamento neural de aplicativos em 2º plano...")
+        search_paths = [
+            os.path.join(os.environ.get('APPDATA', ''), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+            os.path.join(os.environ.get('PROGRAMDATA', ''), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+            os.path.join(os.path.expanduser('~'), 'Desktop'),
+            'C:\\Users\\Public\\Desktop'
+        ]
+        
+        # Bibliotecas de jogos conhecidas
+        game_libs = ["D:\\games", "D:\\SteamLibrary\\steamapps\\common", "C:\\Program Files (x86)\\Steam\\steamapps\\common", "G:\\Jogos"]
+        for p in game_libs:
+            if os.path.exists(p): search_paths.append(p)
+
+        novos_apps = {}
+        for base_path in search_paths:
+            if not os.path.exists(base_path): continue
+            try:
+                # Limite de profundidade adaptativo
+                max_depth = 2 if any(x in base_path.lower() for x in ['games', 'steamapps', 'common']) else 5
+                
+                for root, dirs, files in os.walk(base_path):
+                    depth = root[len(base_path):].count(os.sep)
+                    if depth > max_depth:
+                        del dirs[:]
+                        continue
+
+                    for file in files:
+                        ext = file.lower()
+                        if ext.endswith(('.lnk', '.exe', '.url')):
+                            name = file.rsplit('.', 1)[0].lower()
+                            
+                            # Filtro de ruído (evita launchers de sistema/crash reporters)
+                            if any(x in name for x in ['uninstall', 'unins000', 'crashreporter', 'setup', 'helper', 'dxwebsetup']):
+                                continue
+                                
+                            path = os.path.join(root, file)
+                            
+                            # Tratamento especial para Steam (.url)
+                            if ext.endswith('.url'):
+                                try:
+                                    with open(path, 'r', errors='ignore') as f:
+                                        content = f.read()
+                                        if 'steam://rungameid/' in content:
+                                            novos_apps[name] = path
+                                except: pass
+                            else:
+                                # Prioriza atalhos reais (.lnk) sobre executáveis soltos
+                                if name not in novos_apps or ext.endswith('.lnk'):
+                                    novos_apps[name] = path
+            except Exception as e:
+                logger.error(f"Erro ao varrer {base_path}: {e}")
+        
+        self.indexed_apps.update(novos_apps)
+        logger.info(f"✅ [PCControl] Mapeamento concluído: {len(self.indexed_apps)} programas prontos.")
+
+    def match_inteligente(self, termo: str, candidatos: List[str]) -> str:
+        """
+        Scoring semântico para encontrar o melhor app.
+        Evita falsos positivos baseados em sufixos (ex: "Spider-man 2" vs "Borderlands 2").
+        """
+        if not candidatos: return None
+        
+        termo = termo.lower().strip()
+        palavras_termo = set(re.findall(r'\w+', termo))
+        # Remove números sozinhos do conjunto de palavras primárias para evitar match por sufixo
+        palavras_primarias = {p for p in palavras_termo if not p.isdigit()}
+        
+        melhor_match = None
+        highest_score = -1
+        
+        logger.info(f"🧠 [PCControl] Raciocinando sobre match para '{termo}'...")
+        
+        for cand in candidatos:
+            cand_lower = cand.lower()
+            palavras_cand = set(re.findall(r'\w+', cand_lower))
+            
+            # 1. Base Score: Difflib Sequence Match (Typos)
+            seq_match = difflib.SequenceMatcher(None, termo, cand_lower).ratio()
+            
+            # 2. Keyword Match: Quantas palavras do termo estão no candidato?
+            overlap = len(palavras_termo.intersection(palavras_cand))
+            keyword_score = overlap / len(palavras_termo) if palavras_termo else 0
+            
+            # 3. RIGOR: Se o termo tem palavras (não números) e nenhuma bate, score cai drasticamente
+            overlap_primario = len(palavras_primarias.intersection(palavras_cand))
+            if palavras_primarias and overlap_primario == 0:
+                keyword_score *= 0.1
+                logger.debug(f"   ❌ Rejeitado: '{cand}' (Nenhuma palavra primária bate)")
+            
+            # 4. Sufixo Penalty: " 2", " 3" etc não devem carregar o match sozinhos
+            sufixo_penalty = 0
+            if overlap_primario == 0 and overlap > 0:
+                sufixo_penalty = 0.6 # Punição pesada se só bateu o número
+            
+            # Final Score Calculation
+            final_score = (keyword_score * 0.7) + (seq_match * 0.3) - sufixo_penalty
+            
+            if final_score > highest_score:
+                highest_score = final_score
+                melhor_match = cand
+                
+        if highest_score < 0.55:
+            logger.info(f"⚠️ [PCControl] Match recusado para '{termo}'. Melhor candidato '{melhor_match}' teve score insuficiente ({highest_score:.2f})")
+            return None
+            
+        logger.info(f"✅ [PCControl] Match aceito: '{melhor_match}' (Score: {highest_score:.2f})")
+        return melhor_match
+
+    def deep_search_disk(self, nome: str) -> str:
+        """
+        Busca física em todos os drives por pastas que combinem com o nome.
+        """
+        logger.info(f"🕵️ [DeepSearch] Iniciando crawler em discos locais para: {nome}")
+        drives = ['D:', 'C:', 'G:', 'E:', 'F:']
+        termo = nome.lower().strip()
+        
+        for drive in drives:
+            drive_path = drive + "\\"
+            if not os.path.exists(drive_path): continue
+            
+            logger.info(f"🔎 [DeepSearch] Vasculhando Drive {drive}...")
+            
+            bibliotecas = ['games', 'Jogos', 'SteamLibrary\\steamapps\\common', 'Program Files (x86)', 'Program Files', 'Epic Games', 'Riot Games']
+            for lib in bibliotecas:
+                base_lib = os.path.join(drive_path, lib)
+                if not os.path.exists(base_lib): continue
+                
+                try:
+                    pastas = [d for d in os.listdir(base_lib) if os.path.isdir(os.path.join(base_lib, d))]
+                    match_pasta = self.match_inteligente(termo, pastas)
+                    
+                    if match_pasta:
+                        pasta_alvo = os.path.join(base_lib, match_pasta)
+                        logger.info(f"📍 [DeepSearch] Pasta encontrada: {pasta_alvo}")
+                        melhor_exe = self._encontrar_executavel_principal(pasta_alvo, termo)
+                        if melhor_exe: return melhor_exe
+                except: continue
+        return None
+
+    def _encontrar_executavel_principal(self, pasta: str, termo: str) -> str:
+        """Analisa a pasta e escolhe o .exe mais relevante."""
+        candidatos = []
+        for root, dirs, files in os.walk(pasta):
+            # Ignora subpastas irrelevantes
+            if any(x in root.lower() for x in ['engine', 'redist', 'anticheat', 'tools', 'crash', 'logs']):
+                continue
+                
+            for file in files:
+                if file.lower().endswith('.exe'):
+                    name = file.rsplit('.', 1)[0].lower()
+                    if any(x in name for x in ['unins', 'crash', 'setup', 'helper', 'dxwebsetup', 'report']):
+                        continue
+                    candidatos.append(os.path.join(root, file))
+
+        if not candidatos: return None
+        
+        # Scoring de Relevância
+        best_path = None
+        highest_score = -1
+        nome_pasta_pai = os.path.basename(pasta).lower()
+        
+        for path in candidatos:
+            name = os.path.basename(path).lower()
+            score = 0
+            if termo in name: score += 10
+            if name in termo: score += 5
+            if nome_pasta_pai in name: score += 15
+            
+            # Penaliza nomes genéricos ou muito curtos
+            if name in ['launcher', 'game', 'play', 'start']: score += 2
+            
+            if score > highest_score:
+                highest_score = score
+                best_path = path
+                
+        return best_path
 
     def inicializar(self):
         try:
-            # Tenta Voicemeeter, mas não mata o serviço se falhar (ex: nuvem)
             if voicemeeterlib:
                 try:
                     self.vm = voicemeeterlib.api('banana')
@@ -93,20 +305,18 @@ class PcControlService:
                     logger.info("[PCControl] Voicemeeter conectado.")
                 except Exception as e:
                     logger.warning(f"[PCControl] Falha ao logar no Voicemeeter: {e}")
-            else:
-                logger.warning("[PCControl] Biblioteca voicemeeterlib não instalada.")
 
             self._init_spotify()
             
-            # Pyautogui pode falhar em servidores sem tela
             if pyautogui:
                 try:
                     pyautogui.PAUSE = 0
                     pyautogui.FAILSAFE = False
-                except Exception as e:
-                    logger.warning(f"[PCControl] Falha ao configurar PyAutoGUI: {e}")
-            else:
-                logger.warning("[PCControl] Biblioteca pyautogui não instalada.")
+                except: pass
+            
+            # Inicia mapeamento neural em background
+            if not os.getenv("RENDER"):
+                threading.Thread(target=self.mapear_todos_apps, daemon=True).start()
                 
             return True
         except Exception as e:
@@ -114,14 +324,12 @@ class PcControlService:
             return False
 
     def _init_spotify(self):
-        if not spotipy or not self.spot_id:
-            logger.warning("[PCControl] Spotify ignorado (sem credenciais ou biblioteca).")
-            return
+        if not spotipy or not self.spot_id: return
         try:
             scope = "user-modify-playback-state,user-read-currently-playing,user-read-playback-state,user-library-modify,user-library-read"
             auth = SpotifyOAuth(client_id=self.spot_id, client_secret=self.spot_secret, redirect_uri=self.spot_uri, scope=scope, open_browser=True)
             self.sp = spotipy.Spotify(auth_manager=auth)
-            logger.info("[PCControl] Spotify (Spotipy) conectado.")
+            logger.info("[PCControl] Spotify conectado.")
         except Exception as e:
             logger.warning(f"[PCControl] Falha ao conectar Spotify: {e}")
 
@@ -137,57 +345,22 @@ class PcControlService:
             self.vm.set(f"Strip[{canal}].Gain", db)
 
     def ciclar_saida(self, canal=3):
-        """Cicla as saídas de áudio A1 -> A2 -> A3 no Voicemeeter."""
-        if not self.vm:
-            logger.warning("[PCControl] Voicemeeter não conectado para ciclar saída.")
-            return False
-            
+        if not self.vm: return False
         try:
             a1 = int(self.vm.get(f'Strip[{canal}].A1'))
             a2 = int(self.vm.get(f'Strip[{canal}].A2'))
-            a3 = int(self.vm.get(f'Strip[{canal}].A3'))
-
-            # Lógica de Ciclagem: A1 -> A2 -> A3 -> A1
             if a1 == 1:
                 self.toggle_rota(canal, "A1", False)
                 self.toggle_rota(canal, "A2", True)
-                logger.info(f"🔊 [PCControl] Ciclou para A2 no canal {canal}")
-            elif a2 == 1:
-                self.toggle_rota(canal, "A2", False)
-                self.toggle_rota(canal, "A3", True)
-                logger.info(f"🔊 [PCControl] Ciclou para A3 no canal {canal}")
             else: 
-                self.toggle_rota(canal, "A3", False)
+                self.toggle_rota(canal, "A2", False)
                 self.toggle_rota(canal, "A1", True)
-                logger.info(f"🔊 [PCControl] Ciclou para A1 no canal {canal}")
             return True
-        except Exception as e:
-            logger.error(f"Erro ao ciclar saída: {e}")
-            return False
+        except: return False
 
     def toggle_rota(self, canal, saida, estado):
         if self.vm:
-            try:
-                self.vm.set(f"Strip[{canal}].{saida.upper()}", 1 if estado else 0)
-            except Exception as e:
-                logger.error(f"Erro ao setar rota Strip[{canal}].{saida}: {e}")
-
-    def voicemeeter_set(self, instruction: str):
-        """Executa uma instrução bruta na API do Voicemeeter (Ex: 'Strip[0].A1=1')"""
-        if self.vm:
-            try:
-                self.vm.set(instruction, 1) # Assume 1 se for apenas o nome do parâmetro
-                logger.info(f"✅ [PCControl] Macro executada: {instruction}")
-                return True
-            except Exception as e:
-                # Tenta como comando puro se falhar
-                try:
-                    self.vm.sendtext(instruction)
-                    logger.info(f"✅ [PCControl] Comando enviado: {instruction}")
-                    return True
-                except:
-                    logger.error(f"❌ Erro ao executar macro Voicemeeter '{instruction}': {e}")
-        return False
+            self.vm.set(f"Strip[{canal}].{saida.upper()}", 1 if estado else 0)
 
     def mutar_mic(self):
         if self.vm:
@@ -196,302 +369,114 @@ class PcControlService:
 
     # --- AÇÕES DE SISTEMA ---
     def abrir_app(self, app_key):
-        # 🛡️ TRADUTOR INTELIGENTE: Se a Ollie mandou um pacote Android (com.xxx),
-        # traduz para o site correspondente no PC.
-        if "com.instagram" in app_key: return self.abrir_url("instagram.com")
-        if "com.facebook" in app_key: return self.abrir_url("facebook.com")
-        if "com.youtube" in app_key: return self.abrir_url("youtube.com")
-        if "com.whatsapp" in app_key: return self.abrir_url("web.whatsapp.com")
-        if "com.spotify" in app_key: return self.abrir_url("open.spotify.com")
-        if "com.netflix" in app_key: return self.abrir_url("netflix.com")
+        chave = app_key.lower().strip()
+        logger.info(f"🚀 [Launch] Iniciando sequência para abrir: '{chave}'")
         
-        path = self.app_paths.get(app_key)
-        if not path:
-            self.executar_comando_direto(app_key)
+        # 1. Tenta o mapeamento conhecido
+        path = self.app_paths.get(chave)
+        if path:
+            logger.info(f"✅ [Launch] App mapeado encontrado: {path}")
+            self.executar_comando_direto(path)
             return
-        self.executar_comando_direto(path)
 
-    def abrir_url(self, url):
-        """Abre uma URL no navegador padrão com correção de domínio e múltiplos métodos."""
-        url_limpa = url.lower().strip()
+        # 2. Busca no índice neural (Fuzzy + Keyword)
+        candidatos = list(self.indexed_apps.keys())
+        match = self.match_inteligente(chave, candidatos)
         
-        # Correção para nomes simples (ex: instagram -> instagram.com)
-        dominios_comuns = ["google", "youtube", "instagram", "facebook", "twitter", "whatsapp", "github", "linkedin", "netflix"]
-        
-        if "." not in url_limpa:
-            if url_limpa in dominios_comuns:
-                url_limpa += ".com"
-            else:
-                # Fallback se não souber o que é
-                url_limpa += ".com"
+        if match:
+            path_encontrado = self.indexed_apps[match]
+            logger.info(f"✅ [Launch] Match encontrado no índice: {match}")
+            self.salvar_mapeamento(chave, path_encontrado)
+            self.app_paths[chave] = path_encontrado
+            self.executar_comando_direto(path_encontrado)
+            return
 
-        if not url_limpa.startswith("http"):
-            url_limpa = "https://" + url_limpa
-            
-        logger.info(f"[PCControl] Abrindo URL corrigida: {url_limpa}")
-        
-        try:
-            # Método 1: Webbrowser (Padrão Python)
-            # 🛡️ Otimização para Windows: força o uso do sistema se o webbrowser falhar
-            if not webbrowser.open(url_limpa):
-                raise Exception("webbrowser.open retornou False")
-        except Exception as e:
-            logger.warning(f"Falha no webbrowser.open: {e}. Tentando shell start...")
-            # Fallback 2: Comando 'start' do Windows (Ultra-robusto)
-            try:
-                os.system(f'start "" "{url_limpa}"')
-            except Exception as e2:
-                logger.error(f"Falha total ao abrir URL: {e2}")
-                # Fallback final
-                self.executar_comando_direto(url_limpa)
-
-    def pesquisa_google(self, query):
-        """Realiza uma busca no Google abrindo o navegador."""
-        url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
-        self.executar_comando_direto(url)
-
-    def buscar_arquivos(self, termo: str) -> List[str]:
-        """Procura por arquivos em pastas de usuário."""
-        user_path = os.path.expanduser("~")
-        targets = ["Documents", "Downloads", "Desktop"]
-        found = []
-        for folder in targets:
-            base = os.path.join(user_path, folder)
-            if not os.path.exists(base): continue
-            try:
-                for root, _, files in os.walk(base):
-                    for name in files:
-                        if termo.lower() in name.lower():
-                            found.append(os.path.join(root, name))
-                            if len(found) >= 5: return found
-            except Exception as e:
-                logger.error(f"Erro ao vasculhar {base}: {e}")
-        return found
-
-    def bloquear_pc(self):
-        """Bloqueia a sessão do Windows."""
-        logger.info("[PCControl] Bloqueando PC...")
-        os.system("rundll32.exe user32.dll,LockWorkStation")
-
-    def dormir_pc(self):
-        """Coloca o Windows em modo de suspensão."""
-        logger.info("[PCControl] Colocando PC para dormir...")
-        os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
-
-    def mouse_move(self, dx, dy):
-        if pyautogui: pyautogui.moveRel(dx, dy)
-
-    def mouse_click(self, botao="left"):
-        if pyautogui: pyautogui.click(button=botao)
-
-    def mouse_scroll(self, quantidade):
-        if pyautogui: pyautogui.scroll(quantidade)
+        # 3. Deep Search
+        path_deep = self.deep_search_disk(app_key)
+        if path_deep:
+            logger.info(f"✅ [Launch] Deep Crawler recuperou o alvo: {path_deep}")
+            self.salvar_mapeamento(chave, path_deep)
+            self.app_paths[chave] = path_deep
+            self.executar_comando_direto(path_deep)
+        else:
+            logger.warning(f"❌ [Launch] App '{chave}' não localizado. Tentando execução direta.")
+            self.executar_comando_direto(app_key)
 
     def executar_comando_direto(self, alvo):
         try:
-            logger.info(f"[PCControl] Executando: {alvo}")
-            if alvo.endswith(":") or "\\" in alvo or ":" in alvo:
-                os.startfile(alvo)
-            else:
+            logger.info(f"[PCControl] Executando alvo: {alvo}")
+            
+            # Tratamento de URI (Steam/Web)
+            if "://" in alvo:
+                webbrowser.open(alvo)
+                return
+
+            # Tratamento de atalho Steam (.url)
+            if alvo.lower().endswith(".url"):
+                try:
+                    with open(alvo, 'r', errors='ignore') as f:
+                        for line in f:
+                            if line.startswith('URL=') and 'steam://' in line:
+                                webbrowser.open(line.split('=', 1)[1].strip())
+                                return
+                except: pass
+
+            # Execução de Arquivo Local com Contexto
+            if os.path.exists(alvo):
+                wdir = os.path.dirname(alvo)
                 try:
                     os.startfile(alvo)
                 except:
-                    subprocess.Popen(alvo, shell=True)
+                    # Fallback via Shell 'start' (Crucial para alguns jogos)
+                    subprocess.Popen(f'start "" "{alvo}"', shell=True, cwd=wdir)
+            else:
+                # Fallback final como comando de terminal
+                subprocess.Popen(alvo, shell=True)
+                
         except Exception as e:
-            logger.error(f"[PCControl] Falha ao executar {alvo}: {e}")
+            logger.error(f"[PCControl] Erro na execução de {alvo}: {e}")
+
+    def abrir_url(self, url):
+        url_limpa = url.lower().strip()
+        if "." not in url_limpa: url_limpa += ".com"
+        if not url_limpa.startswith("http"): url_limpa = "https://" + url_limpa
+        try:
+            if not webbrowser.open(url_limpa):
+                os.system(f'start "" "{url_limpa}"')
+        except: self.executar_comando_direto(url_limpa)
+
+    def pesquisa_google(self, query):
+        url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
+        self.executar_comando_direto(url)
+
+    def bloquear_pc(self):
+        os.system("rundll32.exe user32.dll,LockWorkStation")
+
+    def dormir_pc(self):
+        os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
 
     def executar_macro(self, macro_key):
         keys = self.macros.get(macro_key)
-        if keys and pyautogui: 
-            pyautogui.hotkey(*keys)
+        if keys and pyautogui: pyautogui.hotkey(*keys)
 
     def set_modo_imersao(self, ativo: bool):
-        """Ativa ou desativa o modo imersão."""
         if not self.vm: return
         if ativo:
-            logger.info("[PCControl] Ativando Modo Imersão...")
             self.vm.set('Strip[0].Mute', 1)
             if pyautogui: pyautogui.hotkey('win', 'd')
             self.set_gain(4, 30)
         else:
-            logger.info("[PCControl] Desativando Modo Imersão...")
             self.vm.set('Strip[0].Mute', 0)
             self.set_gain(4, 70)
-
-    def janela_fullscreen(self, alvo: str = None):
-        """Tenta colocar a janela atual ou um alvo específico em tela cheia."""
-        if not pyautogui: return
-        if alvo and not self.focar_janela(alvo):
-            logger.warning(f"[PCControl] Cancelando Fullscreen: Alvo '{alvo}' não encontrado.")
-            return
-        
-        logger.info(f"[PCControl] Comutando Tela Cheia para: {alvo or 'Janela Ativa'}")
-        pyautogui.press('f11')
-        pyautogui.press('f')
-
-    def janela_maximizar(self, alvo: str = None):
-        """Maximiza a janela atual ou um alvo específico."""
-        if not pyautogui: return
-        if alvo and not self.focar_janela(alvo):
-            logger.warning(f"[PCControl] Cancelando Maximizar: Alvo '{alvo}' não encontrado.")
-            return
-            
-        logger.info(f"[PCControl] Maximizando: {alvo or 'Janela Ativa'}")
-        pyautogui.hotkey('win', 'up')
-
-    def janela_minimizar(self, alvo: str = None):
-        """Minimiza a janela atual ou um alvo específico."""
-        if not pyautogui: return
-        if alvo and not self.focar_janela(alvo):
-            logger.warning(f"[PCControl] Cancelando Minimizar: Alvo '{alvo}' não encontrado.")
-            return
-            
-        logger.info(f"[PCControl] Minimizando: {alvo or 'Janela Ativa'}")
-        pyautogui.hotkey('win', 'down')
-
-    def focar_janela(self, titulo_parcial: str) -> bool:
-        """Usa PowerShell de alto nível para forçar uma janela para o primeiro plano com inteligência de conteúdo."""
-        # Limpeza agressiva do termo
-        termo_limpo = titulo_parcial.lower()
-        substituicoes = [".com.br", ".com", "https://", "http://", "www.", ".exe"]
-        for s in substituicoes:
-            termo_limpo = termo_limpo.replace(s, "")
-        termo_limpo = termo_limpo.strip()
-
-        logger.info(f"[PCControl] Buscando foco seletivo para: {termo_limpo}")
-        import time
-        
-        # 1. TENTATIVA PRIORITÁRIA: Buscar o termo exato no TÍTULO das janelas
-        ps_script_titulo = f"""
-        $code = @'
-            [DllImport("user32.dll")]
-            public static extern bool SetForegroundWindow(IntPtr hWnd);
-            [DllImport("user32.dll")]
-            public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-            [DllImport("user32.dll")]
-            public static extern bool IsIconic(IntPtr hWnd);
-'@
-        if (-not ([Ref].Assembly.GetType("Win32.Win32Focus"))) {{
-            Add-Type -MemberDefinition $code -Name "Win32Focus" -Namespace "Win32"
-        }}
-        
-        # Busca processos que tenham o termo no TÍTULO da janela e tenham handle
-        $target = Get-Process | Where-Object {{ ($_.MainWindowTitle -match '{termo_limpo}') -and $_.MainWindowHandle -ne 0 }} | Select-Object -First 1
-        if ($target) {{
-            $handle = $target.MainWindowHandle
-            if ([Win32.Win32Focus]::IsIconic($handle)) {{ [Win32.Win32Focus]::ShowWindow($handle, 9) }}
-            [Win32.Win32Focus]::SetForegroundWindow($handle)
-            return $true
-        }}
-        return $false
-        """
-
-        try:
-            if pyautogui: pyautogui.press('alt')
-            result = subprocess.run(["powershell", "-Command", ps_script_titulo], capture_output=True, text=True)
-            if "True" in result.stdout:
-                logger.info(f"✅ [PCControl] Conteúdo '{termo_limpo}' encontrado e focado.")
-                time.sleep(0.5)
-                return True
-        except Exception as e:
-            logger.error(f"Erro no foco por título: {e}")
-
-        # 2. TENTATIVA SECUNDÁRIA: Se não achou o conteúdo, busca pelo processo do app (apenas se for app conhecido)
-        apps_diretos = ["spotify", "discord", "vscode", "code", "studio64", "vlc", "opera", "chrome", "msedge"]
-        if termo_limpo in apps_diretos:
-            # Aqui buscamos pelo nome do processo
-            ps_script_proc = ps_script_titulo.replace(f"$_.MainWindowTitle -match '{termo_limpo}'", f"$_.ProcessName -match '{termo_limpo}'")
-            try:
-                result = subprocess.run(["powershell", "-Command", ps_script_proc], capture_output=True, text=True)
-                if "True" in result.stdout:
-                    logger.info(f"✅ [PCControl] App '{termo_limpo}' focado pelo processo.")
-                    return True
-            except: pass
-
-        logger.warning(f"❌ [PCControl] Não encontrei nenhuma janela ativa com o título '{termo_limpo}'.")
-        return False
-
-    # --- DJ OLLIE (SPOTIPY) ---
-    def tocar_spotify(self, query: str) -> bool:
-        """Busca e toca uma música/artista no Spotify."""
-        if not self.sp: return False
-        try:
-            resultados = self.sp.search(q=query, limit=1, type='track')
-            if resultados['tracks']['items']:
-                track_uri = resultados['tracks']['items'][0]['uri']
-                
-                # Tenta tocar. Se falhar, busca um dispositivo ativo.
-                try:
-                    self.sp.start_playback(uris=[track_uri])
-                except Exception:
-                    devices = self.sp.devices()
-                    if devices and devices['devices']:
-                        # Tenta o primeiro dispositivo disponível
-                        device_id = devices['devices'][0]['id']
-                        self.sp.start_playback(device_id=device_id, uris=[track_uri])
-                    else:
-                        logger.warning("Nenhum dispositivo Spotify ativo encontrado.")
-                        return False
-
-                logger.info(f"🎵 Tocando no Spotify: {query}")
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Erro Spotify: {e}")
-            return False
-
-    def spotify_next(self):
-        if self.sp: self.sp.next_track()
-
-    def spotify_prev(self):
-        if self.sp: self.sp.previous_track()
-
-    def spotify_pause(self):
-        if not self.sp: return
-        try:
-            curr = self.sp.current_playback()
-            if curr and curr['is_playing']: self.sp.pause_playback()
-            else: self.sp.start_playback()
-        except: pass
-
-    def spotify_like(self):
-        if not self.sp: return
-        try:
-            curr = self.sp.current_playback()
-            if curr and curr['item']:
-                t_id = curr['item']['id']
-                if self.sp.current_user_saved_tracks_contains([t_id])[0]:
-                    self.sp.current_user_saved_tracks_delete([t_id])
-                else:
-                    self.sp.current_user_saved_tracks_add([t_id])
-        except: pass
-
-    # --- RELÉ PARA MOBILE ---
-    async def abrir_app_mobile(self, package_name):
-        from api.websocket import central_alertas
-        payload = {"tipo_ws": "COMANDO_SISTEMA", "acao": "ABRIR_APP", "pacote": package_name}
-        await central_alertas._broadcast(payload)
-
-    async def abrir_url_mobile(self, url):
-        from api.websocket import central_alertas
-        payload = {"tipo_ws": "COMANDO_SISTEMA", "acao": "ABRIR_URL", "url": url}
-        await central_alertas._broadcast(payload)
 
     # --- COLETA DE DADOS ---
     def obter_estado_completo(self):
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory().percent
-        disco = psutil.disk_usage('/').percent
-        track, artist, playing, liked = "Nenhuma Música", "", False, False
-        if self.sp:
-            try:
-                curr = self.sp.current_playback()
-                if curr and curr['item']:
-                    track = curr['item']['name']
-                    artist = curr['item']['artists'][0]['name']
-                    playing = curr['is_playing']
-                    liked = self.sp.current_user_saved_tracks_contains([curr['item']['id']])[0]
-            except: pass
+        disco = 0
+        try: disco = psutil.disk_usage('C:').percent
+        except: pass
+        
         v3, v4, m_mute = 50, 50, 0
         if self.vm:
             try:
@@ -499,13 +484,14 @@ class PcControlService:
                 v4 = max(0, min(100, int((self.vm.get('Strip[4].Gain') + 60) / self.fator_vol)))
                 m_mute = int(self.vm.get('Strip[0].Mute'))
             except: pass
+            
         return {
-            "3": { "volume": v3, "a1": int(self.vm.get('Strip[3].A1')) if self.vm else 0, "a2": int(self.vm.get('Strip[3].A2')) if self.vm else 0, "a3": int(self.vm.get('Strip[3].A3')) if self.vm else 0 },
-            "4": { "volume": v4, "a1": int(self.vm.get('Strip[4].A1')) if self.vm else 0, "a2": int(self.vm.get('Strip[4].A2')) if self.vm else 0, "a3": int(self.vm.get('Strip[4].A3')) if self.vm else 0 },
-            "mic_mute": m_mute,
-            "sistema": {"cpu": cpu, "ram": ram, "disco": disco},
-            "spotify": {"track": track, "artist": artist, "playing": playing, "liked": liked},
-            "mobile_apps_count": len(self.mobile_apps)
+            "audio_state": {
+                "3": { "volume": v3, "a1": int(self.vm.get('Strip[3].A1')) if self.vm else 0, "a2": int(self.vm.get('Strip[3].A2')) if self.vm else 0, "a3": int(self.vm.get('Strip[3].A3')) if self.vm else 0 },
+                "4": { "volume": v4, "a1": int(self.vm.get('Strip[4].A1')) if self.vm else 0, "a2": int(self.vm.get('Strip[4].A2')) if self.vm else 0, "a3": int(self.vm.get('Strip[4].A3')) if self.vm else 0 },
+            },
+            "cpu": cpu, "ram": ram, "disco": disco, "online": True, "mic_mute": m_mute,
+            "sistema": {"cpu": cpu, "ram": ram, "disco": disco}
         }
 
 pc_control_service = PcControlService()
