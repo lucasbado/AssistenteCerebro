@@ -49,20 +49,23 @@ class GerenciadorNotificacoes:
         origem = payload.get("origem")
         metadados = payload.get("metadados", {})
         
-        # 🌟 REGRA DE OURO DE ROTEAMENTO:
+        # 🌟 REGRA DE OURO DE ROTEAMENTO (REFORÇADA):
+        tipo_ws = dados_para_envio.get("tipo_ws", "")
         comando_nome = str(dados_para_envio.get("comando", "")).lower()
-        is_mobile_cmd = "_mobile" in comando_nome or ("abrir_app" in comando_nome and "pacote" in dados_para_envio)
+        
+        # Identifica se é comando para o Celular
+        is_mobile_cmd = "_mobile" in comando_nome or ("abrir_app" in comando_nome and "pacote" in dados_para_envio) or (tipo_ws == "COMANDO_SISTEMA")
         tem_comando_pc = ("comando" in dados_para_envio and not is_mobile_cmd) or (categoria == "SISTEMA_COMANDO_PC")
 
         # Define tipo_ws se ausente
-        if 'tipo_ws' not in dados_para_envio:
+        if not tipo_ws:
             if metadados.get("tipo_destino") == "CHAT" or origem == "IA" or categoria == "INTENCAO_NOTIFICACAO":
                 dados_para_envio['tipo_ws'] = 'CHAT_RESPONSE'
             else:
                 dados_para_envio['tipo_ws'] = 'NOTIFICACAO'
-
-        tipo_ws = dados_para_envio.get("tipo_ws")
         
+        tipo_ws = dados_para_envio.get("tipo_ws") # Atualiza após definição acima
+
         # Sincroniza campos de texto
         if 'mensagem' in dados_para_envio:
             dados_para_envio['texto'] = dados_para_envio.pop('mensagem')
@@ -75,22 +78,37 @@ class GerenciadorNotificacoes:
         dados_para_envio['correlacao_id'] = str(payload.get('correlacao_id', ''))
 
         # ROTEAMENTO RESTRITO:
-        # 1. PC: Apenas se for comando de PC e tiver PC conectado
-        if tem_comando_pc and self.pc_master:
-            logger.info(f"⚡ [WS] Roteando comando '{comando_nome}' para PC Master.")
-            await self._enviar_direto(self.pc_master, dados_para_envio)
-            return
-
-        # 2. MOBILE: Se for chat, notificação ou comando mobile
-        if tipo_ws in ["CHAT_RESPONSE", "NOTIFICACAO", "THINKING"] or is_mobile_cmd:
+        # 1. MOBILE: Prioridade para comandos de sistema/luz e chat
+        if tipo_ws in ["CHAT_RESPONSE", "NOTIFICACAO", "THINKING", "COMANDO_SISTEMA"] or is_mobile_cmd:
             if self.mobile_client:
                 logger.info(f"📱 [WS] Roteando {tipo_ws} para Mobile Client.")
-                await self._enviar_direto(self.mobile_client, dados_para_envio)
+                # Tenta envio direto, se falhar, tenta broadcast
+                if await self._enviar_direto(self.mobile_client, dados_para_envio):
+                    return
+
+        # 2. PC: Apenas se for comando de PC e tiver PC conectado
+        if tem_comando_pc and self.pc_master:
+            logger.info(f"⚡ [WS] Roteando comando '{comando_nome}' para PC Master.")
+            if await self._enviar_direto(self.pc_master, dados_para_envio):
                 return
 
         # 3. Fallback: Se não tem alvo definido ou alvo offline, avisa e tenta broadcast
-        logger.debug("📡 [WS] Usando broadcast como último recurso.")
+        logger.debug(f"📡 [WS] Enviando via broadcast (Fim da fila): {tipo_ws}")
         await self._broadcast(dados_para_envio)
+
+    async def _enviar_direto(self, ws: WebSocket, msg: dict) -> bool:
+        """Tenta enviar e retorna sucesso. Se falhar, desconecta o WS."""
+        try:
+            # Verifica se a conexão ainda está teoricamente aberta
+            if ws.client_state.value != 1:
+                self.desconectar(ws)
+                return False
+            await ws.send_text(json.dumps(msg, default=str))
+            return True
+        except Exception as e:
+            logger.error(f"❌ [WS] Falha no envio direto: {e}")
+            self.desconectar(ws)
+            return False
 
     async def enviar_evento_log(self, evento_dict: dict):
         ts = evento_dict.get("timestamp")
