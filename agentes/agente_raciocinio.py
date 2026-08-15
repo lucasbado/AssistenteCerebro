@@ -127,14 +127,23 @@ class AgenteRaciocinio:
         tipo_interacao = resultado.get("tipo_interacao")
         
         texto_u = str(evento.payload.get("texto", "")).lower()
-        if not exec_direta_raw and ("luz" in texto_u or "filme" in texto_u) and ("sim" in texto_u or "pode" in texto_u or "quero" in texto_u):
+        if (not exec_direta_raw or exec_direta_raw == []) and ("luz" in texto_u or "filme" in texto_u or "apaga" in texto_u or "liga" in texto_u) and ("sim" in texto_u or "pode" in texto_u or "quero" in texto_u or "bora" in texto_u):
              # Tenta recuperar o que estava sendo discutido no histórico
              logger.info("🎯 [Raciocínio] Tentando recuperar ação de confirmação implícita...")
-             for msg in reversed(historico or []):
-                 if "Ollie: Você quer" in msg or "Ollie: Gostaria de" in msg:
-                     if "luz do quarto" in msg: exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": "luz_quarto toggle"}
-                     elif "luz da malu" in msg: exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": "luz_malu toggle"}
-                     break
+             # Busca nas últimas 5 mensagens do histórico
+             for msg in reversed((historico or [])[-5:]):
+                 msg_l = msg.lower()
+                 if "ollie:" in msg_l and ("você quer" in msg_l or "gostaria" in msg_l or "deseja" in msg_l):
+                     if "luz do quarto" in msg_l or "iluminação do quarto" in msg_l: 
+                         acao_cmd = "desligar" if "apagar" in msg_l or "desligar" in msg_l or "diminuir" in msg_l else "ligar"
+                         exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": f"luz_quarto {acao_cmd}"}
+                         logger.info(f"✅ [Raciocínio] Ação recuperada: {acao_cmd} luz_quarto")
+                         break
+                     elif "luz da malu" in msg_l:
+                         acao_cmd = "desligar" if "apagar" in msg_l or "desligar" in msg_l else "ligar"
+                         exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": f"luz_malu {acao_cmd}"}
+                         logger.info(f"✅ [Raciocínio] Ação recuperada: {acao_cmd} luz_malu")
+                         break
 
         logger.info(f"🤔 [Raciocínio] LLM Decidiu: Interação={tipo_interacao} | Exec={exec_direta_raw is not None}")
         
