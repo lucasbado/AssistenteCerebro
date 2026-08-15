@@ -188,10 +188,21 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif tipo == "REGISTRO":
                     cliente_id = msg.get("id")
                     if cliente_id == "PC_MASTER":
-                        central_alertas.pc_master = websocket
+                        # 🛡️ ANTI-DUPLICIDADE: Se já havia um PC conectado, fecha a conexão antiga
+                        if self.pc_master and self.pc_master != websocket:
+                            logger.warning("🔄 [WS] Novo PC_MASTER conectando. Fechando conexão antiga.")
+                            try: await self.pc_master.close(1001)
+                            except: pass
+                        self.pc_master = websocket
                         logger.info("🖥️ [WS] PC Master registrado com sucesso!")
+                        
                     elif cliente_id == "MOBILE":
-                        central_alertas.mobile_client = websocket
+                        # 🛡️ ANTI-DUPLICIDADE: Se já havia um Celular conectado, fecha a conexão antiga
+                        if self.mobile_client and self.mobile_client != websocket:
+                            logger.warning("🔄 [WS] Novo MOBILE conectando. Fechando conexão antiga.")
+                            try: await self.mobile_client.close(1001)
+                            except: pass
+                        self.mobile_client = websocket
                         logger.info("📱 [WS] Celular registrado com sucesso!")
                 
                 elif tipo == "LISTA_APPS":
