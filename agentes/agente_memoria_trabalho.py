@@ -87,6 +87,10 @@ class AgenteMemoriaTrabalho:
 
             # 2. Gera um resumo em texto para cada remetente.
             partes_resumo = []
+            nome_app = chave_conversa.split('.')[-1].capitalize() if '.' in chave_conversa else "Sistema"
+            if "whatsapp" in chave_conversa.lower(): nome_app = "WhatsApp"
+            if "instagram" in chave_conversa.lower(): nome_app = "Instagram"
+
             for remetente, textos in mensagens_por_remetente.items():
                 # Heurísticas para categorizar cada notificação
                 textos_puros = []
@@ -102,24 +106,19 @@ class AgenteMemoriaTrabalho:
                     else:
                         textos_puros.append(t)
 
-                # Lista para guardar as partes do resumo deste remetente (ex: "2 mensagens de X", "1 figurinha")
+                # Lista para guardar as partes do resumo deste remetente
                 resumos_parciais = []
 
-                # Parte 1: Mensagens de texto
+                # Parte 1: Mensagens de texto (Incluindo trecho para clareza)
                 if textos_puros:
-                    if len(textos_puros) == 1:
-                        resumos_parciais.append(f"uma mensagem de {remetente} ('...{textos_puros[0][-30:]}')")
-                    else:
-                        resumos_parciais.append(f"{len(textos_puros)} mensagens de {remetente}")
+                    trecho = f" ('{textos_puros[0][:40]}...')" if len(textos_puros) == 1 else ""
+                    s_plural = "s" if len(textos_puros) > 1 else ""
+                    resumos_parciais.append(f"{len(textos_puros)} mensagem{s_plural} de {remetente} no {nome_app}{trecho}")
 
                 # Parte 2: Figurinhas
                 if num_figurinhas > 0:
                     s = 's' if num_figurinhas > 1 else ''
-                    # Se for a única notificação, cria uma frase completa.
-                    if not textos_puros and num_chamadas_perdidas == 0:
-                        resumos_parciais.append(f"{remetente} enviou {num_figurinhas} figurinha{s}")
-                    else:
-                        resumos_parciais.append(f"{num_figurinhas} figurinha{s}")
+                    resumos_parciais.append(f"{num_figurinhas} figurinha{s}")
 
                 # Parte 3: Chamadas perdidas
                 if num_chamadas_perdidas > 0:
