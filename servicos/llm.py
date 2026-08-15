@@ -123,6 +123,7 @@ class ServicoLLM:
 ### REGRAS GERAIS: 
 1-Direta (2 frases max). 2-Sem bot-speak. 3-Campo 'mensagem_dinamica' obrigatório. 4-Variar vocabulário.
 5-MULTI-TASK: Sempre retorne 'execucao_direta' como uma LISTA []. Se o usuário pedir 2 coisas, mande 2 objetos na lista.
+6-RESPOSTAS CURTAS: Se o usuário disser "Sim", "Não", "Massa" ou "Beleza", você DEVE confirmar e encerrar o papo amigavelmente.
 
 FORMATO JSON EXEMPLO:
 {{

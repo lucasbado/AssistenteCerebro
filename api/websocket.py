@@ -199,6 +199,19 @@ async def websocket_endpoint(websocket: WebSocket):
                         central_alertas.mobile_client = websocket
                         logger.info("📱 [WS] Celular registrado com sucesso!")
 
+                elif tipo == "CHAT_MESSAGE":
+                    from core.kernel import kernel
+                    from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
+                    from core.evento import EventoCanonico
+                    logger.info(f"💬 [WS] Mensagem de chat recebida: {msg.get('texto')}")
+                    await kernel.publicar(EventoCanonico(
+                        categoria=CategoriaEvento.SISTEMA_COMANDO_USUARIO,
+                        acao=TipoAcao.NORMAL,
+                        origem=OrigemEvento.USUARIO,
+                        pacote=msg.get("pacote", "com.example.assistentecell"),
+                        payload={"texto": msg.get("texto")}
+                    ))
+
                 elif tipo == "SUGGESTION_REJECTED":
                     from core.kernel import kernel
                     from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
