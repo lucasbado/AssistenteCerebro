@@ -123,8 +123,15 @@ class ServicoLLM:
 1-Direta (2 frases max). 2-Sem bot-speak. 3-Campo 'mensagem_dinamica' obrigatório. 4-Variar vocabulário.
 5-MULTI-TASK: Sempre retorne 'execucao_direta' como uma LISTA []. Se o usuário pedir 2 coisas, mande 2 objetos na lista.
 
-FORMATO JSON:
-{{"tipo_interacao": "NOTIFICAR | SUGERIR | IGNORAR", "mensagem_dinamica": "fala aqui", "execucao_direta": [{{"alvo": "PC", "comando": "abrir_app", "parametro": "excel"}}, {{"alvo": "MOBILE", "comando": "set_alarm", "parametro": "{{'hora':11, 'minuto':0}}"}} ]}}
+FORMATO JSON EXEMPLO:
+{{
+  "tipo_interacao": "NOTIFICAR | SUGERIR | IGNORAR",
+  "mensagem_dinamica": "texto aqui",
+  "execucao_direta": [
+    {{"alvo": "PC", "comando": "abrir_app", "parametro": "excel"}},
+    {{"alvo": "MOBILE", "comando": "set_alarm", "parametro": "{{\\\"hora\\\":11, \\\"minuto\\\":0}}"}}
+  ]
+}}
 
 {instrucoes_docs}
 """

@@ -176,9 +176,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif tipo == "REGISTRO":
                     cliente_id = msg.get("id")
                     if cliente_id == "PC_MASTER":
-                        # 🛡️ ANTI-DUPLICIDADE: Se já havia um PC conectado, remove da lista e fecha
-                        if central_alertas.pc_master and central_alertas.pc_master in central_alertas.conexoes_ativas:
-                            logger.warning("🔄 [WS] Novo PC_MASTER conectando. Removendo conexão antiga.")
+                        # 🛡️ ANTI-DUPLICIDADE: Só fecha se for uma conexão REALMENTE diferente
+                        if central_alertas.pc_master and central_alertas.pc_master != websocket:
+                            logger.warning("🔄 [WS] Novo PC_MASTER detectado. Substituindo conexão antiga.")
                             old_ws = central_alertas.pc_master
                             if old_ws in central_alertas.conexoes_ativas:
                                 central_alertas.conexoes_ativas.remove(old_ws)
@@ -188,9 +188,9 @@ async def websocket_endpoint(websocket: WebSocket):
                         logger.info("🖥️ [WS] PC Master registrado com sucesso!")
                         
                     elif cliente_id == "MOBILE":
-                        # 🛡️ ANTI-DUPLICIDADE: Se já havia um Celular conectado, remove da lista e fecha
-                        if central_alertas.mobile_client and central_alertas.mobile_client in central_alertas.conexoes_ativas:
-                            logger.warning("🔄 [WS] Novo MOBILE conectando. Removendo conexão antiga.")
+                        # 🛡️ ANTI-DUPLICIDADE: Só fecha se for uma conexão REALMENTE diferente
+                        if central_alertas.mobile_client and central_alertas.mobile_client != websocket:
+                            logger.warning("🔄 [WS] Novo MOBILE detectado. Substituindo conexão antiga.")
                             old_ws = central_alertas.mobile_client
                             if old_ws in central_alertas.conexoes_ativas:
                                 central_alertas.conexoes_ativas.remove(old_ws)
