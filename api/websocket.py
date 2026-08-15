@@ -19,6 +19,8 @@ class GerenciadorNotificacoes:
 
     async def conectar(self, websocket: WebSocket):
         await websocket.accept()
+        # 🛡️ ANTI-DUPLICIDADE PREVENTIVA: Remove referências a websockets que já fecharam
+        self.conexoes_ativas = [ws for ws in self.conexoes_ativas if ws.client_state.value == 1]
         self.conexoes_ativas.append(websocket)
         logger.info(f"✅ [WS] Nova conexão! Total ativos: {len(self.conexoes_ativas)}")
         
@@ -43,33 +45,25 @@ class GerenciadorNotificacoes:
         payload_negocio = payload.get("payload", {})
         dados_para_envio = payload_negocio.copy()
         
-        tipo_ws_original = payload.get("tipo_ws")
         categoria = payload.get("categoria")
+        origem = payload.get("origem")
+        metadados = payload.get("metadados", {})
         
         # 🌟 REGRA DE OURO DE ROTEAMENTO:
-        # Se tem um comando que NÃO é mobile, o destino principal é o PC.
         comando_nome = str(dados_para_envio.get("comando", "")).lower()
-        categoria_pc = categoria == "SISTEMA_COMANDO_PC"
-        
-        is_mobile_cmd = "_mobile" in comando_nome or "abrir_app" in comando_nome and "pacote" in dados_para_envio
-        
-        tem_comando_pc = ("comando" in dados_para_envio and not is_mobile_cmd) or categoria_pc
-        
-        # Identifica se deve ir para o CHAT, preservando se já existir um tipo específico
+        is_mobile_cmd = "_mobile" in comando_nome or ("abrir_app" in comando_nome and "pacote" in dados_para_envio)
+        tem_comando_pc = ("comando" in dados_para_envio and not is_mobile_cmd) or (categoria == "SISTEMA_COMANDO_PC")
+
+        # Define tipo_ws se ausente
         if 'tipo_ws' not in dados_para_envio:
-            if 'tipo_ws' in payload:
-                dados_para_envio['tipo_ws'] = payload['tipo_ws']
+            if metadados.get("tipo_destino") == "CHAT" or origem == "IA" or categoria == "INTENCAO_NOTIFICACAO":
+                dados_para_envio['tipo_ws'] = 'CHAT_RESPONSE'
             else:
-                origem = payload.get("origem")
-                metadados = payload.get("metadados", {})
-                if metadados.get("tipo_destino") == "CHAT" or origem == "IA" or categoria == "INTENCAO_NOTIFICACAO":
-                    dados_para_envio['tipo_ws'] = 'CHAT_RESPONSE'
-                else:
-                    dados_para_envio['tipo_ws'] = 'NOTIFICACAO'
+                dados_para_envio['tipo_ws'] = 'NOTIFICACAO'
 
         tipo_ws = dados_para_envio.get("tipo_ws")
-        logger.info(f"📣 [WS] Processando alerta: tipo={tipo_ws}, id={payload.get('correlacao_id')}")
-
+        
+        # Sincroniza campos de texto
         if 'mensagem' in dados_para_envio:
             dados_para_envio['texto'] = dados_para_envio.pop('mensagem')
         dados_para_envio.setdefault("titulo", "Assistente")
@@ -78,30 +72,24 @@ class GerenciadorNotificacoes:
         if 'timestamp' in payload:
             ts = payload['timestamp']
             dados_para_envio['timestamp'] = ts.isoformat() if isinstance(ts, datetime) else str(ts)
-            
         dados_para_envio['correlacao_id'] = str(payload.get('correlacao_id', ''))
 
-        # ROTEAMENTO INTELIGENTE:
-        # 1. Prioridade Máxima: Comandos de Hardware vão para o PC Master
-        if tem_comando_pc:
-            if self.pc_master:
-                logger.info(f"⚡ [WS] Roteando comando '{dados_para_envio.get('comando')}' via WebSocket para PC Master.")
-                await self._enviar_direto(self.pc_master, dados_para_envio)
-                return
-            else:
-                logger.warning(f"⚠️ [WS] Comando recebido mas PC Master está offline.")
-        
-        # 2. Se for resposta de chat, notificação ou thinking, manda para o Celular
-        if tipo_ws in ["CHAT_RESPONSE", "NOTIFICACAO", "THINKING"]:
+        # ROTEAMENTO RESTRITO:
+        # 1. PC: Apenas se for comando de PC e tiver PC conectado
+        if tem_comando_pc and self.pc_master:
+            logger.info(f"⚡ [WS] Roteando comando '{comando_nome}' para PC Master.")
+            await self._enviar_direto(self.pc_master, dados_para_envio)
+            return
+
+        # 2. MOBILE: Se for chat, notificação ou comando mobile
+        if tipo_ws in ["CHAT_RESPONSE", "NOTIFICACAO", "THINKING"] or is_mobile_cmd:
             if self.mobile_client:
-                logger.info(f"📱 [WS] Roteando {tipo_ws} para Mobile Client (Handshake OK).")
+                logger.info(f"📱 [WS] Roteando {tipo_ws} para Mobile Client.")
                 await self._enviar_direto(self.mobile_client, dados_para_envio)
                 return
-            else:
-                logger.warning(f"⚠️ [WS] Tentativa de enviar {tipo_ws} mas Mobile Client não está registrado!")
-                logger.info("📡 [WS] Tentando broadcast como fallback...")
 
-        # 3. Fallback: Envia para todos (Broadcast)
+        # 3. Fallback: Se não tem alvo definido ou alvo offline, avisa e tenta broadcast
+        logger.debug("📡 [WS] Usando broadcast como último recurso.")
         await self._broadcast(dados_para_envio)
 
     async def enviar_evento_log(self, evento_dict: dict):
@@ -188,9 +176,26 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif tipo == "REGISTRO":
                     cliente_id = msg.get("id")
                     if cliente_id == "PC_MASTER":
+                        # 🛡️ ANTI-DUPLICIDADE: Se já havia um PC conectado, remove da lista e fecha
+                        if central_alertas.pc_master and central_alertas.pc_master in central_alertas.conexoes_ativas:
+                            logger.warning("🔄 [WS] Novo PC_MASTER conectando. Removendo conexão antiga.")
+                            old_ws = central_alertas.pc_master
+                            if old_ws in central_alertas.conexoes_ativas:
+                                central_alertas.conexoes_ativas.remove(old_ws)
+                            try: await old_ws.close(1001)
+                            except: pass
                         central_alertas.pc_master = websocket
                         logger.info("🖥️ [WS] PC Master registrado com sucesso!")
+                        
                     elif cliente_id == "MOBILE":
+                        # 🛡️ ANTI-DUPLICIDADE: Se já havia um Celular conectado, remove da lista e fecha
+                        if central_alertas.mobile_client and central_alertas.mobile_client in central_alertas.conexoes_ativas:
+                            logger.warning("🔄 [WS] Novo MOBILE conectando. Removendo conexão antiga.")
+                            old_ws = central_alertas.mobile_client
+                            if old_ws in central_alertas.conexoes_ativas:
+                                central_alertas.conexoes_ativas.remove(old_ws)
+                            try: await old_ws.close(1001)
+                            except: pass
                         central_alertas.mobile_client = websocket
                         logger.info("📱 [WS] Celular registrado com sucesso!")
                 

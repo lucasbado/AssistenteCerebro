@@ -113,12 +113,18 @@ class ServicoLLM:
 - Use NOME SIMPLES para programas (ex: "excel", "vscode").
 - Use URL para sites (ex: "instagram.com").
 
+### PROATIVIDADE (SUBCONSCIENTE):
+- Use o documento 'MAPA MESTRE' e 'ROTINAS' do Obsidian para identificar intenções.
+- Se um evento (notificação/app aberto) bater com a 'Matriz de Coligação', mude 'tipo_interacao' para 'SUGERIR'.
+- Em modo 'SUGERIR', a 'mensagem_dinamica' deve ser uma pergunta: "Vi que você abriu X, quer que eu faça Y?".
+- Inclua o comando sugerido em 'execucao_direta' normalmente.
+
 ### REGRAS GERAIS: 
 1-Direta (2 frases max). 2-Sem bot-speak. 3-Campo 'mensagem_dinamica' obrigatório. 4-Variar vocabulário.
 5-MULTI-TASK: Sempre retorne 'execucao_direta' como uma LISTA []. Se o usuário pedir 2 coisas, mande 2 objetos na lista.
 
 FORMATO JSON:
-{{"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": "fala aqui", "execucao_direta": [{{"alvo": "PC", "comando": "abrir_app", "parametro": "excel"}}, {{"alvo": "MOBILE", "comando": "set_alarm", "parametro": "{{'hora':11, 'minuto':0}}"}} ]}}
+{{"tipo_interacao": "NOTIFICAR | SUGERIR | IGNORAR", "mensagem_dinamica": "fala aqui", "execucao_direta": [{{"alvo": "PC", "comando": "abrir_app", "parametro": "excel"}}, {{"alvo": "MOBILE", "comando": "set_alarm", "parametro": "{{'hora':11, 'minuto':0}}"}} ]}}
 
 {instrucoes_docs}
 """
@@ -227,6 +233,13 @@ Hoje é {agora}. Use gírias e seja direta, mas correta nos facos.
         instrucoes = []
         arquivos = ["capabilities.md", "filosofia.md"]
         
+        # 🌟 NOVO: Adiciona o Mapa Mestre do Obsidian se disponível
+        try:
+            mapa = obsidian_service.ler_nota("Mapa_Mestre.md")
+            if mapa:
+                instrucoes.append(f"### MAPA MESTRE DO USUÁRIO:\n{mapa}")
+        except: pass
+
         # Tenta diretório local ou raiz (Render)
         for pasta in ["D:/Programacao/AssistenteCell/docs", "docs"]:
             if os.path.exists(pasta):

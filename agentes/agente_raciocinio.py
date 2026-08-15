@@ -119,12 +119,20 @@ class AgenteRaciocinio:
 
         # 4. LÓGICA DE EXECUÇÃO DIRETA (Prioridade Máxima)
         exec_direta_raw = resultado.get("execucao_direta")
-        if not exec_direta_raw:
-            exec_direta_lista = []
-        elif isinstance(exec_direta_raw, list):
-            exec_direta_lista = exec_direta_raw
+        tipo_interacao = resultado.get("tipo_interacao")
+
+        # 🧠 MODO SUGERIR: Não executa nada agora, apenas prepara o botão
+        if tipo_interacao == "SUGERIR" and exec_direta_raw:
+            logger.info("💡 [Raciocínio] Modo SUGERIR ativado. Postergando execução.")
+            # Movemos os comandos para 'acao_sugerida' em vez de executar
+            exec_direta_lista = [] 
         else:
-            exec_direta_lista = [exec_direta_raw]
+            if not exec_direta_raw:
+                exec_direta_lista = []
+            elif isinstance(exec_direta_raw, list):
+                exec_direta_lista = exec_direta_raw
+            else:
+                exec_direta_lista = [exec_direta_raw]
 
         for exec_direta in exec_direta_lista:
             if not isinstance(exec_direta, dict):
@@ -163,7 +171,7 @@ class AgenteRaciocinio:
 
             # 🌟 CASO 2: Comandos de PC
             elif alvo == "PC":
-                payload_pc = {"comando": comando, "parametro": param} # 🌟 Sempre inclui o parametro
+                payload_pc = {"comando": comando, "parametro": param} 
                 if "abrir_app" in comando: payload_pc["app"] = param
                 elif "executar_macro" in comando: payload_pc["macro"] = param
                 elif "abrir_url" in comando: payload_pc["url"] = param
@@ -176,11 +184,14 @@ class AgenteRaciocinio:
                 if comando == "maximizar": payload_pc["comando"] = "janela_maximizar"
                 if comando == "minimizar": payload_pc["comando"] = "janela_minimizar"
                 
-                await kernel.publicar(evento.clonar(
+                # 🛡️ ROTEAMENTO DE HARDWARE: Força a categoria e limpa metadados de chat
+                await kernel.publicar(EventoCanonico(
                     categoria=CategoriaEvento.SISTEMA_COMANDO_PC,
                     acao=TipoAcao.NORMAL,
                     origem=OrigemEvento.IA,
-                    payload=payload_pc
+                    payload=payload_pc,
+                    pacote="pc.master",
+                    metadados={"tipo_destino": "PC"} 
                 ))
 
             # 🌟 CASO 3: Comandos Mobile
@@ -213,7 +224,7 @@ class AgenteRaciocinio:
         
         # 🌟 SEM FALLBACK: Se for comando do usuário, a IA é obrigada a ter mensagem_dinamica.
         # Caso não tenha (erro de IA), o sistema apenas loga, mas não envia mentiras.
-        if tipo_interacao == "NOTIFICAR":
+        if tipo_interacao in ["NOTIFICAR", "SUGERIR"]:
             mensagem = resultado.get("mensagem_dinamica")
             if mensagem:
                 # 🛡️ CENSURA DE NOME: Remove apresentações em conversas contínuas
@@ -226,9 +237,17 @@ class AgenteRaciocinio:
 
                 payload_notif = {
                     "texto": mensagem,
-                    "titulo": "Assistente",
+                    "titulo": "Assistente" if tipo_interacao == "NOTIFICAR" else "Ollie Proativa",
                     "contexto": resultado.get("contexto_extra", {}),
                 }
+                
+                # Se for SUGERIR, anexa o primeiro comando da lista como ação do botão
+                if tipo_interacao == "SUGERIR" and exec_direta_raw:
+                    sugestao = exec_direta_raw[0] if isinstance(exec_direta_raw, list) else exec_direta_raw
+                    payload_notif["acao_tipo"] = "ENVIAR_COMANDO"
+                    payload_notif["acao_parametro"] = json.dumps(sugestao)
+                    payload_notif["acao_texto"] = "Bora!"
+                    logger.info(f"💡 [Raciocínio] Botão de sugestão criado: {payload_notif['acao_parametro']}")
                 
                 # Suporte a Sugestão de Regra Automática
                 sugestao = resultado.get("sugestao_regra")
