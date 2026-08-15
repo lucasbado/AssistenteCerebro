@@ -122,7 +122,21 @@ class AgenteRaciocinio:
         # 🌟 LOG DE DECISÃO: Ver exatamente o que a IA pensou
         logger.info(f"📊 [OLLIE_BRAIN] Raw Decision: {json.dumps(resultado, ensure_ascii=False)}")
 
-        logger.info(f"🤔 [Raciocínio] LLM Decidiu: Interação={resultado.get('tipo_interacao')} | Exec={resultado.get('execucao_direta') is not None}")
+        # 🚀 CORREÇÃO: Força execução se a IA sugeriu algo mas o usuário já deu uma ordem
+        exec_direta_raw = resultado.get("execucao_direta")
+        tipo_interacao = resultado.get("tipo_interacao")
+        
+        texto_u = str(evento.payload.get("texto", "")).lower()
+        if not exec_direta_raw and ("luz" in texto_u or "filme" in texto_u) and ("sim" in texto_u or "pode" in texto_u or "quero" in texto_u):
+             # Tenta recuperar o que estava sendo discutido no histórico
+             logger.info("🎯 [Raciocínio] Tentando recuperar ação de confirmação implícita...")
+             for msg in reversed(historico or []):
+                 if "Ollie: Você quer" in msg or "Ollie: Gostaria de" in msg:
+                     if "luz do quarto" in msg: exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": "luz_quarto toggle"}
+                     elif "luz da malu" in msg: exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": "luz_malu toggle"}
+                     break
+
+        logger.info(f"🤔 [Raciocínio] LLM Decidiu: Interação={tipo_interacao} | Exec={exec_direta_raw is not None}")
         
         # 🌟 DEBUG: Log do que a IA disse
         msg_ia = resultado.get("mensagem_dinamica")

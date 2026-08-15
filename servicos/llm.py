@@ -127,12 +127,17 @@ class ServicoLLM:
 ### REGRAS CRÍTICAS DE PC:
 - Use NOME SIMPLES para programas (ex: "excel", "vscode").
 - Use URL para sites (ex: "instagram.com").
-- FILMES: Se o usuário quer ver um filme e você não tem um app de streaming aberto, use "pesquisa_google" ou "abrir_url" com o nome do filme.
+- FILMES: Se o usuário quer ver um filme, use "pesquisa_google" com o nome do filme.
+
+### REGRAS SMART HOME (XIAOMI):
+- NÃO INVENTE APPS (ex: não use "com.example.luz").
+- Para luzes, use SEMPRE alvo: "MOBILE", comando: "ENVIAR_COMANDO".
+- Parametros válidos: "luz_quarto ligar", "luz_quarto desligar", "luz_malu ligar", "luz_malu azul", "luz_quarto 20%".
 
 ### DECISIVIDADE (ANTI-LOOP):
-- Se o usuário já deu uma ordem clara ("Quero ver Homem-Aranha"), NÃO PERGUNTE "Você quer assistir agora?". EXECUTE IMEDIATAMENTE.
-- Só confirme se a ação for destrutiva ou muito ambígua.
-- Respostas curtas e diretas. Se for fazer algo, diga "Fechou, soltando o Homem-Aranha aqui!" e mande o comando.
+- Se o usuário disse "tá claro", "apaga a luz" ou "solta filme", EXECUTE IMEDIATAMENTE no 'execucao_direta'.
+- Não pergunte "você quer?". Apenas faça e diga "Fechou, resolvido!".
+- Se o usuário confirmar algo ("sim", "pode ser"), verifique o que ele aceitou no histórico e execute agora.
 
 ### CONTEXTO ATUAL (SENSORIAL):
 {resumo_ambiente}
