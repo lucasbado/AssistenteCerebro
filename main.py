@@ -48,6 +48,7 @@ from api.router import router as home_router
 from api.voice import router as voice_router
 from servicos.router import router as timeline_router
 from api.pc_control import router as pc_control_router
+from api.contexto import router as contexto_router
 
 # Configuração de Logs
 logging.basicConfig(level=logging.INFO)
@@ -193,6 +194,7 @@ app.include_router(memoria_router, prefix="/api/v1/memory", tags=["Memória"])
 app.include_router(timeline_router, prefix="/api/v1/timeline", tags=["Timeline"])
 app.include_router(pc_control_router, prefix="/api/v1/pc", tags=["PC Control"])
 app.include_router(voice_router, prefix="/api/v1/voice", tags=["Voz"])
+app.include_router(contexto_router, prefix="/api/v1/contexto", tags=["Contexto"])
 
 if __name__ == "__main__":
     import uvicorn
