@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import asyncio
+from datetime import datetime
 from core.evento import EventoCanonico
 from core.tipos import PrioridadeEvento, OrigemEvento, TipoAcao, CategoriaEvento
 from core.kernel import kernel
@@ -26,6 +27,13 @@ class AgenteRaciocinio:
         self.memoria_trabalho = memoria_trabalho
 
     async def processar(self, evento: EventoCanonico):
+        # 🌟 LÓGICA DE APRENDIZADO POR REJEIÇÃO
+        if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO and evento.payload.get("tipo") == "SUGESTAO_REJEITADA":
+            id_orig = evento.payload.get("id_original")
+            logger.info(f"🧠 [Aprendizado] Registrando rejeição da sugestão {id_orig}")
+            obsidian_service.registrar_fato("Aprendizado", f"O usuário rejeitou a sugestão {id_orig} em {datetime.now().strftime('%d/%m/%Y %H:%M')}. Evitar proatividade similar neste contexto.")
+            return
+
         if evento.acao != TipoAcao.INTENCAO_RACIOCINIO:
             return
             

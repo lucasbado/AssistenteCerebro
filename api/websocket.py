@@ -198,6 +198,18 @@ async def websocket_endpoint(websocket: WebSocket):
                             except: pass
                         central_alertas.mobile_client = websocket
                         logger.info("📱 [WS] Celular registrado com sucesso!")
+
+                elif tipo == "SUGGESTION_REJECTED":
+                    from core.kernel import kernel
+                    from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
+                    from core.evento import EventoCanonico
+                    logger.info(f"❌ [WS] Sugestão {msg.get('correlacao_id')} rejeitada pelo usuário.")
+                    await kernel.publicar(EventoCanonico(
+                        categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO,
+                        acao=TipoAcao.NORMAL,
+                        origem=OrigemEvento.USUARIO,
+                        payload={"tipo": "SUGESTAO_REJEITADA", "id_original": msg.get("correlacao_id")}
+                    ))
                 
                 elif tipo == "LISTA_APPS":
                     from servicos.pc_control_service import pc_control_service
