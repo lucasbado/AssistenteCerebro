@@ -118,7 +118,7 @@ class ServicoLLM:
 5-MULTI-TASK: Sempre retorne 'execucao_direta' como uma LISTA []. Se o usuário pedir 2 coisas, mande 2 objetos na lista.
 
 FORMATO JSON:
-{{"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": "fala aqui", "execucao_direta": [{{"alvo": "PC", "comando": "abrir_app", "parametro": "excel"}}, {{"alvo": "MOBILE", "comando": "set_alarm", "parametro": "{'hora':11, 'minuto':0}"}}]}}
+{{"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": "fala aqui", "execucao_direta": [{{"alvo": "PC", "comando": "abrir_app", "parametro": "excel"}}, {{"alvo": "MOBILE", "comando": "set_alarm", "parametro": "{{'hora':11, 'minuto':0}}"}} ]}}
 
 {instrucoes_docs}
 """
