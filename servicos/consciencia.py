@@ -55,6 +55,9 @@ class ConscienciaSituacional:
             resumo.append(f"- Status: {status}")
             if pc.get("is_online"):
                 resumo.append(f"- CPU: {pc.get('cpu')}% | RAM: {pc.get('ram')}%")
+                apps = pc.get("apps_disponiveis", [])
+                if apps:
+                    resumo.append(f"- Apps/Jogos Prontos: {', '.join(apps)}")
 
         if not resumo:
             return "Ambiente atual: Desconhecido (Sem sensores)."

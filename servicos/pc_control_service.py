@@ -499,7 +499,11 @@ class PcControlService:
             self.vm.set('Strip[0].Mute', 0)
             self.set_gain(4, 70)
 
-    # --- COLETA DE DADOS ---
+    def salvar_cache_apps(self, apps: list):
+        """Salva a lista de apps vindos do celular ou do PC Client."""
+        self.mobile_apps = apps
+        logger.info(f"📱 [PCControl] {len(apps)} apps do celular sincronizados.")
+
     def obter_estado_completo(self):
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory().percent
@@ -515,13 +519,17 @@ class PcControlService:
                 m_mute = int(self.vm.get('Strip[0].Mute'))
             except: pass
             
+        # 🧠 CONTEXTO ADICIONAL: Resumo de Apps Indexados (Top 20 para economia)
+        top_apps = list(self.indexed_apps.keys())[:30]
+
         return {
             "audio_state": {
                 "3": { "volume": v3, "a1": int(self.vm.get('Strip[3].A1')) if self.vm else 0, "a2": int(self.vm.get('Strip[3].A2')) if self.vm else 0, "a3": int(self.vm.get('Strip[3].A3')) if self.vm else 0 },
                 "4": { "volume": v4, "a1": int(self.vm.get('Strip[4].A1')) if self.vm else 0, "a2": int(self.vm.get('Strip[4].A2')) if self.vm else 0, "a3": int(self.vm.get('Strip[4].A3')) if self.vm else 0 },
             },
             "cpu": cpu, "ram": ram, "disco": disco, "online": True, "mic_mute": m_mute,
-            "sistema": {"cpu": cpu, "ram": ram, "disco": disco}
+            "sistema": {"cpu": cpu, "ram": ram, "disco": disco},
+            "apps_disponiveis": top_apps
         }
 
 pc_control_service = PcControlService()
