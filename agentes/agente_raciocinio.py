@@ -231,9 +231,17 @@ class AgenteRaciocinio:
         tipo_interacao = resultado.get("tipo_interacao")
         
         # 🌟 SEM FALLBACK: Se for comando do usuário, a IA é obrigada a ter mensagem_dinamica.
-        # Caso não tenha (erro de IA), o sistema apenas loga, mas não envia mentiras.
         if tipo_interacao in ["NOTIFICAR", "SUGERIR"]:
             mensagem = resultado.get("mensagem_dinamica")
+            
+            # 🛡️ RECUPERAÇÃO: Se a IA esqueceu o texto mas planejou uma ação, usa confirmação padrão
+            if not mensagem and exec_direta_lista:
+                if tipo_interacao == "SUGERIR":
+                    mensagem = "Notei algo aqui, quer uma ajuda com isso?"
+                else:
+                    mensagem = "Massa, fazendo isso agora mesmo!"
+                logger.info(f"🩹 [Raciocínio] Texto recuperado via fallback: {mensagem}")
+
             if mensagem:
                 # 🛡️ CENSURA DE NOME: Remove apresentações em conversas contínuas
                 if historico and len(historico) > 0:

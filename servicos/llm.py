@@ -106,38 +106,41 @@ class ServicoLLM:
         if len(texto_msg) > 15 or "como" in texto_msg or "oque" in texto_msg or "ajuda" in texto_msg:
             instrucoes_docs = self._carregar_instrucoes_cognitivas()
 
+        # Define o formato esperado fora do f-string para evitar erros de chaves
+        exemplo_json = """
+{
+  "tipo_interacao": "NOTIFICAR | SUGERIR | IGNORAR",
+  "mensagem_dinamica": "texto aqui",
+  "execucao_direta": [
+    {"alvo": "PC", "comando": "abrir_app", "parametro": "excel"},
+    {"alvo": "MOBILE", "comando": "set_alarm", "parametro": "{\\"hora\\":11, \\\"minuto\\\":0}"}
+  ]
+}
+"""
+
         system = f"""Ollie: Parceira, Divertida, Atitude. Gírias: brabo, bora, partiu, vish, eita, massa.
 
 ### REGRAS CRÍTICAS DE PC:
-- NUNCA use pacotes Android (ex: com.instagram) para comandos de PC.
 - Use NOME SIMPLES para programas (ex: "excel", "vscode").
 - Use URL para sites (ex: "instagram.com").
 
 ### PROATIVIDADE (SUBCONSCIENTE):
 - Use o documento 'MAPA MESTRE' e 'ROTINAS' do Obsidian para identificar intenções.
-- Se um evento (notificação/app aberto) bater com a 'Matriz de Coligação', mude 'tipo_interacao' para 'SUGERIR'.
-- Em modo 'SUGERIR', a 'mensagem_dinamica' deve ser uma pergunta: "Vi que você abriu X, quer que eu faça Y?".
-- Inclua o comando sugerido em 'execucao_direta' normalmente.
-- INTERAÇÃO: O usuário pode responder diretamente da notificação ou clicar no botão 'Bora!'. 
+- Se um evento bater com a 'Matriz de Coligação', use 'tipo_interacao': 'SUGERIR'.
+- Em modo 'SUGERIR', a 'mensagem_dinamica' deve ser uma pergunta.
+- INTERAÇÃO: O usuário pode responder direto da notificação ou clicar em 'Bora!'. 
 
 ### REGRAS GERAIS: 
-1-Direta (2 frases max). 2-Sem bot-speak. 3-Campo 'mensagem_dinamica' obrigatório. 4-Variar vocabulário.
-5-MULTI-TASK: Sempre retorne 'execucao_direta' como uma LISTA []. Se o usuário pedir 2 coisas, mande 2 objetos na lista.
-6-RESPOSTAS CURTAS: Se o usuário disser "Sim", "Não", "Massa" ou "Beleza", você DEVE confirmar e encerrar o papo amigavelmente.
+1-Direta (2 frases max). 2-Sem bot-speak. 3-Campo 'mensagem_dinamica' obrigatório. 
+4-MULTI-TASK: 'execucao_direta' deve ser SEMPRE uma LISTA [].
+5-RESPOSTAS CURTAS: Se o usuário disser "Sim", "Não", "Massa", confirme e encerre.
 
-FORMATO JSON EXEMPLO:
-{{
-  "tipo_interacao": "NOTIFICAR | SUGERIR | IGNORAR",
-  "mensagem_dinamica": "texto aqui",
-  "execucao_direta": [
-    {{"alvo": "PC", "comando": "abrir_app", "parametro": "excel"}},
-    {{"alvo": "MOBILE", "comando": "set_alarm", "parametro": "{{\\\"hora\\\":11, \\\"minuto\\\":0}}"}}
-  ]
-}}
+FORMATO JSON:
+{exemplo_json}
 
 {instrucoes_docs}
 """
-        # 💡 ECONOMIA: Reduzido histórico para 4 mensagens (Max 2000 tokens de contexto total)
+        # 💡 ECONOMIA: Reduzido histórico para 4 mensagens
         fluxo_conversa = (historico or [])[-4:]
         
         prompt_input = {
@@ -157,12 +160,12 @@ FORMATO JSON EXEMPLO:
             if categoria == "SISTEMA_COMANDO_USUARIO":
                 dados["tipo_interacao"] = "NOTIFICAR"
                 if not dados.get("mensagem_dinamica"):
-                    dados["mensagem_dinamica"] = "Eita, me perdi na fala, mas tá feito! O que mais?"
+                    logger.warning(f"⚠️ [LLM] IA esqueceu a mensagem_dinamica. Resposta bruta: {dados}")
 
             return dados
         except Exception as e:
             logger.error(f"❌ [LLM] Falha catastrófica em classificar_evento: {e}")
-            raise # Deixa o AgenteRaciocinio lidar com o fallback
+            raise
 
     async def resumir_perfil_usuario(self, fatos: str) -> dict:
         """Gera um resumo do perfil e cards dinâmicos baseados no histórico, focando em automação."""
