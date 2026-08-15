@@ -122,10 +122,38 @@ class AgenteRaciocinio:
         # 🌟 LOG DE DECISÃO: Ver exatamente o que a IA pensou
         logger.info(f"📊 [OLLIE_BRAIN] Raw Decision: {json.dumps(resultado, ensure_ascii=False)}")
 
-        # 🚀 CORREÇÃO: Força execução se a IA sugeriu algo mas o usuário já deu uma ordem
-        exec_direta_raw = resultado.get("execucao_direta")
-        tipo_interacao = resultado.get("tipo_interacao")
+        # 🚀 EXTRAÇÃO ROBUSTA (SCAVENGER): Procura campos em qualquer nível do JSON
+        def buscar_campo(obj, campo):
+            if isinstance(obj, dict):
+                # 🌟 CORREÇÃO: Verifica se o campo existe E não é None
+                if campo in obj and obj[campo] is not None: return obj[campo]
+                for v in obj.values():
+                    res = buscar_campo(v, campo)
+                    if res: return res
+            elif isinstance(obj, list):
+                for item in obj:
+                    res = buscar_campo(item, campo)
+                    if res: return res
+            return None
+
+        # Captura os valores reais (Scavenger)
+        scavenged_exec = buscar_campo(resultado, "execucao_direta")
+        scavenged_msg = (
+            buscar_campo(resultado, "mensagem_dinamica") or 
+            buscar_campo(resultado, "mensagem") or 
+            buscar_campo(resultado, "texto") or
+            buscar_campo(resultado, "chat_response")
+        )
         
+        # 🌟 SINCRONIZAÇÃO: Atualiza o objeto 'resultado' para que o restante do código funcione
+        if scavenged_exec: resultado["execucao_direta"] = scavenged_exec
+        if scavenged_msg: resultado["mensagem_dinamica"] = scavenged_msg
+
+        exec_direta_raw = resultado.get("execucao_direta")
+        msg_ia = resultado.get("mensagem_dinamica")
+        tipo_interacao = resultado.get("tipo_interacao") or "NOTIFICAR"
+
+        # 🚀 CORREÇÃO: Força execução se a IA sugeriu algo mas o usuário já deu uma ordem
         texto_u = str(evento.payload.get("texto", "")).lower()
         if (not exec_direta_raw or exec_direta_raw == []) and ("luz" in texto_u or "filme" in texto_u or "apaga" in texto_u or "liga" in texto_u) and ("sim" in texto_u or "pode" in texto_u or "quero" in texto_u or "bora" in texto_u):
              # Tenta recuperar o que estava sendo discutido no histórico
@@ -137,22 +165,17 @@ class AgenteRaciocinio:
                      if "luz do quarto" in msg_l or "iluminação do quarto" in msg_l: 
                          acao_cmd = "desligar" if "apagar" in msg_l or "desligar" in msg_l or "diminuir" in msg_l else "ligar"
                          exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": f"luz_quarto {acao_cmd}"}
+                         resultado["execucao_direta"] = exec_direta_raw
                          logger.info(f"✅ [Raciocínio] Ação recuperada: {acao_cmd} luz_quarto")
                          break
                      elif "luz da malu" in msg_l:
                          acao_cmd = "desligar" if "apagar" in msg_l or "desligar" in msg_l else "ligar"
                          exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": f"luz_malu {acao_cmd}"}
+                         resultado["execucao_direta"] = exec_direta_raw
                          logger.info(f"✅ [Raciocínio] Ação recuperada: {acao_cmd} luz_malu")
                          break
 
         logger.info(f"🤔 [Raciocínio] LLM Decidiu: Interação={tipo_interacao} | Exec={exec_direta_raw is not None}")
-        
-        # 🌟 DEBUG: Log do que a IA disse
-        msg_ia = (
-            resultado.get("mensagem_dinamica") or 
-            resultado.get("mensagem") or 
-            resultado.get("texto")
-        )
         
         # 🧠 CONSCIÊNCIA DE AÇÃO: Se a IA planejou executar algo, a mensagem NÃO PODE ser uma pergunta.
         if exec_direta_raw and msg_ia:
@@ -168,6 +191,7 @@ class AgenteRaciocinio:
             logger.info(f"💬 [IA] Respondeu: '{msg_ia[:50]}...'")
 
         # 4. LÓGICA DE EXECUÇÃO DIRETA (Prioridade Máxima)
+        # 🌟 SINCRONIZADO: O código abaixo agora usará os valores extraídos/recuperados
         exec_direta_raw = resultado.get("execucao_direta")
         tipo_interacao = resultado.get("tipo_interacao")
 

@@ -164,11 +164,14 @@ FORMATO JSON:
         # 💡 ECONOMIA: Reduzido histórico para 4 mensagens
         fluxo_conversa = (historico or [])[-4:]
         
-        prompt_input = {
-            "chat": fluxo_conversa,
-            "tech": {"cat": categoria, "app": pacote, "data": payload}
-        }
-        prompt = json.dumps(prompt_input, ensure_ascii=False)
+        # PROMPT SIMPLIFICADO: Evita cópia da estrutura de entrada no JSON de saída
+        prompt = f"""HISTÓRICO RECENTE:
+{json.dumps(fluxo_conversa, ensure_ascii=False)}
+
+EVENTO ATUAL:
+Cat: {categoria} | App: {pacote} | Dados: {json.dumps(payload, ensure_ascii=False)}
+
+Responda no formato JSON padrão."""
 
         try:
             logger.info(f"🧠 [LLM] Pensando via {self.modelo_atual}...")
