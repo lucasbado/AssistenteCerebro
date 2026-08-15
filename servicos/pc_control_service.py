@@ -363,6 +363,69 @@ class PcControlService:
         except Exception as e:
             logger.warning(f"[PCControl] Falha ao conectar Spotify: {e}")
 
+    def spotify_next(self):
+        if self.sp:
+            try: self.sp.next_track()
+            except Exception as e: logger.error(f"Erro Spotify Next: {e}")
+
+    def spotify_prev(self):
+        if self.sp:
+            try: self.sp.previous_track()
+            except Exception as e: logger.error(f"Erro Spotify Prev: {e}")
+
+    def spotify_pause(self):
+        if self.sp:
+            try:
+                current = self.sp.current_playback()
+                if current and current.get('is_playing'): self.sp.pause_playback()
+                else: self.sp.start_playback()
+            except Exception as e: logger.error(f"Erro Spotify Pause/Play: {e}")
+
+    def tocar_spotify(self, query: str):
+        if not self.sp:
+            logger.warning("Spotify não inicializado.")
+            return
+        try:
+            logger.info(f"🎵 [Spotify] Buscando: {query}")
+            
+            # Tenta encontrar um dispositivo ativo para evitar erro 404
+            devices = self.sp.devices()
+            device_id = None
+            if devices and devices.get('devices'):
+                # Prioriza o computador local ou o primeiro ativo
+                active_device = next((d for d in devices['devices'] if d['is_active']), devices['devices'][0])
+                device_id = active_device['id']
+                logger.info(f"📱 [Spotify] Usando dispositivo: {active_device['name']}")
+
+            results = self.sp.search(q=query, limit=1, type='track,playlist,artist')
+            
+            if results['tracks']['items']:
+                uri = results['tracks']['items'][0]['uri']
+                self.sp.start_playback(device_id=device_id, uris=[uri])
+                logger.info(f"✅ [Spotify] Tocando música: {results['tracks']['items'][0]['name']}")
+            elif results['playlists']['items']:
+                uri = results['playlists']['items'][0]['uri']
+                self.sp.start_playback(device_id=device_id, context_uri=uri)
+                logger.info(f"✅ [Spotify] Tocando playlist: {results['playlists']['items'][0]['name']}")
+            elif results['artists']['items']:
+                uri = results['artists']['items'][0]['uri']
+                self.sp.start_playback(device_id=device_id, context_uri=uri)
+                logger.info(f"✅ [Spotify] Tocando artista: {results['artists']['items'][0]['name']}")
+            else:
+                logger.warning(f"Nenhum resultado para: {query}")
+        except Exception as e:
+            logger.error(f"Erro ao tocar Spotify: {e}")
+
+    def spotify_like(self):
+        if self.sp:
+            try:
+                current = self.sp.current_playback()
+                if current and current.get('item'):
+                    track_id = current['item']['id']
+                    self.sp.current_user_saved_tracks_add(tracks=[track_id])
+                    logger.info("❤️ Música curtida no Spotify!")
+            except Exception as e: logger.error(f"Erro Spotify Like: {e}")
+
     def encerrar(self):
         if self.vm:
             try: self.vm.logout()

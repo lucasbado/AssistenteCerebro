@@ -128,6 +128,7 @@ class ServicoLLM:
 - Use NOME SIMPLES para programas (ex: "excel", "vscode").
 - Use URL para sites (ex: "instagram.com").
 - FILMES: Se o usuário quer ver um filme, use "pesquisa_google" com o nome do filme.
+- MÚSICA: Para tocar músicas ou artistas específicos, use alvo: "PC", comando: "spotify_play", parametro: "nome da musica/artista".
 
 ### REGRAS SMART HOME (XIAOMI):
 - NÃO INVENTE APPS (ex: não use "com.example.luz").
