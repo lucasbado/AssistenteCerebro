@@ -428,6 +428,19 @@ class PcControlService:
             except: pass
 
     # --- AÇÕES DE HARDWARE ---
+    def set_vm_param(self, param_path: str, valor):
+        """Define um parâmetro genérico no Voicemeeter (ex: 'Strip[3].A1', 1)."""
+        if self.vm:
+            try:
+                # Converte valor para int se possível (Voicemeeter usa 0/1 para booleans)
+                v = int(valor) if str(valor).isdigit() else valor
+                self.vm.set(param_path, v)
+                logger.info(f"🔊 [Voicemeeter] {param_path} definido para {v}")
+                return True
+            except Exception as e:
+                logger.error(f"Erro ao definir parâmetro VM {param_path}: {e}")
+        return False
+
     def set_gain(self, canal, valor_porcentagem):
         if self.vm:
             db = -60.0 + (valor_porcentagem * self.fator_vol)

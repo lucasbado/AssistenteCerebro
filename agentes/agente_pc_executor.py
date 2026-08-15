@@ -37,42 +37,24 @@ class AgentePcExecutor:
         
         try:
             # --- COMANDOS VOICEMEETER ---
-            if comando == "volume_canal":
+            if comando == "voicemeeter":
+                param = evento.payload.get("parametro")
+                if isinstance(param, str) and "=" in param:
+                    path, valor = param.split("=")
+                    pc_control_service.set_vm_param(path.strip(), valor.strip())
+                else:
+                    # Fallback para parâmetros individuais
+                    pc_control_service.toggle_rota(
+                        evento.payload.get("canal", 3),
+                        evento.payload.get("saida", "A1"),
+                        evento.payload.get("estado") or evento.payload.get("valor") == 1
+                    )
+
+            elif comando == "volume_canal":
                 pc_control_service.set_gain(evento.payload.get("canal"), evento.payload.get("valor"))
-            
-            elif comando == "toggle_rota":
-                pc_control_service.toggle_rota(evento.payload.get("canal"), evento.payload.get("saida"), evento.payload.get("estado"))
             
             elif comando == "mutar_mic":
                 pc_control_service.mutar_mic()
-            
-            elif comando == "trocar_saida":
-                canal = evento.payload.get("canal", 3)
-                if pc_control_service.vm:
-                    a1 = int(pc_control_service.vm.get(f'Strip[{canal}].A1'))
-                    pc_control_service.toggle_rota(canal, "A1", not a1)
-                    pc_control_service.toggle_rota(canal, "A2", a1) # Inverte A1 e A2
-
-            elif comando == "ciclar_saida":
-                canal = evento.payload.get("canal", 3)
-                if pc_control_service.vm:
-                    a1 = int(pc_control_service.vm.get(f'Strip[{canal}].A1'))
-                    a2 = int(pc_control_service.vm.get(f'Strip[{canal}].A2'))
-                    a3 = int(pc_control_service.vm.get(f'Strip[{canal}].A3'))
-
-                    # Lógica de Ciclagem: A1 -> A2 -> A3 -> A1
-                    if a1 == 1:
-                        pc_control_service.toggle_rota(canal, "A1", False)
-                        pc_control_service.toggle_rota(canal, "A2", True)
-                        logger.info(f"🔊 [Agente PC] Ciclou para A2 no canal {canal}")
-                    elif a2 == 1:
-                        pc_control_service.toggle_rota(canal, "A2", False)
-                        pc_control_service.toggle_rota(canal, "A3", True)
-                        logger.info(f"🔊 [Agente PC] Ciclou para A3 no canal {canal}")
-                    else: # Se estiver no A3 ou nenhum ativo
-                        pc_control_service.toggle_rota(canal, "A3", False)
-                        pc_control_service.toggle_rota(canal, "A1", True)
-                        logger.info(f"🔊 [Agente PC] Ciclou para A1 no canal {canal}")
 
             # --- COMANDOS SPOTIFY ---
             elif comando.startswith("spotify_"):

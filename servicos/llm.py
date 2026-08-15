@@ -141,8 +141,8 @@ class ServicoLLM:
 - FILMES: Se o usuário quer ver um filme, use "pesquisa_google" com o nome do filme.
 - MÚSICA: Para tocar músicas ou artistas específicos, use alvo: "PC", comando: "spotify_play", parametro: "nome da musica/artista".
 - HARDWARE (ALVO: PC): "mutar_mic", "trocar_saida" (ciclagem), "bloquear_pc", "dormir_pc" (sleep), "hibernar_pc" (hibernate), "janela_fullscreen", "janela_maximizar", "janela_minimizar".
-- ÁUDIO (ALVO: PC): Para mudar o áudio (ex: "põe no fone"), use comando: "voicemeeter", parametro: {{"canal": 3, "saida": "A1", "valor": 1}}. 
-- MEMÓRIA SEMÂNTICA: Se o usuário ensinar um apelido (ex: "A1 é meu fone"), salve isso IMEDIATAMENTE no campo 'memoria_obsidian' com título "Apelidos_Hardware" e use em comandos futuros.
+- ÁUDIO (ALVO: PC): Para mudar o áudio (ex: "põe no fone"), use comando: "voicemeeter", parametro: "Strip[3].A1=1". 
+- MEMÓRIA SEMÂNTICA: Se o usuário ensinar um apelido (ex: "A1 é meu fone"), salve isso IMEDIATAMENTE no campo 'memoria_obsidian' com título "Apelidos_Hardware" e use em comandos futuros. Use o formato do Voicemeeter (ex: Strip[3].A1=1 para ligar a saída A1 do canal 3).
 
 ### REGRAS SMART HOME (XIAOMI):
 - NÃO INVENTE APPS (ex: não use "com.example.luz").
