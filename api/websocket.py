@@ -14,6 +14,7 @@ class GerenciadorNotificacoes:
     def __init__(self):
         self.conexoes_ativas: list[WebSocket] = []
         self._buffer_mensagens: list[dict] = []
+        self._cache_saida: dict[str, float] = {} # Texto -> Timestamp
         self.pc_master: WebSocket = None # Referência para o PC ligado
         self.mobile_client: WebSocket = None
 
@@ -43,6 +44,18 @@ class GerenciadorNotificacoes:
 
     async def enviar_alerta(self, payload: dict):
         payload_negocio = payload.get("payload", {})
+        
+        # 🛡️ DEDUPLICAÇÃO DE SAÍDA: Evita que a Ollie fale a mesma coisa duas vezes seguidas
+        texto_saida = str(payload_negocio.get("texto", ""))
+        agora = asyncio.get_event_loop().time()
+        if texto_saida in self._cache_saida:
+            if agora - self._cache_saida[texto_saida] < 15.0: # 15 segundos de 'mudo' para repetições
+                logger.debug(f"♻️ [WS] Saída duplicada bloqueada: {texto_saida[:30]}...")
+                return
+        self._cache_saida[texto_saida] = agora
+        # Limpeza periódica do cache
+        if len(self._cache_saida) > 50: self._cache_saida.clear()
+
         dados_para_envio = payload_negocio.copy()
         
         categoria = payload.get("categoria")

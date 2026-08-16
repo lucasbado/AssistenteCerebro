@@ -301,11 +301,17 @@ class AgenteRaciocinio:
 
             # 🌟 CASO 3: Comandos Mobile
             elif alvo == "MOBILE":
+                # 🛡️ CORRETOR DE PLACEHOLDER: IA às vezes envia "correlacao_id_aqui" por engano
+                final_param = param
+                if "correlacao_id" in str(param).lower() or not param:
+                    final_param = cid or evento.id
+                    logger.warning(f"🩹 [Raciocínio] Corrigindo placeholder de ID: {param} -> {final_param}")
+
                 # Alinhamento de nomes com o Android SystemCommandHandler
                 acao_ajustada = comando.upper()
                 if acao_ajustada == "SET_ALARM": acao_ajustada = "CONFIGURAR_DESPERTAR"
                 
-                payload_mob = {"tipo_ws": "COMANDO_SISTEMA", "acao": acao_ajustada, "parametro": param}
+                payload_mob = {"tipo_ws": "COMANDO_SISTEMA", "acao": acao_ajustada, "parametro": final_param}
                 if "abrir_app" in comando: payload_mob["pacote"] = param
                 
                 # Envia via WebSocket para o Celular
