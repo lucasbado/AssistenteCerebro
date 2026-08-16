@@ -183,8 +183,10 @@ class AgenteMemoriaTrabalho:
             # --- FIM DA INTEGRAÇÃO ---
 
             # O payload agora inclui o pré-resumo, o contexto histórico e os dados brutos.
+            # 🌟 MELHORIA: O remetente agora lista os nomes reais para a IA não ser vaga
+            nomes_reais = ", ".join(mensagens_por_remetente.keys())
             payload_agrupado = {
-                "remetente": f"{len(mensagens_unicas)} novas mensagens",
+                "remetente": nomes_reais,
                 "mensagens": [f"{r}: {t}" for r, t in mensagens_unicas],
                 "conversa_completa": "\n".join([f"{r}: {t}" for r, t in mensagens_unicas]),
                 "pre_resumo": resumo_final_str,

@@ -301,11 +301,15 @@ class AgenteRaciocinio:
 
             # 🌟 CASO 3: Comandos Mobile
             elif alvo == "MOBILE":
-                # 🛡️ CORRETOR DE PLACEHOLDER: IA às vezes envia "correlacao_id_aqui" por engano
+                # 🛡️ CORRETOR DE PLACEHOLDER EXTREMO:
+                # Intercepta tanto o texto do manual quanto o exemplo de ID que a IA costuma copiar
                 final_param = param
-                if "correlacao_id" in str(param).lower() or not param:
-                    final_param = cid or evento.id
-                    logger.warning(f"🩹 [Raciocínio] Corrigindo placeholder de ID: {param} -> {final_param}")
+                is_placeholder = "correlacao_id" in str(param).lower() or "a1b2c3" in str(param).lower() or not param
+                
+                if is_placeholder:
+                    # Tenta recuperar o ID real do evento ou dos metadados
+                    final_param = cid or evento.metadados.get("correlacao_id") or evento.id
+                    logger.warning(f"🩹 [Raciocínio] Placeholder detectado! Corrigindo: {param} -> {final_param}")
 
                 # Alinhamento de nomes com o Android SystemCommandHandler
                 acao_ajustada = comando.upper()
