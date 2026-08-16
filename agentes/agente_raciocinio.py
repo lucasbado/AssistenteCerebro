@@ -166,25 +166,32 @@ class AgenteRaciocinio:
 
         # 🚀 CORREÇÃO: Força execução se a IA sugeriu algo mas o usuário já deu uma ordem
         texto_u = str(evento.payload.get("texto", "")).lower()
-        if (not exec_direta_raw or exec_direta_raw == []) and ("luz" in texto_u or "filme" in texto_u or "apaga" in texto_u or "liga" in texto_u) and ("sim" in texto_u or "pode" in texto_u or "quero" in texto_u or "bora" in texto_u):
+        if (not exec_direta_raw or exec_direta_raw == []) and ("luz" in texto_u or "filme" in texto_u or "apaga" in texto_u or "liga" in texto_u or "whats" in texto_u or "responde" in texto_u or "abre" in texto_u) and ("sim" in texto_u or "pode" in texto_u or "quero" in texto_u or "bora" in texto_u or "manda" in texto_u):
              # Tenta recuperar o que estava sendo discutido no histórico
              logger.info("🎯 [Raciocínio] Tentando recuperar ação de confirmação implícita...")
              # Busca nas últimas 5 mensagens do histórico
              for msg in reversed((historico or [])[-5:]):
                  msg_l = msg.lower()
-                 if "ollie:" in msg_l and ("você quer" in msg_l or "gostaria" in msg_l or "deseja" in msg_l):
-                     if "luz do quarto" in msg_l or "iluminação do quarto" in msg_l: 
-                         acao_cmd = "desligar" if "apagar" in msg_l or "desligar" in msg_l or "diminuir" in msg_l else "ligar"
-                         exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": f"luz_quarto {acao_cmd}"}
-                         resultado["execucao_direta"] = exec_direta_raw
-                         logger.info(f"✅ [Raciocínio] Ação recuperada: {acao_cmd} luz_quarto")
-                         break
-                     elif "luz da malu" in msg_l:
+                 if "ollie:" in msg_l and ("você quer" in msg_l or "gostaria" in msg_l or "deseja" in msg_l or "quer ver" in msg_l or "quer responder" in msg_l):
+                     # Recupera o CID do contexto se for resposta a notificação
+                     cid_rec = cid or evento.metadados.get("correlacao_id")
+                     
+                     if "luz do quarto" in msg_l: 
                          acao_cmd = "desligar" if "apagar" in msg_l or "desligar" in msg_l else "ligar"
-                         exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": f"luz_malu {acao_cmd}"}
-                         resultado["execucao_direta"] = exec_direta_raw
-                         logger.info(f"✅ [Raciocínio] Ação recuperada: {acao_cmd} luz_malu")
+                         exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": f"luz_quarto {acao_cmd}"}
                          break
+                     elif "whatsapp" in msg_l or "zap" in msg_l or "mensagens" in msg_l:
+                         if "responde" in texto_u or "diz" in texto_u:
+                             # Extrai o que o usuário quer dizer
+                             resp = texto_u.replace("sim", "").replace("responde", "").replace("diz que", "").replace("que", "").strip()
+                             exec_direta_raw = {"alvo": "MOBILE", "comando": "RESPONDER_MENSAGEM", "parametro": cid_rec, "texto": resp}
+                         else:
+                             exec_direta_raw = {"alvo": "MOBILE", "comando": "ABRIR_NOTIFICACAO", "parametro": cid_rec}
+                         break
+             
+             if exec_direta_raw:
+                 resultado["execucao_direta"] = exec_direta_raw
+                 logger.info(f"✅ [Raciocínio] Ação recuperada com sucesso: {exec_direta_raw}")
 
         logger.info(f"🤔 [Raciocínio] LLM Decidiu: Interação={tipo_interacao} | Exec={exec_direta_raw is not None}")
         
