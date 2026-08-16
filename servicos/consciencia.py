@@ -53,8 +53,22 @@ class ConscienciaSituacional:
             resumo.append("### PC MASTER:")
             status = "Online" if pc.get("is_online") else "Offline"
             resumo.append(f"- Status: {status}")
+            
             if pc.get("is_online"):
                 resumo.append(f"- CPU: {pc.get('cpu')}% | RAM: {pc.get('ram')}%")
+                
+                # Áudio (Voicemeeter)
+                audio = pc.get("audio_state", {})
+                if audio:
+                    resumo.append("- Estado do Áudio (Voicemeeter):")
+                    for canal, info in audio.items():
+                        saidas = []
+                        if info.get("a1"): saidas.append("A1")
+                        if info.get("a2"): saidas.append("A2")
+                        if info.get("a3"): saidas.append("A3")
+                        txt_saida = ", ".join(saidas) if saidas else "Mudo"
+                        resumo.append(f"  * Strip {canal}: Ativo em {txt_saida} (Vol: {info.get('volume')}%)")
+
                 apps = pc.get("apps_disponiveis", [])
                 if apps:
                     resumo.append(f"- Apps/Jogos Prontos: {', '.join(apps)}")

@@ -433,19 +433,33 @@ class PcControlService:
         if not self.vm:
             logger.warning("Voicemeeter não inicializado.")
             return False
-            
+
+        # 🌟 SUPORTE A MÚLTIPLOS PARÂMETROS (EXCLUSIVIDADE)
+        # Se receber uma string com vírgulas (ex: "Strip[3].A1=1, Strip[3].A2=0")
+        if "," in str(param_path) or "," in str(valor):
+            comandos = str(param_path).split(",") if "," in str(param_path) else [f"{param_path}={valor}"]
+            sucesso = True
+            for cmd in comandos:
+                if "=" in cmd:
+                    p, v = cmd.split("=")
+                    if not self._set_single_vm_param(p.strip(), v.strip()): sucesso = False
+            return sucesso
+
+        return self._set_single_vm_param(param_path, valor)
+
+    def _set_single_vm_param(self, param_path: str, valor):
+        """Lógica interna para um único parâmetro."""
         try:
-            # Converte valor (0/1 para booleans)
             v = int(valor) if str(valor).strip() in ["0", "1"] else valor
             
-            # Tenta 1: Sintaxe original (ex: Strip[3].A1)
+            # Tenta 1: Sintaxe original
             try:
                 self.vm.set(param_path, v)
                 logger.info(f"🔊 [Voicemeeter] Sucesso (A1): {param_path}={v}")
                 return True
             except: pass
             
-            # Tenta 2: Sintaxe minúscula (ex: strip[3].A1) - Mais comum em libs Python
+            # Tenta 2: Sintaxe minúscula
             try:
                 path_lower = param_path.lower()
                 self.vm.set(path_lower, v)
@@ -453,8 +467,7 @@ class PcControlService:
                 return True
             except: pass
 
-            # Tenta 3: Atribuição direta se a lib suportar (vm.strip[3].A1 = v)
-            # Útil se 'set' não estiver disponível mas o mapeamento de atributos sim
+            # Tenta 3: Atribuição direta
             if "strip" in param_path.lower():
                 import re
                 m = re.search(r'\[(\d+)\]\.(\w+)', param_path)
@@ -463,11 +476,7 @@ class PcControlService:
                     setattr(self.vm.strip[idx], attr, v)
                     logger.info(f"🔊 [Voicemeeter] Sucesso (A3): strip[{idx}].{attr}={v}")
                     return True
-
-            logger.error(f"❌ [Voicemeeter] Falha total ao definir {param_path}")
-        except Exception as e:
-            logger.error(f"Erro crítico Voicemeeter: {e}")
-            
+        except: pass
         return False
 
     def set_gain(self, canal, valor_porcentagem):
