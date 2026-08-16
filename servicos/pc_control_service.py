@@ -429,16 +429,45 @@ class PcControlService:
 
     # --- AÇÕES DE HARDWARE ---
     def set_vm_param(self, param_path: str, valor):
-        """Define um parâmetro genérico no Voicemeeter (ex: 'Strip[3].A1', 1)."""
-        if self.vm:
+        """Define um parâmetro no Voicemeeter com fallback de sintaxe."""
+        if not self.vm:
+            logger.warning("Voicemeeter não inicializado.")
+            return False
+            
+        try:
+            # Converte valor (0/1 para booleans)
+            v = int(valor) if str(valor).strip() in ["0", "1"] else valor
+            
+            # Tenta 1: Sintaxe original (ex: Strip[3].A1)
             try:
-                # Converte valor para int se possível (Voicemeeter usa 0/1 para booleans)
-                v = int(valor) if str(valor).isdigit() else valor
                 self.vm.set(param_path, v)
-                logger.info(f"🔊 [Voicemeeter] {param_path} definido para {v}")
+                logger.info(f"🔊 [Voicemeeter] Sucesso (A1): {param_path}={v}")
                 return True
-            except Exception as e:
-                logger.error(f"Erro ao definir parâmetro VM {param_path}: {e}")
+            except: pass
+            
+            # Tenta 2: Sintaxe minúscula (ex: strip[3].A1) - Mais comum em libs Python
+            try:
+                path_lower = param_path.lower()
+                self.vm.set(path_lower, v)
+                logger.info(f"🔊 [Voicemeeter] Sucesso (A2): {path_lower}={v}")
+                return True
+            except: pass
+
+            # Tenta 3: Atribuição direta se a lib suportar (vm.strip[3].A1 = v)
+            # Útil se 'set' não estiver disponível mas o mapeamento de atributos sim
+            if "strip" in param_path.lower():
+                import re
+                m = re.search(r'\[(\d+)\]\.(\w+)', param_path)
+                if m:
+                    idx, attr = int(m.group(1)), m.group(2)
+                    setattr(self.vm.strip[idx], attr, v)
+                    logger.info(f"🔊 [Voicemeeter] Sucesso (A3): strip[{idx}].{attr}={v}")
+                    return True
+
+            logger.error(f"❌ [Voicemeeter] Falha total ao definir {param_path}")
+        except Exception as e:
+            logger.error(f"Erro crítico Voicemeeter: {e}")
+            
         return False
 
     def set_gain(self, canal, valor_porcentagem):
