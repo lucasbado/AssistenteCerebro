@@ -113,7 +113,15 @@ class AgenteMemoriaTrabalho:
                 if textos_puros:
                     trecho = f" ('{textos_puros[0][:40]}...')" if len(textos_puros) == 1 else ""
                     s_plural = "s" if len(textos_puros) > 1 else ""
-                    resumos_parciais.append(f"{len(textos_puros)} mensagem{s_plural} de {remetente} no {nome_app}{trecho}")
+                    
+                    # 🛡️ LÓGICA DE REMETENTE INTELIGENTE:
+                    # Se o remetente é o nome do app ou vazio, não repete "mensagem de app no app"
+                    is_generic = not remetente or remetente.lower() in [nome_app.lower(), "ollie", "sistema"]
+                    
+                    if is_generic:
+                        resumos_parciais.append(f"{len(textos_puros)} mensagem{s_plural} no {nome_app}{trecho}")
+                    else:
+                        resumos_parciais.append(f"{len(textos_puros)} mensagem{s_plural} de {remetente} no {nome_app}{trecho}")
 
                 # Parte 2: Figurinhas
                 if num_figurinhas > 0:
