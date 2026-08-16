@@ -441,8 +441,10 @@ class PcControlService:
             sucesso = True
             for cmd in comandos:
                 if "=" in cmd:
-                    p, v = cmd.split("=")
-                    if not self._set_single_vm_param(p.strip(), v.strip()): sucesso = False
+                    partes = cmd.split("=", 1)
+                    if len(partes) == 2:
+                        p, v = partes
+                        if not self._set_single_vm_param(p.strip(), v.strip()): sucesso = False
             return sucesso
 
         return self._set_single_vm_param(param_path, valor)

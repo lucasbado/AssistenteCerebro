@@ -362,6 +362,13 @@ class AgenteRaciocinio:
                 # Se for SUGERIR, anexa o primeiro comando da lista como ação do botão
                 if tipo_interacao == "SUGERIR" and exec_direta_raw:
                     sugestao = exec_direta_raw[0] if isinstance(exec_direta_raw, list) else exec_direta_raw
+                    
+                    # 🎯 INTELIGÊNCIA DE MENSAGENS: Se for para abrir app, tenta usar o CID original
+                    if "abrir_app" in str(sugestao.get("comando")).lower() and cid:
+                        sugestao["comando"] = "ABRIR_NOTIFICACAO"
+                        sugestao["parametro"] = cid
+                        logger.info(f"🎯 [Raciocínio] Convertendo abertura genérica para Link Direto (CID: {cid})")
+
                     payload_notif["acao_tipo"] = "ENVIAR_COMANDO"
                     payload_notif["acao_parametro"] = json.dumps(sugestao)
                     payload_notif["acao_texto"] = "Bora!"

@@ -142,6 +142,7 @@ class ServicoLLM:
 - MÚSICA: Para tocar músicas ou artistas específicos, use alvo: "PC", comando: "spotify_play", parametro: "nome da musica/artista".
 - HARDWARE (ALVO: PC): "mutar_mic", "trocar_saida" (ciclagem), "bloquear_pc", "dormir_pc" (sleep), "hibernar_pc" (hibernate), "janela_fullscreen", "janela_maximizar", "janela_minimizar".
 - ÁUDIO (ALVO: PC): Para mudar o áudio (ex: "põe no fone"), use comando: "voicemeeter", parametro: "strip[3].a1=1". 
+- MENSAGENS (ALVO: MOBILE): Para abrir uma conversa específica que você acabou de resumir, use comando: "ABRIR_NOTIFICACAO", parametro: "correlacao_id_aqui".
 - LÓGICA DE ROTEAMENTO: 
     1. INCLUSIVO ("põe também na Alexa"): Apenas ligue a saída correspondente (ex: a2=1).
     2. EXCLUSIVO ("SOMENTE no fone"): Você DEVE desligar todas as outras saídas do mesmo strip (ex: "strip[3].a1=1, strip[3].a2=0, strip[3].a3=0").
