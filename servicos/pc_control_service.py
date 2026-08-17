@@ -436,21 +436,24 @@ class PcControlService:
 
         # 🌟 SUPORTE A MÚLTIPLOS PARÂMETROS (EXCLUSIVIDADE)
         # Se receber uma string com vírgulas (ex: "Strip[3].A1=1, Strip[3].A2=0")
-        str_param = str(param_path)
-        str_valor = str(valor) if valor is not None else ""
+        str_param = str(param_path).strip()
+        str_valor = str(valor).strip() if valor is not None else ""
         
-        if "," in str_param or "," in str_valor:
-            # Se o valor vier embutido no param_path (Android costuma mandar assim em macros)
-            comandos = str_param.split(",")
+        # Reconstrói o comando completo para análise de lote
+        full_command = f"{str_param}={str_valor}" if str_valor else str_param
+        
+        if "," in full_command:
+            comandos = full_command.split(",")
             sucesso = True
             for cmd in comandos:
+                cmd = cmd.strip()
                 if "=" in cmd:
                     parts = cmd.split("=", 1)
                     if not self._set_single_vm_param(parts[0].strip(), parts[1].strip()): 
                         sucesso = False
             return sucesso
 
-        return self._set_single_vm_param(param_path, valor)
+        return self._set_single_vm_param(str_param, str_valor if str_valor else valor)
 
     def _set_single_vm_param(self, param_path: str, valor):
         """Lógica interna para um único parâmetro."""
