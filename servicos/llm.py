@@ -22,9 +22,10 @@ class ServicoLLM:
         # Configuração para Groq (Cloud)
         self.api_key = os.getenv("GROQ_API_KEY")
         self.modelos_groq = [
-            "llama-3.3-70b-versatile",    # Principal (Gasta muito limite)
-            "llama-3.1-8b-instant",       # Rápido (Limite alto)
-            "mixtral-8x7b-32768"          # Alternativo
+            "llama-3.3-70b-versatile",    # Principal
+            "llama-3.1-70b-versatile",    # Fallback robusto
+            "llama-3.1-8b-instant",       # Ultra rápido (Limite alto)
+            "llama3-70b-8192"             # Alternativo clássico
         ]
         self.modelo_atual = self.modelos_groq[0]
 
@@ -58,7 +59,7 @@ class ServicoLLM:
                         model=modelo,
                         response_format={"type": "json_object"},
                         temperature=0.1,
-                        timeout=25.0 
+                        timeout=35.0 # Aumentado para lidar com instabilidade da rede
                     )
                     self.modelo_atual = modelo # Salva o modelo que funcionou
                     return json.loads(chat_completion.choices[0].message.content)
