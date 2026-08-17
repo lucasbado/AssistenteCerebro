@@ -10,13 +10,14 @@ from core.evento import EventoCanonico
 from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
 from core.kernel import kernel
 from servicos.memoria_perfil import memoria_perfil
+from servicos.consciencia import consciencia
 
 logger = logging.getLogger(__name__)
 
 class AgenteContextoSistema:
     """
     Este agente observa os dados brutos dos sensores do sistema (enviados pelo Android)
-    e os registra na memória de perfil para inferências futuras.
+    e os registra na memória de perfil e na consciência situacional.
     """
     def __init__(self):
         self._ultimo_local = None
@@ -24,6 +25,12 @@ class AgenteContextoSistema:
     async def processar(self, evento: EventoCanonico):
         payload = evento.payload
         logger.info(f"🧠 [Contexto Sistema] Processando dados de sensores: {list(payload.keys())}")
+
+        # 🚀 ATUALIZA CONSCIÊNCIA GLOBAL
+        # Transforma o payload do Android em device_state
+        consciencia.atualizar({
+            "device_state": payload
+        })
 
         # 1. Processar informações de Wi-Fi
         wifi_info = payload.get("wifi")

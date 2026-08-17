@@ -33,6 +33,25 @@ class ConscienciaSituacional:
         """Gera uma string amigável para o prompt da IA."""
         resumo = []
         
+        # MOBILE (Consciência do Celular)
+        mobile = self._snapshot.get("device_state", {})
+        if mobile:
+            resumo.append("### MOBILE (ANDROID):")
+            bateria = mobile.get("battery", {})
+            if bateria:
+                status = "Carregando" if bateria.get("is_charging") else "Descarregando"
+                resumo.append(f"- Bateria: {bateria.get('level')}% ({status})")
+            
+            app_foco = mobile.get("app_foreground")
+            if app_foco:
+                resumo.append(f"- App em foco agora: {app_foco}")
+            
+            net = mobile.get("connectivity", {})
+            if net:
+                tipo = "Wi-Fi" if net.get("is_wifi") else "Dados Móveis"
+                status_net = "Conectado" if net.get("is_connected") else "Offline"
+                resumo.append(f"- Rede: {tipo} ({status_net})")
+
         # Luzes
         luzes = self._snapshot.get("home_state", {})
         if luzes:

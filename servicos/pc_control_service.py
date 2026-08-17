@@ -544,6 +544,29 @@ class PcControlService:
             logger.warning(f"❌ [Launch] App '{chave}' não localizado. Tentando execução direta.")
             self.executar_comando_direto(app_key)
 
+    def fechar_app(self, nome_ou_pid):
+        """Tenta fechar um aplicativo pelo nome do processo ou PID."""
+        logger.info(f"🛑 [PCControl] Tentando encerrar: {nome_ou_pid}")
+        try:
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    if str(nome_ou_pid).isdigit():
+                        if proc.info['pid'] == int(nome_ou_pid):
+                            proc.terminate()
+                            logger.info(f"✅ PID {nome_ou_pid} encerrado.")
+                            return True
+                    else:
+                        if nome_ou_pid.lower() in proc.info['name'].lower():
+                            proc.terminate()
+                            logger.info(f"✅ Processo '{proc.info['name']}' encerrado.")
+                            return True
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            logger.warning(f"⚠️ Aplicativo '{nome_ou_pid}' não encontrado para encerrar.")
+        except Exception as e:
+            logger.error(f"Erro ao fechar app: {e}")
+        return False
+
     def executar_comando_direto(self, alvo):
         try:
             logger.info(f"[PCControl] Executando alvo: {alvo}")

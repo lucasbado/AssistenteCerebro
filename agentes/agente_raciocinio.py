@@ -244,7 +244,15 @@ class AgenteRaciocinio:
             comando = str(exec_direta.get("comando", "")).lower().strip() # Forçamos lowercase
             param = str(exec_direta.get("parametro", "")).strip()
 
-            logger.info(f"⚡ [Raciocínio] Decisão de Execução Direta: {alvo} -> {comando}({param})")
+            # 🛡️ CORRETOR DE PLACEHOLDER EXTREMO (Para cada comando na lista)
+            final_param = param
+            is_placeholder = "correlacao_id" in str(param).lower() or "a1b2c3" in str(param).lower() or not param
+            
+            if is_placeholder and alvo == "MOBILE" and comando in ["abrir_notificacao", "responder_mensagem"]:
+                final_param = cid or evento.metadados.get("correlacao_id") or evento.id
+                logger.warning(f"🩹 [Raciocínio] Placeholder detectado em multi-task! Corrigindo: {param} -> {final_param}")
+
+            logger.info(f"⚡ [Raciocínio] Decisão de Execução Direta: {alvo} -> {comando}({final_param})")
 
             # 🌟 CASO 1: Pesquisa Web
             if "pesquisa_web" in comando:
@@ -276,13 +284,13 @@ class AgenteRaciocinio:
 
             # 🌟 CASO 2: Comandos de PC
             elif alvo == "PC":
-                payload_pc = {"comando": comando, "parametro": param} 
-                if "abrir_app" in comando: payload_pc["app"] = param
-                elif "executar_macro" in comando: payload_pc["macro"] = param
-                elif "abrir_url" in comando: payload_pc["url"] = param
-                elif "pesquisa_google" in comando: payload_pc["query"] = param
-                elif "buscar_documentos" in comando: payload_pc["termo"] = param
-                elif "spotify_play" in comando: payload_pc["query"] = param
+                payload_pc = {"comando": comando, "parametro": final_param} 
+                if "abrir_app" in comando: payload_pc["app"] = final_param
+                elif "executar_macro" in comando: payload_pc["macro"] = final_param
+                elif "abrir_url" in comando: payload_pc["url"] = final_param
+                elif "pesquisa_google" in comando: payload_pc["query"] = final_param
+                elif "buscar_documentos" in comando: payload_pc["termo"] = final_param
+                elif "spotify_play" in comando: payload_pc["query"] = final_param
                 
                 # 🌟 FALLBACK: Se o comando for "fullscreen", mapeia para "janela_fullscreen"
                 if comando == "fullscreen": payload_pc["comando"] = "janela_fullscreen"
@@ -316,12 +324,14 @@ class AgenteRaciocinio:
                 if acao_ajustada == "SET_ALARM": acao_ajustada = "CONFIGURAR_DESPERTAR"
                 
                 payload_mob = {"tipo_ws": "COMANDO_SISTEMA", "acao": acao_ajustada, "parametro": final_param}
-                if "abrir_app" in comando: payload_mob["pacote"] = param
+                if "abrir_app" in comando: payload_mob["pacote"] = final_param
+                if "responder_mensagem" in comando: payload_mob["texto"] = exec_direta.get("texto", "")
+                if "click_text" in comando: payload_mob["acao"] = "CLICK_TEXT"
                 
                 # Envia via WebSocket para o Celular
                 from api.websocket import central_alertas
                 await central_alertas._broadcast(payload_mob)
-                logger.info(f"📱 [Raciocínio] Comando Mobile enviado: {acao_ajustada}({param})")
+                logger.info(f"📱 [Raciocínio] Comando Mobile enviado: {acao_ajustada}({final_param})")
 
             # 🌟 CASO 4: Gerenciamento de Macros
             if comando == "criar_macro":
