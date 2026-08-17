@@ -113,15 +113,7 @@ class AgenteMemoriaTrabalho:
                 if textos_puros:
                     trecho = f" ('{textos_puros[0][:40]}...')" if len(textos_puros) == 1 else ""
                     s_plural = "s" if len(textos_puros) > 1 else ""
-                    
-                    # 🛡️ LÓGICA DE REMETENTE INTELIGENTE:
-                    # Se o remetente é o nome do app ou vazio, não repete "mensagem de app no app"
-                    is_generic = not remetente or remetente.lower() in [nome_app.lower(), "ollie", "sistema"]
-                    
-                    if is_generic:
-                        resumos_parciais.append(f"{len(textos_puros)} mensagem{s_plural} no {nome_app}{trecho}")
-                    else:
-                        resumos_parciais.append(f"{len(textos_puros)} mensagem{s_plural} de {remetente} no {nome_app}{trecho}")
+                    resumos_parciais.append(f"{len(textos_puros)} mensagem{s_plural} de {remetente} no {nome_app}{trecho}")
 
                 # Parte 2: Figurinhas
                 if num_figurinhas > 0:
@@ -183,10 +175,8 @@ class AgenteMemoriaTrabalho:
             # --- FIM DA INTEGRAÇÃO ---
 
             # O payload agora inclui o pré-resumo, o contexto histórico e os dados brutos.
-            # 🌟 MELHORIA: O remetente agora lista os nomes reais para a IA não ser vaga
-            nomes_reais = ", ".join(mensagens_por_remetente.keys())
             payload_agrupado = {
-                "remetente": nomes_reais,
+                "remetente": f"{len(mensagens_unicas)} novas mensagens",
                 "mensagens": [f"{r}: {t}" for r, t in mensagens_unicas],
                 "conversa_completa": "\n".join([f"{r}: {t}" for r, t in mensagens_unicas]),
                 "pre_resumo": resumo_final_str,

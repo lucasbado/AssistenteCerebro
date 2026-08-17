@@ -17,7 +17,6 @@ from servicos.catalogo_semantico import catalogo
 from servicos.memoria_perfil import memoria_perfil
 from modelos.catalogo import EntidadeSemantica
 from banco.models import PerfilUsuarioDB
-from servicos.consciencia import consciencia
 
 logger = logging.getLogger("AgenteFoco")
 
@@ -57,11 +56,6 @@ class AgenteFoco:
             return
 
         logger.info(f"🧠 AgenteFoco: Iniciando análise para o app [{pacote}]")
-
-        # 🚀 ATUALIZA CONSCIÊNCIA GLOBAL: App em foco
-        consciencia.atualizar({
-            "device_state": {"app_foreground": pacote}
-        })
 
         # Obter dados de ambas as memórias para tomar a decisão
         entidade_app = await catalogo.obter_app(pacote)

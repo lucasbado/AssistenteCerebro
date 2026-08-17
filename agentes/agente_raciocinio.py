@@ -166,32 +166,25 @@ class AgenteRaciocinio:
 
         # 🚀 CORREÇÃO: Força execução se a IA sugeriu algo mas o usuário já deu uma ordem
         texto_u = str(evento.payload.get("texto", "")).lower()
-        if (not exec_direta_raw or exec_direta_raw == []) and ("luz" in texto_u or "filme" in texto_u or "apaga" in texto_u or "liga" in texto_u or "whats" in texto_u or "responde" in texto_u or "abre" in texto_u) and ("sim" in texto_u or "pode" in texto_u or "quero" in texto_u or "bora" in texto_u or "manda" in texto_u):
+        if (not exec_direta_raw or exec_direta_raw == []) and ("luz" in texto_u or "filme" in texto_u or "apaga" in texto_u or "liga" in texto_u) and ("sim" in texto_u or "pode" in texto_u or "quero" in texto_u or "bora" in texto_u):
              # Tenta recuperar o que estava sendo discutido no histórico
              logger.info("🎯 [Raciocínio] Tentando recuperar ação de confirmação implícita...")
              # Busca nas últimas 5 mensagens do histórico
              for msg in reversed((historico or [])[-5:]):
                  msg_l = msg.lower()
-                 if "ollie:" in msg_l and ("você quer" in msg_l or "gostaria" in msg_l or "deseja" in msg_l or "quer ver" in msg_l or "quer responder" in msg_l):
-                     # Recupera o CID do contexto se for resposta a notificação
-                     cid_rec = cid or evento.metadados.get("correlacao_id")
-                     
-                     if "luz do quarto" in msg_l: 
-                         acao_cmd = "desligar" if "apagar" in msg_l or "desligar" in msg_l else "ligar"
+                 if "ollie:" in msg_l and ("você quer" in msg_l or "gostaria" in msg_l or "deseja" in msg_l):
+                     if "luz do quarto" in msg_l or "iluminação do quarto" in msg_l: 
+                         acao_cmd = "desligar" if "apagar" in msg_l or "desligar" in msg_l or "diminuir" in msg_l else "ligar"
                          exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": f"luz_quarto {acao_cmd}"}
+                         resultado["execucao_direta"] = exec_direta_raw
+                         logger.info(f"✅ [Raciocínio] Ação recuperada: {acao_cmd} luz_quarto")
                          break
-                     elif "whatsapp" in msg_l or "zap" in msg_l or "mensagens" in msg_l:
-                         if "responde" in texto_u or "diz" in texto_u:
-                             # Extrai o que o usuário quer dizer
-                             resp = texto_u.replace("sim", "").replace("responde", "").replace("diz que", "").replace("que", "").strip()
-                             exec_direta_raw = {"alvo": "MOBILE", "comando": "RESPONDER_MENSAGEM", "parametro": cid_rec, "texto": resp}
-                         else:
-                             exec_direta_raw = {"alvo": "MOBILE", "comando": "ABRIR_NOTIFICACAO", "parametro": cid_rec}
+                     elif "luz da malu" in msg_l:
+                         acao_cmd = "desligar" if "apagar" in msg_l or "desligar" in msg_l else "ligar"
+                         exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": f"luz_malu {acao_cmd}"}
+                         resultado["execucao_direta"] = exec_direta_raw
+                         logger.info(f"✅ [Raciocínio] Ação recuperada: {acao_cmd} luz_malu")
                          break
-             
-             if exec_direta_raw:
-                 resultado["execucao_direta"] = exec_direta_raw
-                 logger.info(f"✅ [Raciocínio] Ação recuperada com sucesso: {exec_direta_raw}")
 
         logger.info(f"🤔 [Raciocínio] LLM Decidiu: Interação={tipo_interacao} | Exec={exec_direta_raw is not None}")
         
@@ -244,26 +237,7 @@ class AgenteRaciocinio:
             comando = str(exec_direta.get("comando", "")).lower().strip() # Forçamos lowercase
             param = str(exec_direta.get("parametro", "")).strip()
 
-            # 🛡️ CORRETOR DE PLACEHOLDER UNIFICADO E AGRESSIVO
-            final_param = param
-            placeholder_patterns = ["correlacao_id", "a1b2c3", "id_aqui", "valor_do_id", "id_real", "copie_o_id", "valor_do"]
-            is_placeholder = any(x in str(param).lower() for x in placeholder_patterns) or not param
-            
-            if is_placeholder and alvo == "MOBILE" and any(c in comando for c in ["notificacao", "mensagem"]):
-                # 🎯 RECUPERAÇÃO DE CONTEXTO:
-                # 1. Tenta o CID do metadados (fix do websocket)
-                # 2. Tenta o ID do evento atual (se for uma notificação vindo do android)
-                # 3. Tenta o ID do evento original via correlação (se for resposta do usuário)
-                id_recuperado = cid or evento.metadados.get("correlacao_id") or evento.id
-                
-                # Se ainda for placeholder, não tem o que fazer, mas loga o erro
-                if id_recuperado and not any(x in id_recuperado.lower() for x in placeholder_patterns):
-                    final_param = id_recuperado
-                    logger.warning(f"🩹 [Raciocínio] Sucesso na correção do placeholder: {param} -> {final_param}")
-                else:
-                    logger.error(f"❌ [Raciocínio] Falha crítica: Impossível recuperar ID real para {comando}. CID era {cid}")
-
-            logger.info(f"⚡ [Raciocínio] Decisão de Execução Direta: {alvo} -> {comando}({final_param})")
+            logger.info(f"⚡ [Raciocínio] Decisão de Execução Direta: {alvo} -> {comando}({param})")
 
             # 🌟 CASO 1: Pesquisa Web
             if "pesquisa_web" in comando:
@@ -295,13 +269,13 @@ class AgenteRaciocinio:
 
             # 🌟 CASO 2: Comandos de PC
             elif alvo == "PC":
-                payload_pc = {"comando": comando, "parametro": final_param} 
-                if "abrir_app" in comando: payload_pc["app"] = final_param
-                elif "executar_macro" in comando: payload_pc["macro"] = final_param
-                elif "abrir_url" in comando: payload_pc["url"] = final_param
-                elif "pesquisa_google" in comando: payload_pc["query"] = final_param
-                elif "buscar_documentos" in comando: payload_pc["termo"] = final_param
-                elif "spotify_play" in comando: payload_pc["query"] = final_param
+                payload_pc = {"comando": comando, "parametro": param} 
+                if "abrir_app" in comando: payload_pc["app"] = param
+                elif "executar_macro" in comando: payload_pc["macro"] = param
+                elif "abrir_url" in comando: payload_pc["url"] = param
+                elif "pesquisa_google" in comando: payload_pc["query"] = param
+                elif "buscar_documentos" in comando: payload_pc["termo"] = param
+                elif "spotify_play" in comando: payload_pc["query"] = param
                 
                 # 🌟 FALLBACK: Se o comando for "fullscreen", mapeia para "janela_fullscreen"
                 if comando == "fullscreen": payload_pc["comando"] = "janela_fullscreen"
@@ -324,15 +298,13 @@ class AgenteRaciocinio:
                 acao_ajustada = comando.upper()
                 if acao_ajustada == "SET_ALARM": acao_ajustada = "CONFIGURAR_DESPERTAR"
                 
-                payload_mob = {"tipo_ws": "COMANDO_SISTEMA", "acao": acao_ajustada, "parametro": final_param}
-                if "abrir_app" in comando: payload_mob["pacote"] = final_param
-                if "responder_mensagem" in comando: payload_mob["texto"] = exec_direta.get("texto", "")
-                if "click_text" in comando: payload_mob["acao"] = "CLICK_TEXT"
+                payload_mob = {"tipo_ws": "COMANDO_SISTEMA", "acao": acao_ajustada, "parametro": param}
+                if "abrir_app" in comando: payload_mob["pacote"] = param
                 
                 # Envia via WebSocket para o Celular
                 from api.websocket import central_alertas
                 await central_alertas._broadcast(payload_mob)
-                logger.info(f"📱 [Raciocínio] Comando Mobile enviado: {acao_ajustada}({final_param})")
+                logger.info(f"📱 [Raciocínio] Comando Mobile enviado: {acao_ajustada}({param})")
 
             # 🌟 CASO 4: Gerenciamento de Macros
             if comando == "criar_macro":

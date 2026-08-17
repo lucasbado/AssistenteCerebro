@@ -77,46 +77,6 @@ class ObsidianService:
         except Exception as e:
             logger.error(f"Erro ao registrar fato no Obsidian: {e}")
 
-    def buscar_notas_por_termo(self, termo: str) -> str:
-        """Busca conteúdo relevante no vault baseado em um termo de busca."""
-        if not self.vault_path: return ""
-        
-        resultados = []
-        termo_clean = termo.lower().strip()
-        
-        # Só busca se o termo for minimamente relevante
-        if len(termo_clean) < 3: return ""
-
-        try:
-            # Varre todos os arquivos MD no vault
-            for root, _, files in os.walk(self.vault_path):
-                for file in files:
-                    if file.endswith(".md"):
-                        path = os.path.join(root, file)
-                        try:
-                            # 1. Verifica se o título combina (Prioridade Alta)
-                            if termo_clean in file.lower():
-                                with open(path, "r", encoding="utf-8") as f:
-                                    conteudo = f.read()
-                                    resultados.append(f"### NOTA ENCONTRADA (Título: {file}):\n{conteudo}")
-                                    continue
-                            
-                            # 2. Verifica se o conteúdo combina
-                            with open(path, "r", encoding="utf-8") as f:
-                                conteudo = f.read()
-                                if termo_clean in conteudo.lower():
-                                    # Pega um trecho ao redor do termo ou a nota toda se for pequena
-                                    resultados.append(f"### CONTEXTO ENCONTRADO EM '{file}':\n{conteudo[:1000]}")
-                        except: continue
-                
-                # Limita a busca para não explodir o prompt
-                if len(resultados) >= 3: break
-                
-        except Exception as e:
-            logger.error(f"Erro na busca Obsidian: {e}")
-
-        return "\n\n".join(resultados)
-
     def listar_conhecimento_essencial(self) -> str:
         """Retorna um consolidado de notas na raiz e na pasta Agente/."""
         if not self.vault_path: return "Conhecimento Obsidian indisponível."

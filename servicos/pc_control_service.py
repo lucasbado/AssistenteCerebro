@@ -441,10 +441,8 @@ class PcControlService:
             sucesso = True
             for cmd in comandos:
                 if "=" in cmd:
-                    partes = cmd.split("=", 1)
-                    if len(partes) == 2:
-                        p, v = partes
-                        if not self._set_single_vm_param(p.strip(), v.strip()): sucesso = False
+                    p, v = cmd.split("=")
+                    if not self._set_single_vm_param(p.strip(), v.strip()): sucesso = False
             return sucesso
 
         return self._set_single_vm_param(param_path, valor)
@@ -544,29 +542,6 @@ class PcControlService:
             logger.warning(f"❌ [Launch] App '{chave}' não localizado. Tentando execução direta.")
             self.executar_comando_direto(app_key)
 
-    def fechar_app(self, nome_ou_pid):
-        """Tenta fechar um aplicativo pelo nome do processo ou PID."""
-        logger.info(f"🛑 [PCControl] Tentando encerrar: {nome_ou_pid}")
-        try:
-            for proc in psutil.process_iter(['pid', 'name']):
-                try:
-                    if str(nome_ou_pid).isdigit():
-                        if proc.info['pid'] == int(nome_ou_pid):
-                            proc.terminate()
-                            logger.info(f"✅ PID {nome_ou_pid} encerrado.")
-                            return True
-                    else:
-                        if nome_ou_pid.lower() in proc.info['name'].lower():
-                            proc.terminate()
-                            logger.info(f"✅ Processo '{proc.info['name']}' encerrado.")
-                            return True
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-            logger.warning(f"⚠️ Aplicativo '{nome_ou_pid}' não encontrado para encerrar.")
-        except Exception as e:
-            logger.error(f"Erro ao fechar app: {e}")
-        return False
-
     def executar_comando_direto(self, alvo):
         try:
             logger.info(f"[PCControl] Executando alvo: {alvo}")
@@ -645,7 +620,6 @@ class PcControlService:
         logger.info(f"📱 [PCControl] {len(apps)} apps do celular sincronizados.")
 
     def obter_estado_completo(self):
-        # 🛡️ Proteção total: Evita erros se o hardware ainda estiver subindo
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory().percent
         disco = 0
@@ -653,28 +627,21 @@ class PcControlService:
         except: pass
         
         v3, v4, m_mute = 50, 50, 0
-        audio_details = {
-            "3": {"volume": 50, "a1": 0, "a2": 0, "a3": 0},
-            "4": {"volume": 50, "a1": 0, "a2": 0, "a3": 0}
-        }
-
         if self.vm:
             try:
                 v3 = max(0, min(100, int((self.vm.get('Strip[3].Gain') + 60) / self.fator_vol)))
                 v4 = max(0, min(100, int((self.vm.get('Strip[4].Gain') + 60) / self.fator_vol)))
                 m_mute = int(self.vm.get('Strip[0].Mute'))
-                audio_details = {
-                    "3": { "volume": v3, "a1": int(self.vm.get('Strip[3].A1')), "a2": int(self.vm.get('Strip[3].A2')), "a3": int(self.vm.get('Strip[3].A3')) },
-                    "4": { "volume": v4, "a1": int(self.vm.get('Strip[4].A1')), "a2": int(self.vm.get('Strip[4].A2')), "a3": int(self.vm.get('Strip[4].A3')) },
-                }
-            except Exception as e:
-                logger.warning(f"⚠️ [PCControl] Hardware ocupado ou indisponível: {e}")
+            except: pass
             
         # 🧠 CONTEXTO ADICIONAL: Resumo de Apps Indexados (Top 20 para economia)
         top_apps = list(self.indexed_apps.keys())[:30]
 
         return {
-            "audio_state": audio_details,
+            "audio_state": {
+                "3": { "volume": v3, "a1": int(self.vm.get('Strip[3].A1')) if self.vm else 0, "a2": int(self.vm.get('Strip[3].A2')) if self.vm else 0, "a3": int(self.vm.get('Strip[3].A3')) if self.vm else 0 },
+                "4": { "volume": v4, "a1": int(self.vm.get('Strip[4].A1')) if self.vm else 0, "a2": int(self.vm.get('Strip[4].A2')) if self.vm else 0, "a3": int(self.vm.get('Strip[4].A3')) if self.vm else 0 },
+            },
             "cpu": cpu, "ram": ram, "disco": disco, "online": True, "mic_mute": m_mute,
             "sistema": {"cpu": cpu, "ram": ram, "disco": disco},
             "apps_disponiveis": top_apps

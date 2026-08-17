@@ -79,8 +79,6 @@ class AgentePcExecutor:
             # --- COMANDOS SISTEMA ---
             elif comando == "abrir_app":
                 pc_control_service.abrir_app(evento.payload.get("app"))
-            elif comando == "fechar_app":
-                pc_control_service.fechar_app(evento.payload.get("app") or evento.payload.get("parametro"))
             elif comando == "abrir_url":
                 pc_control_service.abrir_url(evento.payload.get("url"))
             elif comando == "pesquisa_google":
