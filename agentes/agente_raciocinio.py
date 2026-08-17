@@ -246,9 +246,11 @@ class AgenteRaciocinio:
 
             # 🛡️ CORRETOR DE PLACEHOLDER EXTREMO (Para cada comando na lista)
             final_param = param
-            is_placeholder = "correlacao_id" in str(param).lower() or "a1b2c3" in str(param).lower() or not param
+            placeholder_names = ["correlacao_id", "a1b2c3", "id_aqui", "valor_do_id", "id_real", "copie_o_id"]
+            is_placeholder = any(x in str(param).lower() for x in placeholder_names) or not param
             
             if is_placeholder and alvo == "MOBILE" and comando in ["abrir_notificacao", "responder_mensagem"]:
+                # Prioriza o CID do evento ou o ID do evento original se disponível
                 final_param = cid or evento.metadados.get("correlacao_id") or evento.id
                 logger.warning(f"🩹 [Raciocínio] Placeholder detectado em multi-task! Corrigindo: {param} -> {final_param}")
 

@@ -137,7 +137,7 @@ class ServicoLLM:
   "mensagem_dinamica": "Personalidade da Ollie aqui",
   "execucao_direta": [
     {"alvo": "PC", "comando": "voicemeeter", "parametro": "strip[3].a1=1"},
-    {"alvo": "MOBILE", "comando": "RESPONDER_MENSAGEM", "parametro": "ID_AQUI", "texto": "Resposta"}
+    {"alvo": "MOBILE", "comando": "RESPONDER_MENSAGEM", "parametro": "COPIE_O_ID_REAL_AQUI", "texto": "Resposta"}
   ]
 }
 """
@@ -145,27 +145,11 @@ class ServicoLLM:
         system = f"""Você é a OLLIE, uma agente de inteligência sistêmica parceira e estratégica. 
 Gírias: brabo, bora, partiu, vish, eita, massa, capotar, no pente.
 
-### SEU TOOLSET (CATÁLOGO DE HABILIDADES):
-Você opera dois braços físicos: o PC MASTER (Windows) e o MOBILE (Android).
-
-Braço PC MASTER:
-- 'abrir_app': Abre programas (vscode, spotify, lol, discord).
-- 'voicemeeter': Controle de áudio (Ex: 'strip[3].a1=1' liga fone, 'a1=0' desliga).
-- 'spotify_play': Toca música/artista.
-- 'hibernar_pc', 'dormir_pc', 'bloquear_pc'.
-- 'janela_fullscreen', 'janela_maximizar'.
-
-Braço MOBILE (Android):
-- 'RESPONDER_MENSAGEM': Envia texto direto (ID real obrigatório).
-- 'ABRIR_NOTIFICACAO': Abre chat/notificação (ID real obrigatório).
-- 'SET_ALARM', 'SET_TIMER', 'VOLUME', 'BRIGHTNESS', 'LANTERNA'.
-- 'CLICK_TEXT': Clica em botões na tela por texto (Ex: 'enviar', 'confirmar').
-
 ### AXIOMAS DE RACIOCÍNIO:
-1. ORQUESTRAÇÃO: Você pode enviar MÚLTIPLOS comandos em uma lista []. Ex: Silenciar PC + Apagar Luz.
-2. MEMÓRIA: Use o 'CONTEXTO DA MEMÓRIA' para personalizar ações. Se o usuário diz "vamos trabalhar", veja no Obsidian o que ele usa pra trabalhar.
-3. OBEDIÊNCIA: Comandos diretos anulam proatividade.
-4. CLAREZA: Em notificações, SEMPRE diga Remetente e App.
+1. RESPOSTA IMEDIATA: Se a informação (bateria, rede, app em foco) já está no 'CONTEXTO DO MUNDO', responda na hora. É PROIBIDO dizer "vou verificar" ou "vou olhar" se o dado já está aqui.
+2. ORQUESTRAÇÃO: Você pode enviar MÚLTIPLOS comandos em uma lista [].
+3. MEMÓRIA: Use o 'CONTEXTO DA MEMÓRIA' para personalizar ações.
+4. PLACEHOLDERS: É terminantemente proibido usar 'ID_AQUI', 'valor_do_id' ou 'correlacao_id_aqui'. Você DEVE copiar o valor exato que está no campo 'correlacao_id' ou 'id' da entrada.
 
 ### CONTEXTO DO MUNDO:
 - Agora: {agora} ({periodo})
