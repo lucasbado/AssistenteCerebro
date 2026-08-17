@@ -48,6 +48,17 @@ class GerenciadorNotificacoes:
     async def enviar_alerta(self, payload: dict):
         """Roteia eventos vindo do Kernel para os dispositivos certos."""
         payload_negocio = payload.get("payload", {})
+        
+        # 🛡️ DEDUPLICAÇÃO DE SAÍDA: Evita que a Ollie fale a mesma coisa duas vezes seguidas
+        texto_saida = str(payload_negocio.get("texto", ""))
+        if texto_saida:
+            agora = asyncio.get_event_loop().time()
+            if texto_saida in self._cache_saida:
+                if agora - self._cache_saida[texto_saida] < 10.0: # 10 segundos de silêncio para repetidas
+                    return
+            self._cache_saida[texto_saida] = agora
+            if len(self._cache_saida) > 50: self._cache_saida.clear()
+
         dados_para_envio = payload_negocio.copy()
         
         # Sincroniza metadados e timestamp
@@ -99,6 +110,14 @@ class GerenciadorNotificacoes:
     async def processar_evento_kernel(self, evento):
         """Ponte entre o Kernel de eventos e o WebSocket."""
         await self.enviar_alerta(evento.model_dump())
+
+    async def iniciar_monitor(self):
+        """Loop para logar status das conexões no servidor."""
+        while True:
+            try:
+                logger.info(f"📊 [WS Status] Ativos: {len(self.conexoes_ativas)} | Master: {'ON' if self.pc_master else 'OFF'} | Mobile: {'ON' if self.mobile_client else 'OFF'}")
+            except: pass
+            await asyncio.sleep(15)
 
 central_alertas = GerenciadorNotificacoes()
 
