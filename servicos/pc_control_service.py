@@ -645,6 +645,7 @@ class PcControlService:
         logger.info(f"📱 [PCControl] {len(apps)} apps do celular sincronizados.")
 
     def obter_estado_completo(self):
+        # 🛡️ Proteção total: Evita erros se o hardware ainda estiver subindo
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory().percent
         disco = 0
@@ -652,21 +653,28 @@ class PcControlService:
         except: pass
         
         v3, v4, m_mute = 50, 50, 0
+        audio_details = {
+            "3": {"volume": 50, "a1": 0, "a2": 0, "a3": 0},
+            "4": {"volume": 50, "a1": 0, "a2": 0, "a3": 0}
+        }
+
         if self.vm:
             try:
                 v3 = max(0, min(100, int((self.vm.get('Strip[3].Gain') + 60) / self.fator_vol)))
                 v4 = max(0, min(100, int((self.vm.get('Strip[4].Gain') + 60) / self.fator_vol)))
                 m_mute = int(self.vm.get('Strip[0].Mute'))
-            except: pass
+                audio_details = {
+                    "3": { "volume": v3, "a1": int(self.vm.get('Strip[3].A1')), "a2": int(self.vm.get('Strip[3].A2')), "a3": int(self.vm.get('Strip[3].A3')) },
+                    "4": { "volume": v4, "a1": int(self.vm.get('Strip[4].A1')), "a2": int(self.vm.get('Strip[4].A2')), "a3": int(self.vm.get('Strip[4].A3')) },
+                }
+            except Exception as e:
+                logger.warning(f"⚠️ [PCControl] Hardware ocupado ou indisponível: {e}")
             
         # 🧠 CONTEXTO ADICIONAL: Resumo de Apps Indexados (Top 20 para economia)
         top_apps = list(self.indexed_apps.keys())[:30]
 
         return {
-            "audio_state": {
-                "3": { "volume": v3, "a1": int(self.vm.get('Strip[3].A1')) if self.vm else 0, "a2": int(self.vm.get('Strip[3].A2')) if self.vm else 0, "a3": int(self.vm.get('Strip[3].A3')) if self.vm else 0 },
-                "4": { "volume": v4, "a1": int(self.vm.get('Strip[4].A1')) if self.vm else 0, "a2": int(self.vm.get('Strip[4].A2')) if self.vm else 0, "a3": int(self.vm.get('Strip[4].A3')) if self.vm else 0 },
-            },
+            "audio_state": audio_details,
             "cpu": cpu, "ram": ram, "disco": disco, "online": True, "mic_mute": m_mute,
             "sistema": {"cpu": cpu, "ram": ram, "disco": disco},
             "apps_disponiveis": top_apps
