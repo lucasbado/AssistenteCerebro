@@ -40,8 +40,12 @@ class AgentePcExecutor:
             if comando == "voicemeeter":
                 param = evento.payload.get("parametro")
                 if isinstance(param, str) and "=" in param:
-                    path, valor = param.split("=")
-                    pc_control_service.set_vm_param(path.strip(), valor.strip())
+                    # Passa a string bruta se contiver múltiplos comandos ou usa split seguro
+                    if "," in param:
+                        pc_control_service.set_vm_param(param, None)
+                    else:
+                        parts = param.split("=", 1)
+                        pc_control_service.set_vm_param(parts[0].strip(), parts[1].strip())
                 else:
                     # Fallback para parâmetros individuais
                     pc_control_service.toggle_rota(
