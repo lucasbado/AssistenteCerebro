@@ -1,0 +1,37 @@
+INFO:     Started server process [35376]
+INFO:     Waiting for application startup.
+INFO:Main:Initializing AssistantCell Ecosystem...
+INFO:servicos.llm:\U0001f680 [LLM] Groq Cloud ativado. Modelo padrão: llama-3.3-70b-versatile
+INFO:servicos.llm:\U0001f680 [LLM] Groq Cloud ativado. Modelo padrão: llama-3.3-70b-versatile
+INFO:Kernel:[Kernel] Listener registrado: AgentePerfil.processar
+INFO:Kernel:[Kernel] Listener registrado: AgenteInferencia.processar
+INFO:Kernel:[Kernel] Listener registrado: AgenteReflexo.processar
+INFO:Kernel:[Kernel] Listener registrado: AgenteMusica.processar
+INFO:Kernel:[Kernel] Listener registrado: AgenteFoco.processar
+INFO:Kernel:[Kernel] Listener registrado: AgenteRoteadorCognitivo.processar
+INFO:Kernel:[Kernel] Listener registrado: AgenteRaciocinio.processar
+INFO:Kernel:[Kernel] Listener registrado: AgentePesquisa.processar
+INFO:Kernel:[Kernel] Listener registrado: AgenteRaciocinio.sintetizar_com_pesquisa
+INFO:Kernel:[Kernel] Listener registrado: AgenteNotificacoes.processar
+INFO:Kernel:[Kernel] Listener registrado: AgenteEpisodico.processar
+INFO:Kernel:[Kernel] Listener registrado: AgenteSumarizadorPerfil.processar
+INFO:Kernel:[Kernel] Listener registrado: AgenteAprendizagem.processar
+INFO:Kernel:[Kernel] Listener registrado: AgenteMemoriaTrabalho.processar
+INFO:Kernel:[Kernel] Listener registrado: AgenteClima.processar
+INFO:Kernel:[Kernel] Listener registrado: AgentePcExecutor.processar
+INFO:Kernel:[Kernel] Listener registrado: GerenciadorNotificacoes.processar_evento_kernel
+INFO:Main:\u2601\ufe0f [Main] Modo Cloud detectado: UDP Listener desativado.
+INFO:Main:\U0001f680 AI Brain & PC Master Control online!
+INFO:Kernel:[Kernel] Evento enfileirado: SISTEMA_COMANDO_INTERNO (a8b3bbf6)
+INFO:Kernel:\U0001f680 Kernel em modo Concorrente (Alta Performance) iniciado.
+INFO:WebSocket:\U0001f4ca [WS Status] Ativos: 0 | Master: OFF | Mobile: OFF
+INFO:     Application startup complete.
+INFO:Kernel:[Kernel] Processando SISTEMA_COMANDO_INTERNO | Ação: ATUALIZAR_CONTEXTO
+INFO:AgenteClima:\U0001f324\ufe0f AgenteClima: A consultar condições meteorológicas...
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:httpx:HTTP Request: GET https://api.open-meteo.com/v1/forecast?latitude=-23.6500&longitude=-46.7000&current_weather=true "HTTP/1.1 200 OK"
+INFO:AgenteClima:\u2705 AgenteClima: Contexto atualizado - 19.5 (Céu limpo)
+INFO:Kernel:\u2705 Evento a8b3bbf6 finalizado por 2 ouvintes.
+INFO:WebSocket:\U0001f4ca [WS Status] Ativos: 0 | Master: OFF | Mobile: OFF
+INFO:WebSocket:\U0001f4ca [WS Status] Ativos: 0 | Master: OFF | Mobile: OFF
+INFO:WebSocket:\U0001f4ca [WS Status] Ativos: 0 | Master: OFF | Mobile: OFF
