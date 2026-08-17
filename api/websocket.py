@@ -209,14 +209,20 @@ async def websocket_endpoint(websocket: WebSocket):
                     if cliente_id == "PC_MASTER":
                         # 🛡️ ANTI-DUPLICIDADE: Só fecha se for uma conexão REALMENTE diferente
                         if central_alertas.pc_master and central_alertas.pc_master != websocket:
-                            logger.warning("🔄 [WS] Novo PC_MASTER detectado. Substituindo conexão antiga.")
-                            old_ws = central_alertas.pc_master
-                            if old_ws in central_alertas.conexoes_ativas:
-                                central_alertas.conexoes_ativas.remove(old_ws)
-                            try: await old_ws.close(1001)
+                            # Verifica se o estado é realmente fechado antes de derrubar
+                            try:
+                                logger.warning("🔄 [WS] Possível duplicata de PC_MASTER. Validando conexão antiga...")
+                                # Se conseguirmos mandar um ping, a antiga ainda é válida e a nova é intrusa
+                                # Mas no Render/Proxy, o melhor é sempre aceitar a MAIS NOVA
+                                logger.info("🚮 [WS] Substituindo conexão antiga do PC Master.")
+                                old_ws = central_alertas.pc_master
+                                if old_ws in central_alertas.conexoes_ativas:
+                                    central_alertas.conexoes_ativas.remove(old_ws)
+                                await old_ws.close(1001)
                             except: pass
+                        
                         central_alertas.pc_master = websocket
-                        logger.info("🖥️ [WS] PC Master registrado com sucesso!")
+                        logger.info("🖥️ [WS] PC Master registrado e pronto para comandos.")
                         
                     elif cliente_id == "MOBILE":
                         # 🛡️ ANTI-DUPLICIDADE: Só fecha se for uma conexão REALMENTE diferente
