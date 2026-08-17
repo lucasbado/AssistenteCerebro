@@ -244,15 +244,24 @@ class AgenteRaciocinio:
             comando = str(exec_direta.get("comando", "")).lower().strip() # Forçamos lowercase
             param = str(exec_direta.get("parametro", "")).strip()
 
-            # 🛡️ CORRETOR DE PLACEHOLDER EXTREMO (Para cada comando na lista)
+            # 🛡️ CORRETOR DE PLACEHOLDER UNIFICADO E AGRESSIVO
             final_param = param
-            placeholder_names = ["correlacao_id", "a1b2c3", "id_aqui", "valor_do_id", "id_real", "copie_o_id"]
-            is_placeholder = any(x in str(param).lower() for x in placeholder_names) or not param
+            placeholder_patterns = ["correlacao_id", "a1b2c3", "id_aqui", "valor_do_id", "id_real", "copie_o_id", "valor_do"]
+            is_placeholder = any(x in str(param).lower() for x in placeholder_patterns) or not param
             
-            if is_placeholder and alvo == "MOBILE" and comando in ["abrir_notificacao", "responder_mensagem"]:
-                # Prioriza o CID do evento ou o ID do evento original se disponível
-                final_param = cid or evento.metadados.get("correlacao_id") or evento.id
-                logger.warning(f"🩹 [Raciocínio] Placeholder detectado em multi-task! Corrigindo: {param} -> {final_param}")
+            if is_placeholder and alvo == "MOBILE" and any(c in comando for c in ["notificacao", "mensagem"]):
+                # 🎯 RECUPERAÇÃO DE CONTEXTO:
+                # 1. Tenta o CID do metadados (fix do websocket)
+                # 2. Tenta o ID do evento atual (se for uma notificação vindo do android)
+                # 3. Tenta o ID do evento original via correlação (se for resposta do usuário)
+                id_recuperado = cid or evento.metadados.get("correlacao_id") or evento.id
+                
+                # Se ainda for placeholder, não tem o que fazer, mas loga o erro
+                if id_recuperado and not any(x in id_recuperado.lower() for x in placeholder_patterns):
+                    final_param = id_recuperado
+                    logger.warning(f"🩹 [Raciocínio] Sucesso na correção do placeholder: {param} -> {final_param}")
+                else:
+                    logger.error(f"❌ [Raciocínio] Falha crítica: Impossível recuperar ID real para {comando}. CID era {cid}")
 
             logger.info(f"⚡ [Raciocínio] Decisão de Execução Direta: {alvo} -> {comando}({final_param})")
 
@@ -311,16 +320,6 @@ class AgenteRaciocinio:
 
             # 🌟 CASO 3: Comandos Mobile
             elif alvo == "MOBILE":
-                # 🛡️ CORRETOR DE PLACEHOLDER EXTREMO:
-                # Intercepta tanto o texto do manual quanto o exemplo de ID que a IA costuma copiar
-                final_param = param
-                is_placeholder = "correlacao_id" in str(param).lower() or "a1b2c3" in str(param).lower() or not param
-                
-                if is_placeholder:
-                    # Tenta recuperar o ID real do evento ou dos metadados
-                    final_param = cid or evento.metadados.get("correlacao_id") or evento.id
-                    logger.warning(f"🩹 [Raciocínio] Placeholder detectado! Corrigindo: {param} -> {final_param}")
-
                 # Alinhamento de nomes com o Android SystemCommandHandler
                 acao_ajustada = comando.upper()
                 if acao_ajustada == "SET_ALARM": acao_ajustada = "CONFIGURAR_DESPERTAR"

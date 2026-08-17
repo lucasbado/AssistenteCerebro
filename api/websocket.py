@@ -234,13 +234,20 @@ async def websocket_endpoint(websocket: WebSocket):
                     from core.kernel import kernel
                     from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
                     from core.evento import EventoCanonico
-                    logger.info(f"💬 [WS] Mensagem de chat recebida: {msg.get('texto')}")
+                    logger.info(f"💬 [WS] Mensagem de chat recebida: {msg.get('texto')} | CID: {msg.get('correlacao_id')}")
+                    
+                    # 🎯 PRESERVA CONTEXTO: Passa o correlacao_id para os metadados do evento
+                    metadados = {}
+                    if msg.get("correlacao_id"):
+                        metadados["correlacao_id"] = msg.get("correlacao_id")
+
                     await kernel.publicar(EventoCanonico(
                         categoria=CategoriaEvento.SISTEMA_COMANDO_USUARIO,
                         acao=TipoAcao.NORMAL,
                         origem=OrigemEvento.USUARIO,
                         pacote=msg.get("pacote", "com.example.assistentecell"),
-                        payload={"texto": msg.get("texto")}
+                        payload={"texto": msg.get("texto")},
+                        metadados=metadados
                     ))
 
                 elif tipo == "SUGGESTION_REJECTED":
