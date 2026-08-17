@@ -21,11 +21,13 @@ class ServicoLLM:
     def __init__(self):
         # Configuração para Groq (Cloud)
         self.api_key = os.getenv("GROQ_API_KEY")
+        # 🚀 Modelos atualizados para o padrão de 2026 (Llama 4 e GPT-OSS)
         self.modelos_groq = [
-            "llama-3.3-70b-versatile",    # Principal
-            "llama-3.1-70b-versatile",    # Fallback robusto
-            "llama-3.1-8b-instant",       # Ultra rápido (Limite alto)
-            "llama3-70b-8192"             # Alternativo clássico
+            "llama-4-maverick-17b",       # Nova geração Llama (Flagship)
+            "gpt-oss-120b",               # OpenAI Open-Source potente
+            "llama-3.3-70b-versatile",    # Clássico resiliente
+            "gpt-oss-20b",                # Rápido e leve
+            "llama-3.1-8b-instant"        # Fallback de ultra-velocidade
         ]
         self.modelo_atual = self.modelos_groq[0]
 
