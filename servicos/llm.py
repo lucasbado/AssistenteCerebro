@@ -25,9 +25,9 @@ class ServicoLLM:
         # 🚀 Modelos verificados via API em Agosto/2026 - PRIORIDADE: DISPONIBILIDADE
         # Removidos modelos desativados e priorizados os de alta performance/limite
         self.modelos_groq = [
-            "groq/compound-mini",         # Ultra-velocidade (maior limite de req/min)
             "openai/gpt-oss-20b",         # Inteligência OpenAI estável
             "qwen/qwen3.6-27b",           # Modelo versátil
+            "groq/compound-mini",         # Ultra-velocidade (maior limite de req/min)
             "groq/compound",              # Agentic potente
             "allam-2-7b"                  # Fallback emergencial
         ]

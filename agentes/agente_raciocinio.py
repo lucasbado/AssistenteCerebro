@@ -236,7 +236,7 @@ class AgenteRaciocinio:
         mem_obs = resultado.get("memoria_obsidian")
         if mem_obs and isinstance(mem_obs, dict):
             titulo, fato = str(mem_obs.get("titulo", "")), str(mem_obs.get("fato", ""))
-            if titulo and fato and not any(k in facts.lower() for k in ["notificação", "conversa"]):
+            if titulo and fato and not any(k in fato.lower() for k in ["notificação", "conversa"]):
                 obsidian_service.registrar_fato(titulo, fato)
 
     async def sintetizar_com_pesquisa(self, evento_resultado: EventoCanonico):
