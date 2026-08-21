@@ -149,7 +149,11 @@ class AgenteRaciocinio:
                 self._locks_ativos.remove(lock_id)
 
         # 🌟 LOG DE DECISÃO: Ver exatamente o que a IA pensou
-        logger.info(f"📊 [OLLIE_BRAIN] Raw Decision: {json.dumps(resultado, ensure_ascii=False)}")
+        try:
+            logger.info(f"📊 [OLLIE_BRAIN] Raw Decision: {json.dumps(resultado, ensure_ascii=False)}")
+        except:
+            logger.error("❌ Erro ao logar resultado (pode estar indefinido)")
+            resultado = {"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": "Vish, deu pane no meu sistema aqui!"}
 
         # 🚀 EXTRAÇÃO ROBUSTA (SCAVENGER): Procura campos em qualquer nível do JSON
         def buscar_campo(obj, campo):
