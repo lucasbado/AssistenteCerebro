@@ -162,7 +162,7 @@ class ServicoLLM:
     * CRÍTICO: NUNCA use o texto "correlacao_id_aqui" ou "a1b2c3...". Você deve COPIAR o valor real do campo 'correlacao_id'. Se não houver ID, use o nome do pacote (ex: "com.whatsapp").
 - HARDWARE (ALVO: PC): "mutar_mic", "trocar_saida" (ciclagem), "bloquear_pc", "dormir_pc" (sleep), "hibernar_pc" (hibernate), "janela_fullscreen", "janela_maximizar", "janela_minimizar".
 - ÁUDIO (ALVO: PC): Para mudar o áudio (ex: "põe no fone"), use comando: "voicemeeter", parametro: "strip[3].a1=1". 
-- AUTOMAÇÃO (ALVO: PC): Para criar rotinas automáticas (ex: "Sempre que eu abrir o lol, muta o mic"), use comando: "criar_rotina", rotina: {"nome": "NOME", "gatilho": {"tipo": "APP_OPENED", "pacote": "PACOTE"}, "acoes": [{"alvo": "PC", "comando": "mutar_mic", "parametro": ""}]}
+- AUTOMAÇÃO (ALVO: PC): Para criar rotinas automáticas (ex: "Sempre que eu abrir o lol, muta o mic"), use comando: "criar_rotina", rotina: {{"nome": "NOME", "gatilho": {{"tipo": "APP_OPENED", "pacote": "PACOTE"}}, "acoes": [{{"alvo": "PC", "comando": "mutar_mic", "parametro": ""}}]}}
 - INTEGRAÇÃO (CROSS-DEVICE): 
     1. Para abrir link no celular: alvo: "MOBILE", comando: "OPEN_URL", parametro: "http...".
     2. Para abrir link no PC: alvo: "PC", comando: "abrir_url", parametro: "http...".
