@@ -40,15 +40,17 @@ class AgenteRaciocinio:
             return
             
         # 🛡️ TRAVA DE DUPLICIDADE: Verifica se este evento já está sendo processado
-        lock_id = evento.metadados.get("correlacao_id") or evento.id
+        # Usamos apenas o texto se for comando do usuário para evitar bloqueio por milissegundos
+        lock_id = f"cmd_{evento.payload.get('texto', '')}" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else (evento.metadados.get("correlacao_id") or evento.id)
+        
         if lock_id in self._locks_ativos:
-            logger.warning(f"🛡️ [Raciocínio] Evento {lock_id[:8]} já está em processamento. Ignorando duplicata.")
+            logger.warning(f"🛡️ [Raciocínio] Evento {lock_id[:20]} já está em processamento. Ignorando duplicata.")
             return
         
         self._locks_ativos.add(lock_id)
         
         try:
-            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 1: Iniciando processamento do evento {evento.id[:8]}")
+            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 1: Iniciando processamento de '{lock_id[:30]}'")
 
             # 1. Recupera Contexto do Obsidian (Long-term)
             try:

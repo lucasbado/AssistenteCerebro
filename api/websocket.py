@@ -69,6 +69,11 @@ class GerenciadorNotificacoes:
         # Sincroniza campos de texto
         if 'mensagem' in dados_para_envio:
             dados_para_envio['texto'] = dados_para_envio.pop('mensagem')
+        
+        # 🛡️ GARANTIA DE ENTREGA: Nunca envia resposta de chat vazia
+        if tipo_ws == "CHAT_RESPONSE" and not dados_para_envio.get("texto"):
+            dados_para_envio["texto"] = "Feito!"
+            
         dados_para_envio.setdefault("titulo", "Assistente")
         dados_para_envio["origem_sistema"] = "OLLIE"
         
@@ -111,9 +116,18 @@ class GerenciadorNotificacoes:
             return False
 
     async def enviar_evento_log(self, evento_dict: dict):
-        """Silenciamos o broadcast de logs por padrão para limpar o canal de WS."""
-        # logger.debug(f"Log de evento suprimido do broadcast: {evento_dict.get('categoria')}")
-        pass
+        ts = evento_dict.get("timestamp")
+        ts_str = ts.isoformat() if isinstance(ts, datetime) else str(ts)
+        log_dto = {
+            "tipo_ws": "EVENTO_LOG",
+            "id": str(evento_dict.get("id")),
+            "categoria": str(evento_dict.get("categoria")),
+            "resumo": str(evento_dict.get("resumo", "Evento")),
+            "timestamp": ts_str,
+            "origem": str(evento_dict.get("origem")),
+            "icone": "circle"
+        }
+        await self._broadcast(log_dto)
 
     async def _broadcast(self, msg: dict):
         # Limpeza preventiva antes do broadcast
