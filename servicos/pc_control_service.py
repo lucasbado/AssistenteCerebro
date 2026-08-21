@@ -13,10 +13,19 @@ from typing import List
 if not os.getenv("RENDER"):
     try:
         import pyautogui
+        import pygetwindow as gw
+        import win32gui
+        import win32con
     except ImportError:
         pyautogui = None
+        gw = None
+        win32gui = None
+        win32con = None
     except Exception:
         pyautogui = None
+        gw = None
+        win32gui = None
+        win32con = None
 
     try:
         import voicemeeterlib
@@ -529,6 +538,11 @@ class PcControlService:
         chave = app_key.lower().strip()
         logger.info(f"🚀 [Launch] Iniciando sequência para abrir: '{chave}'")
         
+        # 🧠 INTEGRAÇÃO TOTAL: Verifica se o app já está rodando e foca a janela
+        if self.trazer_janela_para_frente(chave):
+            logger.info(f"✅ [Launch] App '{chave}' já estava rodando. Foco alterado.")
+            return True
+
         # 1. Tenta o mapeamento conhecido
         path = self.app_paths.get(chave)
         if path:
@@ -595,12 +609,53 @@ class PcControlService:
 
     def abrir_url(self, url):
         url_limpa = url.lower().strip()
+        
+        # 🧠 INTEGRAÇÃO TOTAL: Verifica se o site já está aberto em alguma aba
+        # Extrai o nome provável (ex: youtube, google, instagram)
+        nome_site = url_limpa.replace("https://", "").replace("http://", "").replace("www.", "").split(".")[0]
+        if len(nome_site) > 2:
+            if self.trazer_janela_para_frente(nome_site):
+                logger.info(f"✅ [PCControl] URL '{url}' já estava aberta. Foco alterado.")
+                return True
+
         if "." not in url_limpa: url_limpa += ".com"
         if not url_limpa.startswith("http"): url_limpa = "https://" + url_limpa
         try:
             if not webbrowser.open(url_limpa):
                 os.system(f'start "" "{url_limpa}"')
-        except: self.executar_comando_direto(url_limpa)
+            return False # Retorna False pois abriu uma NOVA janela
+        except: 
+            self.executar_comando_direto(url_limpa)
+            return False
+
+    def trazer_janela_para_frente(self, termo: str) -> bool:
+        """Busca janelas ativas que contenham o termo e traz para o topo."""
+        if not gw or not win32gui: return False
+        
+        try:
+            termo = termo.lower()
+            janelas = gw.getAllWindows()
+            
+            for j in janelas:
+                if termo in j.title.lower():
+                    # 💡 Restaura se estiver minimizada
+                    if j.isMinimized:
+                        j.restore()
+                    
+                    # 🚀 Força o foco usando Win32 (mais robusto que pygetwindow puro)
+                    try:
+                        win32gui.ShowWindow(j._hWnd, win32con.SW_RESTORE)
+                        win32gui.SetForegroundWindow(j._hWnd)
+                        return True
+                    except Exception as e:
+                        # Às vezes o Windows bloqueia SetForegroundWindow se não for o processo ativo
+                        logger.warning(f"Falha ao focar janela '{j.title}': {e}")
+                        j.activate()
+                        return True
+            return False
+        except Exception as e:
+            logger.error(f"Erro ao gerenciar janelas para '{termo}': {e}")
+            return False
 
     def pesquisa_google(self, query):
         url = f"https://www.google.com/search?q={query.replace(' ', '+')}"

@@ -124,14 +124,10 @@ class GerenciadorNotificacoes:
         }
         await self._broadcast(log_dto)
 
-    async def _enviar_direto(self, ws: WebSocket, msg: dict):
-        try:
-            await ws.send_text(json.dumps(msg, default=str))
-        except Exception as e:
-            logger.error(f"❌ [WS] Falha no envio direto: {e}")
-            self.desconectar(ws)
-
     async def _broadcast(self, msg: dict):
+        # Limpeza preventiva antes do broadcast
+        self.conexoes_ativas = [ws for ws in self.conexoes_ativas if ws.client_state.value == 1]
+        
         if not self.conexoes_ativas:
             logger.debug("⚠️ [WS] Nenhum cliente conectado para broadcast.")
             if msg.get("tipo_ws") in ["CHAT_RESPONSE", "NOTIFICACAO"]:
@@ -206,16 +202,18 @@ async def websocket_endpoint(websocket: WebSocket):
                         logger.info("🖥️ [WS] PC Master registrado com sucesso!")
                         
                     elif cliente_id == "MOBILE":
+                        conn_id = msg.get("connection_id", "legacy")
                         # 🛡️ ANTI-DUPLICIDADE: Só fecha se for uma conexão REALMENTE diferente
                         if central_alertas.mobile_client and central_alertas.mobile_client != websocket:
-                            logger.warning("🔄 [WS] Novo MOBILE detectado. Substituindo conexão antiga.")
+                            logger.warning(f"🔄 [WS] Novo MOBILE detectado ({conn_id}). Substituindo conexão antiga.")
                             old_ws = central_alertas.mobile_client
                             if old_ws in central_alertas.conexoes_ativas:
                                 central_alertas.conexoes_ativas.remove(old_ws)
-                            try: await old_ws.close(1001)
+                            try: await old_ws.close(1001, "Nova conexão MOBILE registrada")
                             except: pass
+                        
                         central_alertas.mobile_client = websocket
-                        logger.info("📱 [WS] Celular registrado com sucesso!")
+                        logger.info(f"📱 [WS] Celular registrado ({conn_id})!")
 
                 elif tipo == "CHAT_MESSAGE":
                     from core.kernel import kernel

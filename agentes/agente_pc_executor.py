@@ -82,9 +82,36 @@ class AgentePcExecutor:
 
             # --- COMANDOS SISTEMA ---
             elif comando == "abrir_app":
-                pc_control_service.abrir_app(evento.payload.get("app"))
+                foi_focada = pc_control_service.abrir_app(evento.payload.get("app"))
+                
+                if foi_focada:
+                    from core.kernel import kernel
+                    from core.tipos import CategoriaEvento, OrigemEvento
+                    await kernel.publicar(evento.clonar(
+                        categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                        acao=TipoAcao.INTENCAO_INTERACAO,
+                        origem=OrigemEvento.IA,
+                        payload={
+                            "texto": f"O {evento.payload.get('app')} já estava aberto, trouxe a janela para frente!",
+                            "tipo_ws": "CHAT_RESPONSE"
+                        }
+                    ))
             elif comando == "abrir_url":
-                pc_control_service.abrir_url(evento.payload.get("url"))
+                foi_focada = pc_control_service.abrir_url(evento.payload.get("url"))
+                
+                # 🧠 Se a janela já existia, avisa o usuário no chat
+                if foi_focada:
+                    from core.kernel import kernel
+                    from core.tipos import CategoriaEvento, OrigemEvento, TipoAcao
+                    await kernel.publicar(evento.clonar(
+                        categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                        acao=TipoAcao.INTENCAO_INTERACAO,
+                        origem=OrigemEvento.IA,
+                        payload={
+                            "texto": f"Opa! Vi que o site já estava aberto, mudei o foco para lá.",
+                            "tipo_ws": "CHAT_RESPONSE"
+                        }
+                    ))
             elif comando == "pesquisa_google":
                 pc_control_service.pesquisa_google(evento.payload.get("query"))
             elif comando == "buscar_documentos":
