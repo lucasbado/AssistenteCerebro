@@ -111,18 +111,9 @@ class GerenciadorNotificacoes:
             return False
 
     async def enviar_evento_log(self, evento_dict: dict):
-        ts = evento_dict.get("timestamp")
-        ts_str = ts.isoformat() if isinstance(ts, datetime) else str(ts)
-        log_dto = {
-            "tipo_ws": "EVENTO_LOG",
-            "id": str(evento_dict.get("id")),
-            "categoria": str(evento_dict.get("categoria")),
-            "resumo": str(evento_dict.get("resumo", "Evento")),
-            "timestamp": ts_str,
-            "origem": str(evento_dict.get("origem")),
-            "icone": "circle"
-        }
-        await self._broadcast(log_dto)
+        """Silenciamos o broadcast de logs por padrão para limpar o canal de WS."""
+        # logger.debug(f"Log de evento suprimido do broadcast: {evento_dict.get('categoria')}")
+        pass
 
     async def _broadcast(self, msg: dict):
         # Limpeza preventiva antes do broadcast

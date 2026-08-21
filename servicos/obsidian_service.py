@@ -78,28 +78,32 @@ class ObsidianService:
             logger.error(f"Erro ao registrar fato no Obsidian: {e}")
 
     def listar_conhecimento_essencial(self) -> str:
-        """Retorna um consolidado de notas na raiz e na pasta Agente/."""
+        """Retorna um consolidado das notas mais cruciais (limitado para economia)."""
         if not self.vault_path: return "Conhecimento Obsidian indisponível."
         
         consolidado = []
         try:
-            # 1. Lê notas principais da raiz
-            notas_raiz = ["Rotinas.md", "Gostos.md", "Identidade.md", "Projetos.md"]
+            # 1. Lê notas estruturais da raiz
+            notas_raiz = ["Identidade.md", "Mapa_Mestre.md", "Gostos.md"]
             for nota in notas_raiz:
                 c = self.ler_nota(nota)
                 if c.strip():
-                    consolidado.append(f"### NOTA RAIZ: {nota}\n{c.strip()}")
-                    logger.info(f"📓 [Obsidian] Carregada nota da raiz: {nota}")
+                    # Pega apenas os primeiros 2000 caracteres de cada nota raiz para não explodir o prompt
+                    consolidado.append(f"### NOTA {nota}:\n{c.strip()[:2000]}")
+                    logger.info(f"📓 [Obsidian] Carregada nota essencial: {nota}")
 
-            # 2. Lê fatos extras da pasta Agente/
+            # 2. Lê apenas os 5 fatos mais recentes da pasta Agente/
             if os.path.exists(self.agente_dir):
                 arquivos = [f for f in os.listdir(self.agente_dir) if f.endswith(".md")]
-                for filename in arquivos:
+                # Ordena por data de modificação (mais recentes primeiro)
+                arquivos.sort(key=lambda x: os.path.getmtime(os.path.join(self.agente_dir, x)), reverse=True)
+                
+                for filename in arquivos[:5]:
                     if filename in notas_raiz: continue
                     conteudo = self.ler_nota(filename)
                     if conteudo.strip():
-                        consolidado.append(f"### FATO APRENDIDO: {filename}\n{conteudo.strip()}")
-                        logger.info(f"📓 [Obsidian] Carregado fato: {filename}")
+                        consolidado.append(f"### FATO RECENTE: {filename}\n{conteudo.strip()[:1000]}")
+                        logger.info(f"📓 [Obsidian] Carregado fato recente: {filename}")
         except Exception as e:
             logger.error(f"Erro ao listar conhecimento do Obsidian: {e}")
         

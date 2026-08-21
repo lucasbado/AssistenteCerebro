@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # CACHE DE DESDUPLICAÇÃO (ANTI-SPAM DO ANDROID)
 # ==========================================
 DEDUPLICATION_CACHE = OrderedDict()
-CACHE_TTL_SECONDS = 10  # Ignora eventos idênticos em uma janela de 10 segundos
+CACHE_TTL_SECONDS = 2  # Reduzido para ser mais responsivo mas bloquear flood instantâneo
 
 class RequestEvento(BaseModel):
     categoria: str
@@ -61,10 +61,12 @@ def _is_duplicate(evento: RequestEvento) -> bool:
     if evento.categoria == "SISTEMA_COMANDO_USUARIO" and texto_puro:
         event_key = (evento.categoria, evento.pacote, texto_puro)
     else:
-        event_key = (evento.categoria, evento.pacote, conteudo_str)
+        # 🛡️ NORMALIZAÇÃO: Ignora timestamps milimétricos na chave de deduplicação
+        # para evitar que eventos idênticos com diferença de 1ms passem
+        event_key = (evento.categoria, evento.pacote, hash(json.dumps(evento.conteudo, sort_keys=True)))
 
-    # 2. Limpa o cache antigo (Janela de 5 segundos é suficiente para flood)
-    keys_to_delete = [k for k, ts in DEDUPLICATION_CACHE.items() if now - ts > timedelta(seconds=5)]
+    # 2. Limpa o cache antigo (Janela de CACHE_TTL_SECONDS)
+    keys_to_delete = [k for k, ts in DEDUPLICATION_CACHE.items() if now - ts > timedelta(seconds=CACHE_TTL_SECONDS)]
     for key in keys_to_delete:
         del DEDUPLICATION_CACHE[key]
 
