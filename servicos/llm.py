@@ -22,14 +22,14 @@ class ServicoLLM:
     def __init__(self):
         # Configuração para Groq (Cloud)
         self.api_key = os.getenv("GROQ_API_KEY")
-        # 🚀 Modelos verificados via API em Agosto/2026 - PRIORIDADE: DISPONIBILIDADE
-        # Removidos modelos desativados e priorizados os de alta performance/limite
+        # 🚀 Modelos verificados via API em Agosto/2026 - PRIORIDADE: QUOTA DISPONÍVEL
         self.modelos_groq = [
-            "openai/gpt-oss-20b",         # Inteligência OpenAI estável
-            "qwen/qwen3.6-27b",           # Modelo versátil
-            "groq/compound-mini",         # Ultra-velocidade (maior limite de req/min)
-            "groq/compound",              # Agentic potente
-            "allam-2-7b"                  # Fallback emergencial
+            "openai/gpt-oss-120b",           # Quota Independente (TPM/RPM Alta)
+            "openai/gpt-oss-safeguard-20b",  # Alternativa de Segurança
+            "openai/gpt-oss-20b",            # Inteligência Estável
+            "qwen/qwen3.6-27b",              # Versátil
+            "groq/compound-mini",            # Ultra-rápido
+            "groq/compound"                  # Agentic
         ]
         self.modelo_atual = self.modelos_groq[0]
 
@@ -83,7 +83,7 @@ class ServicoLLM:
                         await asyncio.sleep(1)
                         continue 
             
-            raise ValueError("Todos os modelos da Groq falharam ou atingiram o limite.")
+            raise ValueError("Ollie está sem 'combustível' na nuvem hoje (Quota Esgotada).")
             
         elif not os.getenv("RENDER"):
             # Chamada Ollama (Local)
@@ -126,10 +126,14 @@ class ServicoLLM:
         
         texto_msg = str(payload.get('texto', '')).lower()
         
-        # 💡 ECONOMIA: Só carrega docs completos para papo complexo
+        # 💡 ECONOMIA EXTREMA: Só carrega instruções cognitivas se for papo denso
+        # Se for um comando curto (<10 letras) ou simples, economizamos tokens
         instrucoes_docs = ""
-        if len(texto_msg) > 15 or "como" in texto_msg or "oque" in texto_msg or "ajuda" in texto_msg:
+        palavras_chave = ["como", "oque", "ajuda", "quem", "explica", "rotina", "regra"]
+        if len(texto_msg) > 12 or any(k in texto_msg for k in palavras_chave):
             instrucoes_docs = self._carregar_instrucoes_cognitivas()
+        else:
+            logger.info("📉 [LLM] Modo Econômico: Instruções cognitivas omitidas.")
 
         # 🧠 CONSCIÊNCIA: Pega o estado atual do ambiente
         resumo_ambiente = consciencia.obter_resumo_para_llm()

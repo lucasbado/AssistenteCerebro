@@ -88,21 +88,21 @@ class ObsidianService:
             for nota in notas_raiz:
                 c = self.ler_nota(nota)
                 if c.strip():
-                    # Pega apenas os primeiros 2000 caracteres de cada nota raiz para não explodir o prompt
-                    consolidado.append(f"### NOTA {nota}:\n{c.strip()[:2000]}")
+                    # 📉 ECONOMIA: Reduzido de 2000 para 800 caracteres
+                    consolidado.append(f"### NOTA {nota}:\n{c.strip()[:800]}")
                     logger.info(f"📓 [Obsidian] Carregada nota essencial: {nota}")
 
-            # 2. Lê apenas os 5 fatos mais recentes da pasta Agente/
+            # 2. Lê apenas os 3 fatos mais recentes da pasta Agente/ (Reduzido de 5 para 3)
             if os.path.exists(self.agente_dir):
                 arquivos = [f for f in os.listdir(self.agente_dir) if f.endswith(".md")]
-                # Ordena por data de modificação (mais recentes primeiro)
                 arquivos.sort(key=lambda x: os.path.getmtime(os.path.join(self.agente_dir, x)), reverse=True)
                 
-                for filename in arquivos[:5]:
+                for filename in arquivos[:3]:
                     if filename in notas_raiz: continue
                     conteudo = self.ler_nota(filename)
                     if conteudo.strip():
-                        consolidado.append(f"### FATO RECENTE: {filename}\n{conteudo.strip()[:1000]}")
+                        # 📉 ECONOMIA: Reduzido de 1000 para 400 caracteres
+                        consolidado.append(f"### FATO RECENTE: {filename}\n{conteudo.strip()[:400]}")
                         logger.info(f"📓 [Obsidian] Carregado fato recente: {filename}")
         except Exception as e:
             logger.error(f"Erro ao listar conhecimento do Obsidian: {e}")

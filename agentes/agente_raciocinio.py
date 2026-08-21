@@ -58,12 +58,19 @@ class AgenteRaciocinio:
         try:
             logger.info(f"🧠 [Raciocínio] Iniciando processamento de '{lock_id[:30]}'")
 
-            # 1. Recupera Contexto do Obsidian
+            # 1. Recupera Contexto do Obsidian (MODO ECONÔMICO)
             conhecimento_atual = ""
-            try:
-                conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
-            except Exception as e:
-                logger.warning(f"⚠️ Erro Obsidian: {e}")
+            texto_u = str(evento.payload.get("texto", "")).lower()
+            
+            # 📉 ECONOMIA: Só lê Obsidian se a mensagem for longa ou não for apenas um "oi/olá"
+            saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "tudo bem", "opa"]
+            if len(texto_u) > 8 and not any(texto_u == s for s in saudacoes):
+                try:
+                    conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
+                except Exception as e:
+                    logger.warning(f"⚠️ Erro Obsidian: {e}")
+            else:
+                logger.info("📉 [Raciocínio] MODO ECONÔMICO: Ignorando Obsidian para saudação curta.")
                 
             # 🌟 FEEDBACK IMEDIATO (Thinking)
             texto_msg = str(evento.payload.get("texto", "")).lower()
