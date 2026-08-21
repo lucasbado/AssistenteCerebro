@@ -29,6 +29,13 @@ class AgenteRaciocinio:
         self._locks_ativos = set()
 
     async def processar(self, evento: EventoCanonico):
+        # 0. Inicializa resultado padrão para evitar erros de variável indefinida
+        resultado = {
+            "tipo_interacao": "IGNORAR",
+            "mensagem_dinamica": None,
+            "execucao_direta": None
+        }
+
         # 🌟 LÓGICA DE APRENDIZADO POR REJEIÇÃO
         if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO and evento.payload.get("tipo") == "SUGESTAO_REJEITADA":
             id_orig = evento.payload.get("id_original")
@@ -40,7 +47,6 @@ class AgenteRaciocinio:
             return
             
         # 🛡️ TRAVA DE DUPLICIDADE: Verifica se este evento já está sendo processado
-        # Usamos apenas o texto se for comando do usuário para evitar bloqueio por milissegundos
         lock_id = f"cmd_{evento.payload.get('texto', '')}" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else (evento.metadados.get("correlacao_id") or evento.id)
         
         if lock_id in self._locks_ativos:
@@ -53,15 +59,14 @@ class AgenteRaciocinio:
             logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 1: Iniciando processamento de '{lock_id[:30]}'")
 
             # 1. Recupera Contexto do Obsidian (Long-term)
+            conhecimento_atual = ""
             try:
                 conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
                 logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 3: Obsidian carregado.")
             except Exception as e:
                 logger.warning(f"⚠️ Erro ao ler Obsidian: {e}")
-                conhecimento_atual = ""
                 
-            # 🌟 FEEDBACK IMEDIATO (Silencioso para comandos rápidos)
-            # Se for comando de luz, não manda sinal de thinking para não poluir o chat
+            # 🌟 FEEDBACK IMEDIATO
             texto_msg = str(evento.payload.get("texto", "")).lower()
             if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO and not any(x in texto_msg for x in ["luz", "lampada", "apaga", "liga"]):
                 try:
@@ -73,87 +78,58 @@ class AgenteRaciocinio:
                     ))
                 except: pass
 
-            # 2. Salva a mensagem do usuário com TIMEOUT
+            # 2. Salva a mensagem do usuário
             chave_conversa = "br.com.assistentecell.chat" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else evento.pacote
             if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
                 texto_usuario = evento.payload.get("texto", "")
                 if texto_usuario:
                     try:
-                        await asyncio.wait_for(
-                            self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Usuário: {texto_usuario}"]),
-                            timeout=5.0
-                        )
-                        logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 4: Conversa salva no DB.")
-                    except Exception as e:
-                        logger.error(f"❌ [Raciocínio] Falha ao salvar conversa no DB: {e}")
+                        await asyncio.wait_for(self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Usuário: {texto_usuario}"]), timeout=5.0)
+                    except: pass
 
             # 3. Recupera contexto histórico
+            historico = []
             try:
                 historico = await asyncio.wait_for(self.memoria_trabalho.obter_contexto(chave_conversa), timeout=3.0)
-                logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 5: Histórico recuperado.")
-                
-                # 🕵️ MEMÓRIA SEMÂNTICA DE CURTO PRAZO: Verifica se há um ID de correlação
                 cid = evento.metadados.get("correlacao_id")
                 if cid:
-                    logger.info(f"🎯 [Raciocínio] Contexto de Resposta detectado (CID: {cid})")
                     historico.append(f"CONTEXTO: O usuário está respondendo especificamente à notificação {cid}.")
-            except:
-                historico = []
+            except: pass
 
-                # 4. Consulta o Córtex (LLM) com TIMEOUT de 40s
-                logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 6: Chamando LLM ({self.llm.modelo_atual})...")
-                try:
-                    start_time = asyncio.get_event_loop().time()
-                    resultado = await asyncio.wait_for(
-                        self.llm.classificar_evento(
-                            categoria=evento.categoria.value,
-                            pacote=evento.pacote,
-                            payload=evento.payload,
-                            historico=historico,
-                            timestamp_dispositivo=evento.timestamp, # 🕒 SINCRONIZAÇÃO DE TEMPO
-                            conhecimento=conhecimento_atual # 📓 CONHECIMENTO DO USUÁRIO
-                        ),
-                        timeout=40.0
-                    )
-                    elapsed = asyncio.get_event_loop().time() - start_time
-                    logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 7: LLM ({self.llm.modelo_atual}) respondeu em {elapsed:.2f}s")
-                except asyncio.TimeoutError:
-                    logger.error("❌ [Raciocínio] TIMEOUT da LLM (40s).")
-                    resultado = {
-                        "tipo_interacao": "NOTIFICAR",
-                        "mensagem_dinamica": "Vixi, meu cérebro deu uma engasgada aqui na nuvem. Pode repetir, parceiro?",
-                        "execucao_direta": None
-                    }
-                except Exception as e:
-                    logger.error(f"❌ [Raciocínio] Erro CRÍTICO na chamada LLM: {str(e)}")
-                    import traceback
-                    logger.error(traceback.format_exc())
-                    
-                    # 🛡️ RESPOSTA MAIS CLARA: Diferencia pane técnica de bloqueio de API
-                    error_str = str(e).lower()
-                    if "todos os modelos" in error_str or "429" in error_str:
-                        msg_pane = "Vish, a Groq tá me barrando por velocidade! Dá um segundinho e tenta de novo?"
-                    elif "model_decommissioned" in error_str or "400" in error_str:
-                        msg_pane = "Eita, o modelo de IA que eu uso mudou. Dá um segundinho que tô me atualizando!"
-                    else:
-                        msg_pane = "Vish, deu pane no meu sistema aqui! Tenta de novo em um segundinho?"
-                    
-                    resultado = {
-                        "tipo_interacao": "NOTIFICAR",
-                        "mensagem_dinamica": msg_pane,
-                        "execucao_direta": None
-                    }
+            # 4. Consulta o Córtex (LLM)
+            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 6: Chamando LLM ({self.llm.modelo_atual})...")
+            try:
+                resultado = await asyncio.wait_for(
+                    self.llm.classificar_evento(
+                        categoria=evento.categoria.value,
+                        pacote=evento.pacote,
+                        payload=evento.payload,
+                        historico=historico,
+                        timestamp_dispositivo=evento.timestamp,
+                        conhecimento=conhecimento_atual
+                    ),
+                    timeout=40.0
+                )
+            except asyncio.TimeoutError:
+                resultado = {"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": "Vixi, meu cérebro deu uma engasgada aqui na nuvem. Pode repetir?"}
+            except Exception as e:
+                logger.error(f"❌ [Raciocínio] Erro na chamada LLM: {e}")
+                error_str = str(e).lower()
+                if "todos os modelos" in error_str or "429" in error_str:
+                    msg_pane = "Vish, a Groq tá me barrando por velocidade! Dá um segundinho e tenta de novo?"
+                else:
+                    msg_pane = "Vish, deu pane no meu sistema aqui! Tenta de novo em um segundinho?"
+                resultado = {"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": msg_pane}
+
+        except Exception as outer_e:
+            logger.error(f"💥 Erro fatal no AgenteRaciocinio: {outer_e}")
+            resultado = {"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": "Vish, deu pane no meu sistema aqui!"}
         finally:
-            # 🔓 LIBERA O LOCK: Sempre libera após o processamento (sucesso ou erro)
             if lock_id in self._locks_ativos:
                 self._locks_ativos.remove(lock_id)
 
-        # 🌟 LOG DE DECISÃO: Ver exatamente o que a IA pensou
-        try:
-            logger.info(f"📊 [OLLIE_BRAIN] Raw Decision: {json.dumps(resultado, ensure_ascii=False)}")
-        except:
-            logger.error("❌ Erro ao logar resultado (pode estar indefinido)")
-            resultado = {"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": "Vish, deu pane no meu sistema aqui!"}
+        # 🌟 LOG DE DECISÃO
+        logger.info(f"📊 [OLLIE_BRAIN] Raw Decision: {json.dumps(resultado, ensure_ascii=False)}")
 
         # 🚀 EXTRAÇÃO ROBUSTA (SCAVENGER): Procura campos em qualquer nível do JSON
         def buscar_campo(obj, campo):
