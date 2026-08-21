@@ -21,14 +21,14 @@ class ServicoLLM:
     def __init__(self):
         # Configuração para Groq (Cloud)
         self.api_key = os.getenv("GROQ_API_KEY")
-        # 🚀 Modelos verificados via API em Agosto/2026
+        # 🚀 Modelos verificados via API em Agosto/2026 - PRIORIDADE: ESTABILIDADE
         self.modelos_groq = [
-            "openai/gpt-oss-120b",        # Flagship (OpenAI OSS)
-            "groq/compound",              # Modelo Agentic da Groq
-            "qwen/qwen3.6-27b",           # Versátil e equilibrado
-            "openai/gpt-oss-20b",         # Rápido e preciso
-            "groq/compound-mini",         # Ultra-velocidade (Debounce/Reflexo)
-            "allam-2-7b"                  # Fallback final
+            "llama-3.3-70b-versatile",    # Clássico ultra-estável
+            "openai/gpt-oss-120b",        # Potente se disponível
+            "qwen/qwen3.6-27b",           # Equilibrado
+            "openai/gpt-oss-20b",         # Rápido
+            "groq/compound",              # Agentic
+            "allam-2-7b"                  # Fallback
         ]
         self.modelo_atual = self.modelos_groq[0]
 
@@ -67,14 +67,22 @@ class ServicoLLM:
                     self.modelo_atual = modelo # Salva o modelo que funcionou
                     return json.loads(chat_completion.choices[0].message.content)
                 except Exception as e:
-                    if "rate_limit" in str(e).lower() or "429" in str(e):
-                        logger.warning(f"⚠️ [LLM] Limite atingido no modelo {modelo}. Pulando para o próximo...")
+                    error_msg = str(e).lower()
+                    logger.error(f"❌ [LLM] Falha no modelo {modelo}: {error_msg}")
+                    
+                    if "rate_limit" in error_msg or "429" in error_msg:
+                        logger.warning(f"⚠️ [LLM] Limite atingido no modelo {modelo}. Aguardando 1.5s...")
+                        await asyncio.sleep(1.5) # Pausa estratégica para a API respirar
+                        continue
+                    elif "model_decommissioned" in error_msg or "400" in error_msg:
+                        logger.warning(f"⚠️ [LLM] Modelo {modelo} indisponível. Pulando...")
                         continue
                     else:
-                        logger.error(f"❌ [LLM] Erro na API Groq ({modelo}): {e}")
-                        raise
+                        logger.error(f"❌ [LLM] Erro inesperado na API Groq ({modelo}): {e}")
+                        await asyncio.sleep(1)
+                        continue 
             
-            raise ValueError("Todos os modelos da Groq atingiram o limite diário.")
+            raise ValueError("Todos os modelos da Groq falharam ou atingiram o limite.")
             
         elif not os.getenv("RENDER"):
             # Chamada Ollama (Local)

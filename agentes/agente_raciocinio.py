@@ -25,6 +25,8 @@ class AgenteRaciocinio:
         self.memoria_semantica = MemoriaSemantica()
         from servicos.memoria_trabalho import memoria_trabalho
         self.memoria_trabalho = memoria_trabalho
+        # 🔒 LOCK DE PROCESSAMENTO: Evita múltiplas chamadas simultâneas para o mesmo evento
+        self._locks_ativos = set()
 
     async def processar(self, evento: EventoCanonico):
         # 🌟 LÓGICA DE APRENDIZADO POR REJEIÇÃO
@@ -37,89 +39,102 @@ class AgenteRaciocinio:
         if evento.acao != TipoAcao.INTENCAO_RACIOCINIO:
             return
             
-        logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 1: Iniciando processamento do evento {evento.id[:8]}")
-
-        # 1. Recupera Contexto do Obsidian (Long-term)
+        # 🛡️ TRAVA DE DUPLICIDADE: Verifica se este evento já está sendo processado
+        lock_id = evento.metadados.get("correlacao_id") or evento.id
+        if lock_id in self._locks_ativos:
+            logger.warning(f"🛡️ [Raciocínio] Evento {lock_id[:8]} já está em processamento. Ignorando duplicata.")
+            return
+        
+        self._locks_ativos.add(lock_id)
+        
         try:
-            conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
-            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 3: Obsidian carregado.")
-        except Exception as e:
-            logger.warning(f"⚠️ Erro ao ler Obsidian: {e}")
-            conhecimento_atual = ""
-            
-        # 🌟 FEEDBACK IMEDIATO (Silencioso para comandos rápidos)
-        # Se for comando de luz, não manda sinal de thinking para não poluir o chat
-        texto_msg = str(evento.payload.get("texto", "")).lower()
-        if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO and not any(x in texto_msg for x in ["luz", "lampada", "apaga", "liga"]):
+            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 1: Iniciando processamento do evento {evento.id[:8]}")
+
+            # 1. Recupera Contexto do Obsidian (Long-term)
             try:
-                await kernel.publicar(evento.clonar(
-                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                    acao=TipoAcao.INTENCAO_INTERACAO,
-                    origem=OrigemEvento.IA,
-                    payload={"tipo_ws": "THINKING", "titulo": "Ollie", "texto": "..."}
-                ))
-            except: pass
-
-        # 2. Salva a mensagem do usuário com TIMEOUT
-        chave_conversa = "br.com.assistentecell.chat" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else evento.pacote
-        if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
-            texto_usuario = evento.payload.get("texto", "")
-            if texto_usuario:
+                conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
+                logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 3: Obsidian carregado.")
+            except Exception as e:
+                logger.warning(f"⚠️ Erro ao ler Obsidian: {e}")
+                conhecimento_atual = ""
+                
+            # 🌟 FEEDBACK IMEDIATO (Silencioso para comandos rápidos)
+            # Se for comando de luz, não manda sinal de thinking para não poluir o chat
+            texto_msg = str(evento.payload.get("texto", "")).lower()
+            if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO and not any(x in texto_msg for x in ["luz", "lampada", "apaga", "liga"]):
                 try:
-                    await asyncio.wait_for(
-                        self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Usuário: {texto_usuario}"]),
-                        timeout=5.0
-                    )
-                    logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 4: Conversa salva no DB.")
-                except Exception as e:
-                    logger.error(f"❌ [Raciocínio] Falha ao salvar conversa no DB: {e}")
+                    await kernel.publicar(evento.clonar(
+                        categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                        acao=TipoAcao.INTENCAO_INTERACAO,
+                        origem=OrigemEvento.IA,
+                        payload={"tipo_ws": "THINKING", "titulo": "Ollie", "texto": "..."}
+                    ))
+                except: pass
 
-        # 3. Recupera contexto histórico
-        try:
-            historico = await asyncio.wait_for(self.memoria_trabalho.obter_contexto(chave_conversa), timeout=3.0)
-            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 5: Histórico recuperado.")
-            
-            # 🕵️ MEMÓRIA SEMÂNTICA DE CURTO PRAZO: Verifica se há um ID de correlação
-            cid = evento.metadados.get("correlacao_id")
-            if cid:
-                logger.info(f"🎯 [Raciocínio] Contexto de Resposta detectado (CID: {cid})")
-                historico.append(f"CONTEXTO: O usuário está respondendo especificamente à notificação {cid}.")
-        except:
-            historico = []
+            # 2. Salva a mensagem do usuário com TIMEOUT
+            chave_conversa = "br.com.assistentecell.chat" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else evento.pacote
+            if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+                texto_usuario = evento.payload.get("texto", "")
+                if texto_usuario:
+                    try:
+                        await asyncio.wait_for(
+                            self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Usuário: {texto_usuario}"]),
+                            timeout=5.0
+                        )
+                        logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 4: Conversa salva no DB.")
+                    except Exception as e:
+                        logger.error(f"❌ [Raciocínio] Falha ao salvar conversa no DB: {e}")
 
-        # 4. Consulta o Córtex (LLM) com TIMEOUT de 40s
-        logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 6: Chamando LLM ({self.llm.modelo_atual})...")
-        try:
-            start_time = asyncio.get_event_loop().time()
-            resultado = await asyncio.wait_for(
-                self.llm.classificar_evento(
-                    categoria=evento.categoria.value,
-                    pacote=evento.pacote,
-                    payload=evento.payload,
-                    historico=historico,
-                    timestamp_dispositivo=evento.timestamp, # 🕒 SINCRONIZAÇÃO DE TEMPO
-                    conhecimento=conhecimento_atual # 📓 CONHECIMENTO DO USUÁRIO
-                ),
-                timeout=40.0
-            )
-            elapsed = asyncio.get_event_loop().time() - start_time
-            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 7: LLM ({self.llm.modelo_atual}) respondeu em {elapsed:.2f}s")
-        except asyncio.TimeoutError:
-            logger.error("❌ [Raciocínio] TIMEOUT da LLM (40s).")
-            resultado = {
-                "tipo_interacao": "NOTIFICAR",
-                "mensagem_dinamica": "Vixi, meu cérebro deu uma engasgada aqui na nuvem. Pode repetir, parceiro?",
-                "execucao_direta": None
-            }
-        except Exception as e:
-            logger.error(f"❌ [Raciocínio] Erro CRÍTICO na chamada LLM: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-            resultado = {
-                "tipo_interacao": "NOTIFICAR",
-                "mensagem_dinamica": "Vish, deu pane no meu sistema aqui! Tenta de novo em um segundinho?",
-                "execucao_direta": None
-            }
+            # 3. Recupera contexto histórico
+            try:
+                historico = await asyncio.wait_for(self.memoria_trabalho.obter_contexto(chave_conversa), timeout=3.0)
+                logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 5: Histórico recuperado.")
+                
+                # 🕵️ MEMÓRIA SEMÂNTICA DE CURTO PRAZO: Verifica se há um ID de correlação
+                cid = evento.metadados.get("correlacao_id")
+                if cid:
+                    logger.info(f"🎯 [Raciocínio] Contexto de Resposta detectado (CID: {cid})")
+                    historico.append(f"CONTEXTO: O usuário está respondendo especificamente à notificação {cid}.")
+            except:
+                historico = []
+
+            # 4. Consulta o Córtex (LLM) com TIMEOUT de 40s
+            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 6: Chamando LLM ({self.llm.modelo_atual})...")
+            try:
+                start_time = asyncio.get_event_loop().time()
+                resultado = await asyncio.wait_for(
+                    self.llm.classificar_evento(
+                        categoria=evento.categoria.value,
+                        pacote=evento.pacote,
+                        payload=evento.payload,
+                        historico=historico,
+                        timestamp_dispositivo=evento.timestamp, # 🕒 SINCRONIZAÇÃO DE TEMPO
+                        conhecimento=conhecimento_atual # 📓 CONHECIMENTO DO USUÁRIO
+                    ),
+                    timeout=40.0
+                )
+                elapsed = asyncio.get_event_loop().time() - start_time
+                logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 7: LLM ({self.llm.modelo_atual}) respondeu em {elapsed:.2f}s")
+            except asyncio.TimeoutError:
+                logger.error("❌ [Raciocínio] TIMEOUT da LLM (40s).")
+                resultado = {
+                    "tipo_interacao": "NOTIFICAR",
+                    "mensagem_dinamica": "Vixi, meu cérebro deu uma engasgada aqui na nuvem. Pode repetir, parceiro?",
+                    "execucao_direta": None
+                }
+            except Exception as e:
+                logger.error(f"❌ [Raciocínio] Erro CRÍTICO na chamada LLM: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+                resultado = {
+                    "tipo_interacao": "NOTIFICAR",
+                    "mensagem_dinamica": "Vish, deu pane no meu sistema aqui! Tenta de novo em um segundinho?",
+                    "execucao_direta": None
+                }
+        finally:
+            # 🔓 LIBERA O LOCK: Sempre libera após o processamento (sucesso ou erro)
+            if lock_id in self._locks_ativos:
+                self._locks_ativos.remove(lock_id)
 
         # 🌟 LOG DE DECISÃO: Ver exatamente o que a IA pensou
         logger.info(f"📊 [OLLIE_BRAIN] Raw Decision: {json.dumps(resultado, ensure_ascii=False)}")
