@@ -1,0 +1,28 @@
+[
+    {
+        "nome": "Modo Trabalho Automático",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.microsoft.teams"
+        },
+        "acoes": [
+            {"alvo": "PC", "comando": "voicemeeter", "parametro": "Strip[0].Mute=1"},
+            {"alvo": "PC", "comando": "abrir_app", "parametro": "vscode"},
+            {"alvo": "MOBILE", "comando": "SISTEMA_COMANDO", "parametro": "ATIVAR_FOCO"}
+        ],
+        "ativa": true
+    },
+    {
+        "nome": "Boas-vindas Manhã",
+        "gatilho": {
+            "tipo": "TIME_RANGE",
+            "inicio": "08:00",
+            "fim": "10:00",
+            "evento": "PC_LOGIN"
+        },
+        "acoes": [
+            {"alvo": "IA", "comando": "NOTIFICAR", "parametro": "Bom dia! Seu PC está pronto. Deseja abrir sua agenda?"}
+        ],
+        "ativa": false
+    }
+]

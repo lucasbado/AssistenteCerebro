@@ -25,11 +25,17 @@ class AgenteReflexo:
             return
 
         # O filtro do Kernel já garante que este agente só recebe eventos de NOTIFICACAO.
-        remetente = evento.payload.get("titulo")
-        texto = evento.payload.get("texto")
+        remetente = evento.payload.get("titulo", "")
+        texto = evento.payload.get("texto", "")
 
         if not remetente:
             logger.debug(f"[Reflexo] Ignorando notificação sem remetente: {evento.id[:8]}")
+            return
+            
+        # 🛡️ FILTRO DE RELEVÂNCIA: Descartar o que claramente é lixo ou aviso técnico
+        blacklist = ["whatsapp web", "procurando", "sincronizando", "backup", "conectado", "carregando"]
+        if any(term in remetente.lower() or term in texto.lower() for term in blacklist):
+            logger.info(f"🔇 [Reflexo] Notificação filtrada por blacklist: {remetente}")
             return
 
         # A filosofia do sistema é clara: se um evento é complexo, ele deve

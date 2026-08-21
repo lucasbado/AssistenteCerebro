@@ -97,7 +97,8 @@ class AgenteRaciocinio:
                     pacote=evento.pacote,
                     payload=evento.payload,
                     historico=historico,
-                    timestamp_dispositivo=evento.timestamp # 🕒 SINCRONIZAÇÃO DE TEMPO
+                    timestamp_dispositivo=evento.timestamp, # 🕒 SINCRONIZAÇÃO DE TEMPO
+                    conhecimento=conhecimento_atual # 📓 CONHECIMENTO DO USUÁRIO
                 ),
                 timeout=40.0
             )
@@ -297,6 +298,7 @@ class AgenteRaciocinio:
                 # Alinhamento de nomes com o Android SystemCommandHandler
                 acao_ajustada = comando.upper()
                 if acao_ajustada == "SET_ALARM": acao_ajustada = "CONFIGURAR_DESPERTAR"
+                if acao_ajustada == "OPEN_URL": acao_ajustada = "ABRIR_URL"
                 
                 payload_mob = {"tipo_ws": "COMANDO_SISTEMA", "acao": acao_ajustada, "parametro": param}
                 if "abrir_app" in comando: payload_mob["pacote"] = param
@@ -306,7 +308,7 @@ class AgenteRaciocinio:
                 await central_alertas._broadcast(payload_mob)
                 logger.info(f"📱 [Raciocínio] Comando Mobile enviado: {acao_ajustada}({param})")
 
-            # 🌟 CASO 4: Gerenciamento de Macros
+            # 🌟 CASO 4: Gerenciamento de Macros e Rotinas
             if comando == "criar_macro":
                 from servicos.macro_service import macro_service
                 # Extrai os passos reais decididos pela IA
@@ -316,6 +318,17 @@ class AgenteRaciocinio:
                 
                 macro_service.criar_macro(param, passos)
                 logger.info(f"💾 [Raciocínio] Macro '{param}' salva com {len(passos)} passos.")
+            
+            elif comando == "criar_rotina":
+                rotina = exec_direta.get("rotina")
+                if rotina:
+                    await kernel.publicar(EventoCanonico(
+                        categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO,
+                        acao=TipoAcao.NORMAL,
+                        origem=OrigemEvento.IA,
+                        payload={"comando": "criar_rotina", "rotina": rotina}
+                    ))
+                    logger.info(f"💾 [Raciocínio] Rotina '{rotina.get('nome')}' enviada para o AgenteRotina.")
 
         # 5. LÓGICA DE INTERAÇÃO (Notificações e Sugestões)
         tipo_interacao = resultado.get("tipo_interacao")
@@ -361,6 +374,11 @@ class AgenteRaciocinio:
                 
                 # Se for SUGERIR, anexa o primeiro comando da lista como ação do botão
                 if tipo_interacao == "SUGERIR" and exec_direta_raw:
+                    # 🛡️ GARANTIA DE PONTUAÇÃO: Sugestão sem '?' não abre microfone
+                    if mensagem and not mensagem.strip().endswith("?"):
+                        mensagem = mensagem.strip() + "?"
+                        payload_notif["texto"] = mensagem
+                        
                     sugestao = exec_direta_raw[0] if isinstance(exec_direta_raw, list) else exec_direta_raw
                     
                     # 🎯 INTELIGÊNCIA DE MENSAGENS: Se for para abrir app, tenta usar o CID original

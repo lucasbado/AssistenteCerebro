@@ -16,16 +16,21 @@ if not os.getenv("RENDER"):
         import pygetwindow as gw
         import win32gui
         import win32con
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        from comtypes import CLSCTX_ALL
+        from ctypes import cast, POINTER
     except ImportError:
         pyautogui = None
         gw = None
         win32gui = None
         win32con = None
+        AudioUtilities = None
     except Exception:
         pyautogui = None
         gw = None
         win32gui = None
         win32con = None
+        AudioUtilities = None
 
     try:
         import voicemeeterlib
@@ -685,6 +690,93 @@ class PcControlService:
         else:
             self.vm.set('Strip[0].Mute', 0)
             self.set_gain(4, 70)
+
+    # --- NOVAS AÇÕES DE CONTROLE TOTAL ---
+    def listar_diretorio(self, path: str = None) -> List[str]:
+        """Lista arquivos e pastas de um diretório."""
+        target = path or os.path.expanduser("~")
+        if not os.path.exists(target): return [f"Erro: Caminho '{target}' não existe."]
+        try:
+            items = os.listdir(target)
+            return sorted(items)
+        except Exception as e:
+            return [f"Erro ao acessar: {e}"]
+
+    def abrir_arquivo(self, path: str):
+        """Abre um arquivo ou pasta específica."""
+        if not os.path.exists(path):
+            # Tenta busca fuzzy se não for caminho absoluto
+            path_fuzzy = self.deep_search_disk(path)
+            if path_fuzzy: path = path_fuzzy
+            else: return False
+            
+        try:
+            os.startfile(path)
+            return True
+        except:
+            return False
+
+    def set_system_volume(self, percent: int):
+        """Define o volume global do Windows (0-100)."""
+        if not AudioUtilities: return False
+        try:
+            devices = AudioUtilities.GetSpeakers()
+            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            volume = cast(interface, POINTER(IAudioEndpointVolume))
+            # Converte 0-100 para range de decibéis (ou scalar)
+            volume.SetMasterVolumeLevelScalar(percent / 100.0, None)
+            logger.info(f"🔊 [System] Volume definido para {percent}%")
+            return True
+        except Exception as e:
+            logger.error(f"Erro ao ajustar volume do sistema: {e}")
+            return False
+
+    def encerrar_processo(self, nome_ou_id):
+        """Finaliza um processo por nome ou PID."""
+        try:
+            for proc in psutil.process_iter(['pid', 'name']):
+                if str(nome_ou_id).lower() in proc.info['name'].lower() or str(nome_ou_id) == str(proc.info['pid']):
+                    proc.kill()
+                    logger.info(f"💀 Processo {proc.info['name']} ({proc.info['pid']}) encerrado.")
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Erro ao encerrar processo: {e}")
+            return False
+
+    def obter_status_hardware(self):
+        """Retorna dados detalhados de hardware."""
+        bateria = psutil.sensors_battery()
+        return {
+            "bateria": {
+                "percent": bateria.percent if bateria else "N/A",
+                "plugged": bateria.power_plugged if bateria else "N/A"
+            },
+            "rede": {
+                "sent": psutil.net_io_counters().bytes_sent,
+                "recv": psutil.net_io_counters().bytes_recv
+            }
+        }
+
+    def buscar_arquivos(self, termo: str) -> List[str]:
+        """Busca arquivos que contenham o termo no nome (limitado a pastas de usuário)."""
+        logger.info(f"🔎 [Search] Buscando arquivos por: {termo}")
+        resultados = []
+        caminhos_base = [
+            os.path.expanduser("~/Documents"),
+            os.path.expanduser("~/Desktop"),
+            os.path.expanduser("~/Downloads")
+        ]
+        
+        termo = termo.lower()
+        for base in caminhos_base:
+            if not os.path.exists(base): continue
+            for root, _, files in os.walk(base):
+                for f in files:
+                    if termo in f.lower():
+                        resultados.append(os.path.join(root, f))
+                        if len(resultados) >= 10: return resultados
+        return resultados
 
     def salvar_cache_apps(self, apps: list):
         """Salva a lista de apps vindos do celular ou do PC Client."""

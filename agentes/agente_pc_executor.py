@@ -96,6 +96,36 @@ class AgentePcExecutor:
                             "tipo_ws": "CHAT_RESPONSE"
                         }
                     ))
+
+            elif comando == "abrir_arquivo":
+                caminho = evento.payload.get("caminho") or evento.payload.get("parametro")
+                if pc_control_service.abrir_arquivo(caminho):
+                    evento.estado = EstadoEvento.CONCLUIDO
+                else:
+                    logger.warning(f"Não foi possível abrir o arquivo: {caminho}")
+
+            elif comando == "listar_arquivos":
+                caminho = evento.payload.get("caminho")
+                itens = pc_control_service.listar_diretorio(caminho)
+                texto_res = "Arquivos no diretório:\n" + "\n".join(itens[:15]) # Top 15 para não poluir
+                
+                from core.kernel import kernel
+                from core.tipos import CategoriaEvento, OrigemEvento
+                await kernel.publicar(evento.clonar(
+                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                    acao=TipoAcao.INTENCAO_INTERACAO,
+                    origem=OrigemEvento.IA,
+                    payload={"texto": texto_res, "tipo_ws": "CHAT_RESPONSE"}
+                ))
+
+            elif comando == "volume_sistema":
+                valor = evento.payload.get("valor")
+                pc_control_service.set_system_volume(valor)
+
+            elif comando == "encerrar_processo":
+                alvo = evento.payload.get("processo") or evento.payload.get("parametro")
+                pc_control_service.encerrar_processo(alvo)
+
             elif comando == "abrir_url":
                 foi_focada = pc_control_service.abrir_url(evento.payload.get("url"))
                 
