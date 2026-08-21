@@ -98,49 +98,49 @@ class AgenteRaciocinio:
             except:
                 historico = []
 
-            # 4. Consulta o Córtex (LLM) com TIMEOUT de 40s
-            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 6: Chamando LLM ({self.llm.modelo_atual})...")
-            try:
-                start_time = asyncio.get_event_loop().time()
-                resultado = await asyncio.wait_for(
-                    self.llm.classificar_evento(
-                        categoria=evento.categoria.value,
-                        pacote=evento.pacote,
-                        payload=evento.payload,
-                        historico=historico,
-                        timestamp_dispositivo=evento.timestamp, # 🕒 SINCRONIZAÇÃO DE TEMPO
-                        conhecimento=conhecimento_atual # 📓 CONHECIMENTO DO USUÁRIO
-                    ),
-                    timeout=40.0
-                )
-                elapsed = asyncio.get_event_loop().time() - start_time
-                logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 7: LLM ({self.llm.modelo_atual}) respondeu em {elapsed:.2f}s")
-            except asyncio.TimeoutError:
-                logger.error("❌ [Raciocínio] TIMEOUT da LLM (40s).")
-                resultado = {
-                    "tipo_interacao": "NOTIFICAR",
-                    "mensagem_dinamica": "Vixi, meu cérebro deu uma engasgada aqui na nuvem. Pode repetir, parceiro?",
-                    "execucao_direta": None
-                }
-            except Exception as e:
-                logger.error(f"❌ [Raciocínio] Erro CRÍTICO na chamada LLM: {str(e)}")
-                import traceback
-                logger.error(traceback.format_exc())
-                
-                # 🛡️ RESPOSTA MAIS CLARA: Diferencia pane técnica de bloqueio de API
-                error_str = str(e).lower()
-                if "todos os modelos" in error_str or "429" in error_str:
-                    msg_pane = "Vish, a Groq tá me barrando por velocidade! Dá um segundinho e tenta de novo?"
-                elif "model_decommissioned" in error_str or "400" in error_str:
-                    msg_pane = "Eita, o modelo de IA que eu uso mudou. Dá um segundinho que tô me atualizando!"
-                else:
-                    msg_pane = "Vish, deu pane no meu sistema aqui! Tenta de novo em um segundinho?"
-                
-                resultado = {
-                    "tipo_interacao": "NOTIFICAR",
-                    "mensagem_dinamica": msg_pane,
-                    "execucao_direta": None
-                }
+                # 4. Consulta o Córtex (LLM) com TIMEOUT de 40s
+                logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 6: Chamando LLM ({self.llm.modelo_atual})...")
+                try:
+                    start_time = asyncio.get_event_loop().time()
+                    resultado = await asyncio.wait_for(
+                        self.llm.classificar_evento(
+                            categoria=evento.categoria.value,
+                            pacote=evento.pacote,
+                            payload=evento.payload,
+                            historico=historico,
+                            timestamp_dispositivo=evento.timestamp, # 🕒 SINCRONIZAÇÃO DE TEMPO
+                            conhecimento=conhecimento_atual # 📓 CONHECIMENTO DO USUÁRIO
+                        ),
+                        timeout=40.0
+                    )
+                    elapsed = asyncio.get_event_loop().time() - start_time
+                    logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 7: LLM ({self.llm.modelo_atual}) respondeu em {elapsed:.2f}s")
+                except asyncio.TimeoutError:
+                    logger.error("❌ [Raciocínio] TIMEOUT da LLM (40s).")
+                    resultado = {
+                        "tipo_interacao": "NOTIFICAR",
+                        "mensagem_dinamica": "Vixi, meu cérebro deu uma engasgada aqui na nuvem. Pode repetir, parceiro?",
+                        "execucao_direta": None
+                    }
+                except Exception as e:
+                    logger.error(f"❌ [Raciocínio] Erro CRÍTICO na chamada LLM: {str(e)}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    
+                    # 🛡️ RESPOSTA MAIS CLARA: Diferencia pane técnica de bloqueio de API
+                    error_str = str(e).lower()
+                    if "todos os modelos" in error_str or "429" in error_str:
+                        msg_pane = "Vish, a Groq tá me barrando por velocidade! Dá um segundinho e tenta de novo?"
+                    elif "model_decommissioned" in error_str or "400" in error_str:
+                        msg_pane = "Eita, o modelo de IA que eu uso mudou. Dá um segundinho que tô me atualizando!"
+                    else:
+                        msg_pane = "Vish, deu pane no meu sistema aqui! Tenta de novo em um segundinho?"
+                    
+                    resultado = {
+                        "tipo_interacao": "NOTIFICAR",
+                        "mensagem_dinamica": msg_pane,
+                        "execucao_direta": None
+                    }
         finally:
             # 🔓 LIBERA O LOCK: Sempre libera após o processamento (sucesso ou erro)
             if lock_id in self._locks_ativos:
