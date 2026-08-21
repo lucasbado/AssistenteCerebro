@@ -126,9 +126,16 @@ class AgenteRaciocinio:
                 logger.error(f"❌ [Raciocínio] Erro CRÍTICO na chamada LLM: {str(e)}")
                 import traceback
                 logger.error(traceback.format_exc())
+                
+                # 🛡️ RESPOSTA MAIS CLARA: Diferencia pane técnica de bloqueio de API
+                if "todos os modelos" in str(e).lower() or "429" in str(e):
+                    msg_pane = "Vish, a Groq tá me barrando por velocidade! Dá um segundinho e tenta de novo?"
+                else:
+                    msg_pane = "Vish, deu pane no meu sistema aqui! Tenta de novo em um segundinho?"
+                
                 resultado = {
                     "tipo_interacao": "NOTIFICAR",
-                    "mensagem_dinamica": "Vish, deu pane no meu sistema aqui! Tenta de novo em um segundinho?",
+                    "mensagem_dinamica": msg_pane,
                     "execucao_direta": None
                 }
         finally:

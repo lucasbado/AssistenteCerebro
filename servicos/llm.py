@@ -21,14 +21,15 @@ class ServicoLLM:
     def __init__(self):
         # Configuração para Groq (Cloud)
         self.api_key = os.getenv("GROQ_API_KEY")
-        # 🚀 Modelos verificados via API em Agosto/2026 - PRIORIDADE: ESTABILIDADE
+        # 🚀 Modelos verificados via API em Agosto/2026 - PRIORIDADE: DISPONIBILIDADE
+        # Removidos modelos desativados e priorizados os de alta performance/limite
         self.modelos_groq = [
-            "llama-3.3-70b-versatile",    # Clássico ultra-estável
-            "openai/gpt-oss-120b",        # Potente se disponível
-            "qwen/qwen3.6-27b",           # Equilibrado
-            "openai/gpt-oss-20b",         # Rápido
-            "groq/compound",              # Agentic
-            "allam-2-7b"                  # Fallback
+            "groq/compound-mini",         # Ultra-velocidade (maior limite de req/min)
+            "openai/gpt-oss-20b",         # Inteligência OpenAI estável
+            "qwen/qwen3.6-27b",           # Modelo versátil
+            "groq/compound",              # Agentic potente
+            "openai/gpt-oss-120b",        # Flagship (muito instável em free tiers)
+            "allam-2-7b"                  # Fallback emergencial
         ]
         self.modelo_atual = self.modelos_groq[0]
 
