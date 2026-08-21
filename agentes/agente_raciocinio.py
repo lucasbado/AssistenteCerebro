@@ -128,8 +128,11 @@ class AgenteRaciocinio:
                 logger.error(traceback.format_exc())
                 
                 # 🛡️ RESPOSTA MAIS CLARA: Diferencia pane técnica de bloqueio de API
-                if "todos os modelos" in str(e).lower() or "429" in str(e):
+                error_str = str(e).lower()
+                if "todos os modelos" in error_str or "429" in error_str:
                     msg_pane = "Vish, a Groq tá me barrando por velocidade! Dá um segundinho e tenta de novo?"
+                elif "model_decommissioned" in error_str or "400" in error_str:
+                    msg_pane = "Eita, o modelo de IA que eu uso mudou. Dá um segundinho que tô me atualizando!"
                 else:
                     msg_pane = "Vish, deu pane no meu sistema aqui! Tenta de novo em um segundinho?"
                 

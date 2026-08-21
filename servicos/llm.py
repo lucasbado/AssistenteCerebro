@@ -28,7 +28,6 @@ class ServicoLLM:
             "openai/gpt-oss-20b",         # Inteligência OpenAI estável
             "qwen/qwen3.6-27b",           # Modelo versátil
             "groq/compound",              # Agentic potente
-            "openai/gpt-oss-120b",        # Flagship (muito instável em free tiers)
             "allam-2-7b"                  # Fallback emergencial
         ]
         self.modelo_atual = self.modelos_groq[0]
