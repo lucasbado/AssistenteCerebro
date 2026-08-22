@@ -760,15 +760,18 @@ class PcControlService:
 
     def buscar_arquivos(self, termo: str) -> List[str]:
         """Busca arquivos que contenham o termo no nome (limitado a pastas de usuário)."""
+        if not termo or len(str(termo).strip()) < 2:
+            return ["Erro: Termo de busca muito curto ou vazio."]
+            
         logger.info(f"🔎 [Search] Buscando arquivos por: {termo}")
         resultados = []
         caminhos_base = [
+            os.path.expanduser("~/Downloads"), # Prioridade para Downloads
             os.path.expanduser("~/Documents"),
-            os.path.expanduser("~/Desktop"),
-            os.path.expanduser("~/Downloads")
+            os.path.expanduser("~/Desktop")
         ]
         
-        termo = termo.lower()
+        termo = str(termo).lower()
         for base in caminhos_base:
             if not os.path.exists(base): continue
             for root, _, files in os.walk(base):
@@ -777,6 +780,28 @@ class PcControlService:
                         resultados.append(os.path.join(root, f))
                         if len(resultados) >= 10: return resultados
         return resultados
+
+    def listar_diretorio(self, path: str = None) -> List[str]:
+        """Lista arquivos e pastas de um diretório. Resolve nomes amigáveis."""
+        target = path or os.path.expanduser("~")
+        
+        # Resolução de nomes amigáveis para facilitar a vida da IA
+        p_lower = str(path).lower()
+        if "download" in p_lower: target = os.path.expanduser("~/Downloads")
+        elif "documento" in p_lower: target = os.path.expanduser("~/Documents")
+        elif "desktop" in p_lower or "área de trabalho" in p_lower: target = os.path.expanduser("~/Desktop")
+        elif "vídeo" in p_lower: target = os.path.expanduser("~/Videos")
+        elif "música" in p_lower: target = os.path.expanduser("~/Music")
+        elif "imagem" in p_lower or "foto" in p_lower: target = os.path.expanduser("~/Pictures")
+
+        if not os.path.exists(target): return [f"Erro: Caminho '{target}' não existe."]
+        try:
+            items = os.listdir(target)
+            # Filtra arquivos ocultos e limita a 20 itens
+            visiveis = [i for i in items if not i.startswith(".")]
+            return sorted(visiveis)[:20]
+        except Exception as e:
+            return [f"Erro ao acessar: {e}"]
 
     def salvar_cache_apps(self, apps: list):
         """Salva a lista de apps vindos do celular ou do PC Client."""

@@ -15,7 +15,6 @@ from agentes.agente_perfil import AgentePerfil
 from agentes.agente_inferencia import AgenteInferencia
 from agentes.agente_reflexo import AgenteReflexo
 from agentes.agente_notificacoes import AgenteNotificacoes
-from agentes.agente_gestor_interrupcoes import AgenteGestorInterrupcoes
 from agentes.agente_roteador_cognitivo import AgenteRoteadorCognitivo
 from agentes.agente_episodico import AgenteEpisodico
 from agentes.agente_raciocinio import AgenteRaciocinio
@@ -33,7 +32,6 @@ from agentes.agente_pc_executor import AgentePcExecutor
 # Serviços
 from servicos.agente_contexto_sistema import AgenteContextoSistema
 from servicos.pc_control_service import pc_control_service
-from servicos.udp_listener_service import udp_listener
 from banco.database import inicializar_banco, async_engine
 
 # Routers (API)
@@ -70,7 +68,6 @@ async def lifespan(app: FastAPI):
         "inferencia": AgenteInferencia(),
         "reflexo": AgenteReflexo(),
         "notificacoes": AgenteNotificacoes(),
-        "interrupcoes": AgenteGestorInterrupcoes(),
         "roteador": AgenteRoteadorCognitivo(),
         "episodico": AgenteEpisodico(),
         "raciocinio": AgenteRaciocinio(),
@@ -144,17 +141,10 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(central_alertas.iniciar_monitor())
     ]
     
-    # 🌍 SÓ INICIA UDP LOCALMENTE: Render não suporta UDP inbound desta forma
-    if not os.getenv("RENDER"):
-        tasks.append(asyncio.create_task(udp_listener.iniciar()))
-    else:
-        logger.info("☁️ [Main] Modo Cloud detectado: UDP Listener desativado.")
-    
     logger.info("🚀 AI Brain & PC Master Control online!")
     yield
     # --- SHUTDOWN ---
     for t in tasks: t.cancel()
-    udp_listener.parar()
     pc_control_service.encerrar()
     await async_engine.dispose()
 

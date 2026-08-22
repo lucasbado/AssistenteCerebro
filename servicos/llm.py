@@ -164,7 +164,11 @@ class ServicoLLM:
     1. ABRIR: Use comando: "ABRIR_NOTIFICACAO", parametro: "VALOR_DO_CORRELACAO_ID".
     2. RESPONDER: Use comando: "RESPONDER_MENSAGEM", parametro: "VALOR_DO_CORRELACAO_ID", texto: "conteudo da resposta".
     * CRÍTICO: NUNCA use o texto "correlacao_id_aqui" ou "a1b2c3...". Você deve COPIAR o valor real do campo 'correlacao_id'. Se não houver ID, use o nome do pacote (ex: "com.whatsapp").
-- HARDWARE (ALVO: PC): "mutar_mic", "trocar_saida" (ciclagem), "bloquear_pc", "dormir_pc" (sleep), "hibernar_pc" (hibernate), "janela_fullscreen", "janela_maximizar", "janela_minimizar".
+- HARDWARE (ALVO: PC): 
+    1. "listar_arquivos": Para ver o conteúdo de uma PASTA (ex: "o que tem no downloads?"). Parâmetro: nome da pasta (ex: "downloads").
+    2. "buscar_documentos": Para achar um ARQUIVO específico pelo nome. Parâmetro: termo de busca (ex: "projeto_final").
+    3. "abrir_arquivo": Para abrir um arquivo ou pasta. Parâmetro: caminho ou nome.
+    4. Outros: "mutar_mic", "bloquear_pc", "dormir_pc", "volume_sistema" (valor: 0-100), "encerrar_processo" (nome).
 - ÁUDIO (ALVO: PC): Para mudar o áudio (ex: "põe no fone"), use comando: "voicemeeter", parametro: "strip[3].a1=1". 
 - AUTOMAÇÃO (ALVO: PC): Para criar rotinas automáticas (ex: "Sempre que eu abrir o lol, muta o mic"), use comando: "criar_rotina", rotina: {{"nome": "NOME", "gatilho": {{"tipo": "APP_OPENED", "pacote": "PACOTE"}}, "acoes": [{{"alvo": "PC", "comando": "mutar_mic", "parametro": ""}}]}}
 - INTEGRAÇÃO (CROSS-DEVICE): 
@@ -177,6 +181,8 @@ class ServicoLLM:
 - MEMÓRIA SEMÂNTICA: Salve apelidos no Obsidian. Ex: "Fone=A1, Monitor=A2, Alexa=A3".
 
 ### NOTIFICAÇÕES E RESUMOS:
+- BEM-ESTAR: Se receber um evento de BEM_ESTAR, dê um conselho amigável e despojado sobre saúde digital (água, postura, descanso).
+- CLIMA: Use as informações de CLIMA ATUAL para contextualizar suas respostas (ex: sugerir guarda-chuva se for chover, ou comentar o calor).
 - FOCO NO CONTEÚDO: NUNCA diga apenas "X mandou mensagem". Diga O QUE a pessoa quer ou sobre o que ela está falando.
 - INTENÇÃO: Identifique se é uma pergunta, um convite, um problema ou apenas um comentário.
 - REDES SOCIAIS: Diferencie Mensagens Diretas (DMs) de Posts/Stories. Para Posts, diga "X postou um novo vídeo" ou "X compartilhou um story".

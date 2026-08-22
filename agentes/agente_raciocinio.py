@@ -193,6 +193,19 @@ class AgenteRaciocinio:
                 resultado["mensagem_dinamica"] = msg_ia
 
         # 4. EXECUÇÃO DIRETA
+        # 🌟 PRIORIDADE: Publicamos a mensagem de confirmação ANTES de executar o comando
+        # para garantir que o usuário veja a Ollie respondendo enquanto o PC trabalha.
+        if msg_ia and tipo_interacao in ["NOTIFICAR", "SUGERIR"]:
+            # Remove apresentações repetitivas
+            msg_limpa = re.sub(r"(?i)\b(eu\s+)?sou\s+a\s+ollie\b[,!.]*|\bollie\s+aqui\b[,!.]*", "", msg_ia).strip().capitalize()
+
+            payload_notif = {"texto": msg_limpa, "titulo": "Ollie", "contexto": resultado.get("contexto_extra", {})}
+            if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+                payload_notif["tipo_ws"] = "CHAT_RESPONSE"
+                await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Ollie: {msg_limpa}"])
+            
+            await kernel.publicar(evento.clonar(categoria=CategoriaEvento.INTENCAO_NOTIFICACAO, acao=TipoAcao.INTENCAO_INTERACAO, origem=OrigemEvento.IA, payload=payload_notif, metadados={"tipo_destino": "CHAT"}))
+
         exec_direta_lista = []
         if tipo_interacao != "SUGERIR":
             if isinstance(exec_direta_raw, list): exec_direta_lista = exec_direta_raw
@@ -214,30 +227,7 @@ class AgenteRaciocinio:
                 from api.websocket import central_alertas
                 await central_alertas._broadcast({"tipo_ws": "COMANDO_SISTEMA", "acao": comando.upper(), "parametro": param})
 
-        # 5. NOTIFICAÇÕES E SUGESTÕES
-        if tipo_interacao in ["NOTIFICAR", "SUGERIR"]:
-            if not msg_ia and exec_direta_lista: msg_ia = "Massa, fazendo isso!"
-            if not msg_ia and evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO: msg_ia = "Entendi!"
-
-            if msg_ia:
-                # Remove apresentações repetitivas
-                if historico:
-                    msg_ia = re.sub(r"(?i)\b(eu\s+)?sou\s+a\s+ollie\b[,!.]*|\bollie\s+aqui\b[,!.]*", "", msg_ia).strip().capitalize()
-
-                payload_notif = {"texto": msg_ia, "titulo": "Ollie", "contexto": resultado.get("contexto_extra", {})}
-                
-                if tipo_interacao == "SUGERIR" and exec_direta_raw:
-                    if not msg_ia.endswith("?"): payload_notif["texto"] += "?"
-                    sug = exec_direta_raw[0] if isinstance(exec_direta_raw, list) else exec_direta_raw
-                    payload_notif["acao_tipo"] = "ENVIAR_COMANDO"
-                    payload_notif["acao_parametro"] = json.dumps(sug)
-                    payload_notif["acao_texto"] = "Bora!"
-
-                if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
-                    payload_notif["tipo_ws"] = "CHAT_RESPONSE"
-                    await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Ollie: {msg_ia}"])
-
-                await kernel.publicar(evento.clonar(categoria=CategoriaEvento.INTENCAO_NOTIFICACAO, acao=TipoAcao.INTENCAO_INTERACAO, origem=OrigemEvento.IA, payload=payload_notif, metadados={"tipo_destino": "CHAT"}))
+        # 5. NOTIFICAÇÕES E SUGESTÕES (REMOVIDO DUPLICATA ACIMA)
 
         # 6. MEMÓRIA PERMANENTE (Obsidian)
         mem_obs = resultado.get("memoria_obsidian")

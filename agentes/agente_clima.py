@@ -8,8 +8,10 @@ import logging
 import httpx
 from datetime import datetime
 from core.evento import EventoCanonico
-from core.tipos import CategoriaEvento
+from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
 from agentes.agente_memoria_trabalho import AgenteMemoriaTrabalho
+from servicos.consciencia import consciencia
+from core.kernel import kernel
 
 logger = logging.getLogger("AgenteClima")
 
@@ -49,6 +51,22 @@ class AgenteClima:
                         "icon_code": icon_code_str,
                         "atualizado_em": datetime.now().isoformat(),
                     }
+
+                    # Guarda a informação na consciência global
+                    consciencia.atualizar({"clima": contexto_clima})
+
+                    # ⛈️ PROATIVIDADE: Alerta de Chuva Imediato
+                    if icon_code_str == "rain" or "chuva" in condicao_str.lower():
+                        await kernel.publicar(EventoCanonico(
+                            categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                            acao=TipoAcao.INTENCAO_INTERACAO,
+                            origem=OrigemEvento.SISTEMA,
+                            payload={
+                                "titulo": "Alerta de Chuva",
+                                "texto": f"Parece que vai chover em breve ({contexto_clima['temperatura']}°C). Não esqueça o guarda-chuva se for sair!",
+                                "tipo_ws": "NOTIFICACAO"
+                            }
+                        ))
 
                     # Guarda a informação na memória de curto prazo do sistema
                     if hasattr(self.memoria_trabalho, "definir_contexto"):

@@ -83,17 +83,28 @@ class AgenteFoco:
             await kernel.publicar(
                 evento.clonar(
                     id=None,
-                    categoria=CategoriaEvento.INSIGHT_MEMORIA, # Para ser salvo e aparecer na Home depois
+                    categoria=CategoriaEvento.INSIGHT_MEMORIA, 
                     acao=TipoAcao.NORMAL,
                     payload={
                         "tipo": "insight",
                         "conteudo": {
                             "title": "Foco no Trabalho",
-                            "text": "Notei que você costuma ser mais produtivo quando evita distrações agora. Quer ajuda para focar?"
+                            "text": "Notei que você costuma ser mais produtivo quando evita distrações agora. Deseja que eu ative o Não Perturbe?"
                         }
                     }
                 )
             )
+        
+        # 🚀 NOVO: Ativação Automática de Foco (DND) para apps de TRABALHO
+        if any(c in categoria for c in ["produtividade", "ferramentas", "estudo", "trabalho"]):
+             logger.info(f"🔇 AgenteFoco: Ativando Modo Foco para o app {entidade.chave}")
+             from api.websocket import central_alertas
+             await central_alertas._broadcast({
+                 "tipo_ws": "COMANDO_SISTEMA",
+                 "acao": "SET_DND",
+                 "estado": True,
+                 "parametro": "ATIVAR"
+             })
 
     async def _inferir_sugestao_contextual(
         self, evento: EventoCanonico, entidade_app: EntidadeSemantica | None

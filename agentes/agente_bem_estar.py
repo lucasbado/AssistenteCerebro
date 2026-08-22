@@ -52,21 +52,22 @@ class AgenteBemEstar:
         tempo_uso = (agora - inicio).total_seconds() / 60
 
         if tempo_uso > self._limite_alerta:
-            logger.info(f"🧘 AgenteBemEstar: Usuário no app {pacote} há {tempo_uso:.1f} minutos. Sugerindo pausa.")
+            logger.info(f"🧘 AgenteBemEstar: Usuário no app {pacote} há {tempo_uso:.1f} minutos. Sugerindo pausa via IA.")
             
+            # Eleva para um evento complexo para que a IA gere a mensagem
             await kernel.publicar(
                 evento.clonar(
                     id=None,
                     categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                     acao=TipoAcao.INTENCAO_INTERACAO,
                     origem=OrigemEvento.IA,
-                    prioridade=PrioridadeEvento.NORMAL,
                     payload={
-                        "titulo": "Momento de Respiro",
-                        "texto": f"Você está no {pacote.split('.')[-1].capitalize()} há mais de 30 minutos. Que tal um copo d'água ou um breve alongamento?",
-                        "tipo_insight": "dica"
+                        "titulo": "Equilíbrio Digital",
+                        "texto": f"Você já está no {pacote.split('.')[-1].capitalize()} há {int(tempo_uso)} minutos.",
+                        "contexto_extra": {"minutos": int(tempo_uso), "pacote": pacote, "tipo": "BEM_ESTAR"},
+                        "tipo_ws": "NOTIFICACAO"
                     }
                 )
             )
-            # Reseta o timer para não inundar de notificações, ou aumenta o próximo limite
-            self._uso_atual[pacote] = agora
+            # Aumenta o limite para o próximo alerta ser mais espaçado
+            self._limite_alerta += 20

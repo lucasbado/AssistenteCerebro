@@ -13,6 +13,7 @@ class ConscienciaSituacional:
             "home_state": {},
             "pc_state": {},
             "device_state": {},
+            "clima": {},
             "timestamp": None
         }
 
@@ -25,6 +26,9 @@ class ConscienciaSituacional:
             
         if "device_state" in data and data["device_state"]:
             self._snapshot["device_state"].update(data["device_state"])
+        
+        if "clima" in data and data["clima"]:
+            self._snapshot["clima"].update(data["clima"])
             
         self._snapshot["timestamp"] = data.get("timestamp")
         logger.info("🧠 [Consciência] Estado situacional atualizado.")
@@ -33,6 +37,12 @@ class ConscienciaSituacional:
         """Gera uma string amigável para o prompt da IA."""
         resumo = []
         
+        # Clima
+        clima = self._snapshot.get("clima", {})
+        if clima:
+            resumo.append("### CLIMA ATUAL:")
+            resumo.append(f"- {clima.get('temperatura', 'N/A')}°C, {clima.get('condicao', 'N/A')}")
+
         # Luzes
         luzes = self._snapshot.get("home_state", {})
         if luzes:
