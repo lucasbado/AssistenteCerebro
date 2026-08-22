@@ -224,6 +224,14 @@ async def websocket_endpoint(websocket: WebSocket):
                             logger.debug(f"📱 [WS] Celular re-confirmou identidade ({conn_id}).")
 
                 elif tipo == "CHAT_MESSAGE":
+                    # 🛡️ ANTI-LOOP: Se vier do PC Master, redireciona como CHAT_RESPONSE para o Mobile
+                    if msg.get("pacote") == "pc.master" or msg.get("id") == "PC_MASTER":
+                        logger.info("⚡ [WS RELAY] Redirecionando resposta do PC Master para o Celular.")
+                        msg["tipo_ws"] = "CHAT_RESPONSE"
+                        if central_alertas.mobile_client:
+                            await central_alertas._enviar_direto(central_alertas.mobile_client, msg)
+                        return
+
                     from core.kernel import kernel
                     from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
                     from core.evento import EventoCanonico
