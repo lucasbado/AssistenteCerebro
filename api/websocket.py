@@ -217,8 +217,11 @@ async def websocket_endpoint(websocket: WebSocket):
                             try: await old_ws.close(1001, "Nova conexão MOBILE registrada")
                             except: pass
                         
-                        central_alertas.mobile_client = websocket
-                        logger.info(f"📱 [WS] Celular registrado ({conn_id})!")
+                        if central_alertas.mobile_client != websocket:
+                            central_alertas.mobile_client = websocket
+                            logger.info(f"📱 [WS] Celular registrado ({conn_id})!")
+                        else:
+                            logger.debug(f"📱 [WS] Celular re-confirmou identidade ({conn_id}).")
 
                 elif tipo == "CHAT_MESSAGE":
                     from core.kernel import kernel
