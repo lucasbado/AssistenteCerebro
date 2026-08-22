@@ -168,7 +168,8 @@ class ServicoLLM:
     1. "listar_arquivos": Para ver o conteúdo de uma PASTA (ex: "o que tem no downloads?"). Parâmetro: nome da pasta (ex: "downloads").
     2. "buscar_documentos": Para achar um ARQUIVO específico pelo nome. Parâmetro: termo de busca (ex: "projeto_final").
     3. "abrir_arquivo": Para abrir um arquivo ou pasta. Parâmetro: caminho ou nome.
-    4. Outros: "mutar_mic", "bloquear_pc", "dormir_pc", "volume_sistema" (valor: 0-100), "encerrar_processo" (nome).
+    4. "estudar_pc": Dispara um scan profundo para a Ollie aprender onde você guarda seus arquivos e pastas. Use se o usuário pedir para você "estudar o PC" ou "aprender sobre meus arquivos".
+    5. Outros: "mutar_mic", "bloquear_pc", "dormir_pc", "volume_sistema" (valor: 0-100), "encerrar_processo" (nome).
 - ÁUDIO (ALVO: PC): Para mudar o áudio (ex: "põe no fone"), use comando: "voicemeeter", parametro: "strip[3].a1=1". 
 - AUTOMAÇÃO (ALVO: PC): Para criar rotinas automáticas (ex: "Sempre que eu abrir o lol, muta o mic"), use comando: "criar_rotina", rotina: {{"nome": "NOME", "gatilho": {{"tipo": "APP_OPENED", "pacote": "PACOTE"}}, "acoes": [{{"alvo": "PC", "comando": "mutar_mic", "parametro": ""}}]}}
 - INTEGRAÇÃO (CROSS-DEVICE): 

@@ -787,12 +787,15 @@ class PcControlService:
         
         # Resolução de nomes amigáveis para facilitar a vida da IA
         p_lower = str(path).lower()
-        if "download" in p_lower: target = os.path.expanduser("~/Downloads")
-        elif "documento" in p_lower: target = os.path.expanduser("~/Documents")
-        elif "desktop" in p_lower or "área de trabalho" in p_lower: target = os.path.expanduser("~/Desktop")
-        elif "vídeo" in p_lower: target = os.path.expanduser("~/Videos")
-        elif "música" in p_lower: target = os.path.expanduser("~/Music")
-        elif "imagem" in p_lower or "foto" in p_lower: target = os.path.expanduser("~/Pictures")
+        user_profile = os.environ.get("USERPROFILE", os.path.expanduser("~"))
+
+        if "download" in p_lower: target = os.path.join(user_profile, "Downloads")
+        elif "documento" in p_lower: target = os.path.join(user_profile, "Documents")
+        elif "desktop" in p_lower or "área de trabalho" in p_lower: target = os.path.join(user_profile, "Desktop")
+        elif "vídeo" in p_lower: target = os.path.join(user_profile, "Videos")
+        elif "música" in p_lower: target = os.path.join(user_profile, "Music")
+        elif "imagem" in p_lower or "foto" in p_lower: target = os.path.join(user_profile, "Pictures")
+        elif "jogo" in p_lower: target = "D:\\games"
 
         if not os.path.exists(target): return [f"Erro: Caminho '{target}' não existe."]
         try:
@@ -807,6 +810,39 @@ class PcControlService:
         """Salva a lista de apps vindos do celular ou do PC Client."""
         self.mobile_apps = apps
         logger.info(f"📱 [PCControl] {len(apps)} apps do celular sincronizados.")
+
+    def mapear_estrutura_usuario(self) -> List[str]:
+        """Varre o PC em busca de diretórios importantes (Profundidade 2)."""
+        logger.info("🔍 [PCControl] Iniciando mapeamento de diretórios do usuário...")
+        
+        user_profile = os.environ.get("USERPROFILE", os.path.expanduser("~"))
+        base_paths = [
+            user_profile,
+            "D:\\", "E:\\", "G:\\" # Drives comuns no seu PC
+        ]
+        
+        pastas_relevantes = []
+        
+        for base in base_paths:
+            if not os.path.exists(base): continue
+            try:
+                # Lista apenas pastas do primeiro e segundo nível
+                for item in os.listdir(base):
+                    full_path = os.path.join(base, item)
+                    if os.path.isdir(full_path) and not item.startswith(".") and not item.startswith("$"):
+                        pastas_relevantes.append(full_path)
+                        
+                        # Nível 2
+                        try:
+                            for sub in os.listdir(full_path):
+                                sub_path = os.path.join(full_path, sub)
+                                if os.path.isdir(sub_path) and not sub.startswith("."):
+                                    pastas_relevantes.append(sub_path)
+                        except: pass
+            except: pass
+            
+        logger.info(f"✅ [PCControl] Mapeamento geográfico concluído. {len(pastas_relevantes)} locais encontrados.")
+        return pastas_relevantes
 
     def obter_estado_completo(self):
         cpu = psutil.cpu_percent()

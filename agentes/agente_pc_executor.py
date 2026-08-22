@@ -105,9 +105,9 @@ class AgentePcExecutor:
                     logger.warning(f"Não foi possível abrir o arquivo: {caminho}")
 
             elif comando == "listar_arquivos":
-                caminho = evento.payload.get("caminho")
+                caminho = evento.payload.get("caminho") or evento.payload.get("parametro")
                 itens = pc_control_service.listar_diretorio(caminho)
-                texto_res = "Arquivos no diretório:\n" + "\n".join(itens[:15]) # Top 15 para não poluir
+                texto_res = f"📂 Arquivos em {caminho or 'Home'}:\n" + "\n".join(itens[:15]) # Top 15 para não poluir
                 
                 from core.kernel import kernel
                 from core.tipos import CategoriaEvento, OrigemEvento
@@ -119,33 +119,21 @@ class AgentePcExecutor:
                 ))
 
             elif comando == "volume_sistema":
-                valor = evento.payload.get("valor")
-                pc_control_service.set_system_volume(valor)
+                valor = evento.payload.get("valor") or evento.payload.get("parametro")
+                if str(valor).isdigit():
+                    pc_control_service.set_system_volume(int(valor))
 
             elif comando == "encerrar_processo":
                 alvo = evento.payload.get("processo") or evento.payload.get("parametro")
                 pc_control_service.encerrar_processo(alvo)
 
-            elif comando == "abrir_url":
-                foi_focada = pc_control_service.abrir_url(evento.payload.get("url"))
-                
-                # 🧠 Se a janela já existia, avisa o usuário no chat
-                if foi_focada:
-                    from core.kernel import kernel
-                    from core.tipos import CategoriaEvento, OrigemEvento, TipoAcao
-                    await kernel.publicar(evento.clonar(
-                        categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                        acao=TipoAcao.INTENCAO_INTERACAO,
-                        origem=OrigemEvento.IA,
-                        payload={
-                            "texto": f"Opa! Vi que o site já estava aberto, mudei o foco para lá.",
-                            "tipo_ws": "CHAT_RESPONSE"
-                        }
-                    ))
-            elif comando == "pesquisa_google":
-                pc_control_service.pesquisa_google(evento.payload.get("query"))
             elif comando == "buscar_documentos":
-                resultados = pc_control_service.buscar_arquivos(evento.payload.get("termo", ""))
+                termo = evento.payload.get("termo") or evento.payload.get("parametro", "")
+                resultados = pc_control_service.buscar_arquivos(termo)
+                if resultados:
+                    texto_res = f"🔎 Encontrei isso para '{termo}':\n" + "\n".join([os.path.basename(r) for r in resultados])
+                else:
+                    texto_res = f"❌ Não achei nenhum arquivo com o nome '{termo}'."
                 if resultados:
                     texto_res = "Encontrei estes arquivos:\n" + "\n".join(resultados)
                 else:

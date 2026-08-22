@@ -28,6 +28,7 @@ from agentes.agente_clima import AgenteClima
 from agentes.agente_rotina import AgenteRotina
 from agentes.agente_bem_estar import AgenteBemEstar
 from agentes.agente_pc_executor import AgentePcExecutor
+from agentes.agente_pc_profiler import AgentePcProfiler
 
 # Serviços
 from servicos.agente_contexto_sistema import AgenteContextoSistema
@@ -80,7 +81,8 @@ async def lifespan(app: FastAPI):
         "contexto_sistema": AgenteContextoSistema(),
         "rotina": AgenteRotina(),
         "bem_estar": AgenteBemEstar(),
-        "pc_executor": AgentePcExecutor()
+        "pc_executor": AgentePcExecutor(),
+        "pc_profiler": AgentePcProfiler()
     }
     agentes_inst["clima"] = AgenteClima(memoria_trabalho=agentes_inst["memoria_trabalho"])
     app.state.agente_memoria_trabalho = agentes_inst["memoria_trabalho"]
@@ -116,6 +118,9 @@ async def lifespan(app: FastAPI):
     kernel.registrar(lambda e: e.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO and e.acao == TipoAcao.ATUALIZAR_CONTEXTO, agentes_inst["clima"].processar)
     # Registro do Executor do PC (Ouvindo o relógio/celular)
     kernel.registrar(lambda e: e.categoria == CategoriaEvento.SISTEMA_COMANDO_PC, agentes_inst["pc_executor"].processar)
+    
+    # 🌟 NOVO: Profiler de PC
+    kernel.registrar(lambda e: e.categoria == CategoriaEvento.SISTEMA_COMANDO_PC, agentes_inst["pc_profiler"].processar)
     
     # 🌟 NOVO: WebSocket ouve comandos do PC para rotear para o PC Master (Nuvem -> Local)
     from api.websocket import central_alertas
