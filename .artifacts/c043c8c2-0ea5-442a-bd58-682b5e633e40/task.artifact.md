@@ -1,0 +1,7 @@
+- [x] Criar diretório `logs` e arquivo `cognitivo.log` com suporte a ambiente Cloud
+- [x] Implementar motor de busca de recorrências em `agente_raciocinio.py`
+- [x] Atualizar Schema e Prompt em `servicos/llm.py` (Mentalidade Executora e `intencao_captada`)
+- [x] Implementar Log Cognitivo estruturado no Agente de Raciocínio
+- [x] Corrigir `AttributeError` no Agregador de Status
+- [ ] Validar proatividade e assertividade via Log Cognitivo
+- [ ] Realizar teste real de "Call Shooter" (Clima/Arquivos)

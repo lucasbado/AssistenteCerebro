@@ -14,7 +14,8 @@ class AgregadorStatus:
         kernel_stats = kernel.estatisticas()
         # A funcionalidade de memória semântica foi refatorada para dentro do 'catalogo'.
         cache_semantico_size = catalogo.memoria.tamanho_cache()
-        modelo_llm = self.llm_service.modelo
+        # 🛡️ FIX: Usa o nome correto do atributo após a refatoração da Groq
+        modelo_llm = getattr(self.llm_service, "modelo_atual", "Desconhecido")
 
         return {
             "kernel": kernel_stats,
