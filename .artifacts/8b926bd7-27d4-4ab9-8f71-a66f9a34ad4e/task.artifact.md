@@ -2,9 +2,11 @@
     - [x] Atualizar `ClientPc.py` para capturar e enviar o título da janela (Opera GX focus)
     - [x] Atualizar `servicos/consciencia.py` para processar e armazenar o contexto de janela
 - [x] **Refatoração do Cérebro (Cognição)**
-    - [x] Limpar duplicidades e erros de validação em `agentes/agente_raciocinio.py`
+    - [x] Restaurar método `sintetizar_com_pesquisa` em `agentes/agente_raciocinio.py` (FIX Render crash)
+    - [x] Unificar extração de comandos no `AgentePcExecutor.py` (FIX comandos falhando)
     - [x] Remover bloqueios de orquestração cross-device (Mobile -> PC)
     - [x] Injetar consciência situacional em tempo real no prompt da LLM
+    - [x] Adicionar regras de Gestão de Janelas e Sinergia no `servicos/llm.py`
 - [x] **Aprendizado de Máquina (Inferência)**
     - [x] Expandir `agentes/agente_inferencia.py` para aprender correlações (Hora, App Mobile, Janela PC)
 - [x] **Ponte de Execução (Roteamento)**

@@ -162,6 +162,9 @@ class ServicoLLM:
 1. ANTECIPAÇÃO: Se os HÁBITOS APRENDIDOS mostram que o usuário costuma abrir X após Y, ou usar Z neste horário, você DEVE sugerir ou executar essa ação proativamente.
 2. AÇÃO DIRETA: Se o usuário pedir algo que exija uma ferramenta (Arquivos, Clima, Spotify), use a ferramenta imediatamente. Não diga "Vou fazer", apenas faça e confirme.
 3. CONTEXTO GEOGRÁFICO: Se ele perguntar de arquivos, use 'Mapa_Geografico_PC' no Obsidian para saber os caminhos reais.
+4. GESTÃO DE JANELAS (PC): Se o usuário pedir para "abrir" ou "colocar" algo que já está listado no 'PC MASTER' (Janela Ativa ou Processos), use alvo: "PC", comando: "trazer_janela_para_frente", parametro: "nome do app/site". NÃO abra uma nova URL se a janela já existir.
+5. SINERGIA CROSS-DEVICE: Se o usuário estiver vendo algo no celular e pedir para "continuar no PC", ou se você notar que ele abriu um app de vídeo no celular, ofereça abrir o mesmo no PC se ele estiver online.
+6. MACHINE LEARNING (HÁBITOS): Use a seção 'HÁBITOS E PADRÕES' para se antecipar. Se o horário bater com uma rotina aprendida, sugira a ação antes dele pedir.
 
 ### REGRAS CRÍTICAS DE PC:
 - Use NOME SIMPLES para programas (ex: "excel", "vscode").

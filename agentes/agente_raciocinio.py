@@ -1,5 +1,6 @@
 """
 agentes/agente_raciocinio.py
+Cérebro Cognitivo da Ollie - Refatorado para Sinergia e Orquestração
 """
 from __future__ import annotations
 import json
@@ -129,6 +130,7 @@ class AgenteRaciocinio:
                 logger.info(f"⚡ [Raciocínio] Executando: {alvo} -> {comando}({param})")
 
                 if alvo == "PC":
+                    # Encaminha comando para o executor do PC
                     await kernel.publicar(EventoCanonico(
                         categoria=CategoriaEvento.SISTEMA_COMANDO_PC, 
                         acao=TipoAcao.NORMAL, 
@@ -154,6 +156,41 @@ class AgenteRaciocinio:
             logger.error(f"💥 Erro no Raciocínio: {e}")
         finally:
             self._locks_ativos.remove(lock_id)
+
+    async def sintetizar_com_pesquisa(self, evento_resultado: EventoCanonico):
+        """Sintetiza os resultados de uma busca na web."""
+        query = evento_resultado.payload.get("query")
+        conteudo = evento_resultado.payload.get("conteudo")
+        sucesso = evento_resultado.payload.get("sucesso")
+
+        if not sucesso:
+            await kernel.publicar(evento_resultado.clonar(
+                categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                acao=TipoAcao.INTENCAO_INTERACAO,
+                origem=OrigemEvento.IA,
+                payload={"texto": f"Desculpa, tive um problema ao pesquisar sobre '{query}'.", "tipo_ws": "CHAT_RESPONSE"}
+            ))
+            return
+
+        historico = await self.memoria_trabalho.obter_contexto("br.com.assistentecell.chat") or []
+        
+        try:
+            resultado = await self.llm.sintetizar_resposta_pesquisa(query, conteudo, historico)
+            resposta = resultado.get("resposta_amigavel")
+            fato = resultado.get("fato_para_aprender")
+
+            if resposta:
+                await kernel.publicar(evento_resultado.clonar(
+                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                    acao=TipoAcao.INTENCAO_INTERACAO,
+                    origem=OrigemEvento.IA,
+                    payload={"texto": resposta, "tipo_ws": "CHAT_RESPONSE"}
+                ))
+            
+            if fato:
+                obsidian_service.registrar_fato("Conhecimento_Web", f"Em {datetime.now().strftime('%d/%m/%Y')}, pesquisei sobre '{query}': {fato}")
+        except Exception as e:
+            logger.error(f"Erro ao sintetizar pesquisa: {e}")
 
     def _buscar_campo(self, obj, campo):
         if isinstance(obj, dict):

@@ -1,43 +1,35 @@
-# Walkthrough: Ollie, a Orquestradora Multiplataforma
+# Walkthrough: Ollie, a Orquestradora de Ecossistemas
 
-Transformei a Ollie em uma assistente que realmente "vê" e orquestra o seu ecossistema, aprendendo com seus hábitos no PC e no celular (focando no seu uso do Opera GX).
+Transformei a Ollie em uma assistente verdadeiramente multiplataforma, resolvendo os problemas de execução e dando a ela a capacidade de "enxergar" o que você faz no seu **Opera GX**.
 
-## Principais Evoluções
+## O que foi corrigido e aprimorado
 
-### 1. Visão Profunda (Opera GX & YouTube)
-O [ClientPc.py](file:///D:/Programacao/AssistenteCell/ClientPc.py) agora captura não apenas o processo (`opera.exe`), mas também o **Título da Janela** (ex: "Video Incrível - YouTube"). Isso permite que a Ollie saiba exatamente o que você está assistindo ou pesquisando.
+### 1. Fim dos Travamentos (Render FIX)
+Restaurei os métodos de síntese de pesquisa no [agente_raciocinio.py](file:///D:/Programacao/AssistenteCell/agentes/agente_raciocinio.py). Isso resolve o erro de inicialização que derrubou o servidor no Render.
 
-### 2. Consciência Situacional em Tempo Real
-Atualizei a [consciencia.py](file:///D:/Programacao/AssistenteCell/servicos/consciencia.py) para injetar o estado atual do PC diretamente no prompt da IA. Agora, quando você fala com ela, ela já sabe se o seu PC está ligado e qual janela está na sua frente.
+### 2. Comandos que Funcionam (Payload Unificado)
+Descobri por que a Ollie não estava abrindo seus apps: havia uma divergência nos nomes dos campos entre o cérebro e o executor. Agora, o [AgentePcExecutor.py](file:///D:/Programacao/AssistenteCell/agentes/agente_pc_executor.py) é inteligente o suficiente para extrair o nome do app ou a URL de qualquer formato de comando enviado pela IA.
 
-### 3. Orquestração Cross-Device Sem Travas
-Refatorei o [agente_raciocinio.py](file:///D:/Programacao/AssistenteCell/agentes/agente_raciocinio.py) para remover bloqueios antigos. Agora:
-- Eventos de celular (ex: abrir Instagram) podem disparar ações no PC.
-- A Ollie pode sugerir proativamente: "Vi que você abriu o WhatsApp no celular, quer que eu abra o WhatsApp Web no Opera pra você?".
+### 3. Visão de Abas (Opera GX)
+O [ClientPc.py](file:///D:/Programacao/AssistenteCell/ClientPc.py) agora envia o **Título da Janela**. Se você estiver no YouTube, a Ollie saberá o título do vídeo. Isso permite uma gestão de janelas muito mais fina, evitando abrir abas duplicadas se o site já estiver aberto.
 
-### 4. Aprendizado de Máquina (Correlação Temporal)
-O [agente_inferencia.py](file:///D:/Programacao/AssistenteCell/agentes/agente_inferencia.py) agora aprende padrões baseados no horário. Se você costuma abrir o YouTube às 20h, a Ollie notará esse padrão e passará a se antecipar.
+### 4. Machine Learning & Hábitos Temporais
+O [agente_inferencia.py](file:///D:/Programacao/AssistenteCell/agentes/agente_inferencia.py) agora rastreia recorrências por horário. Ele aprende que você abre o YouTube no PC sempre no mesmo período e injeta esse hábito no cérebro da Ollie para que ela se antecipe.
 
-### 5. Ponte de Execução Robusta
-Ajustei o [pc_control_service.py](file:///D:/Programacao/AssistenteCell/servicos/pc_control_service.py) para ser mais tolerante com títulos de janelas e incluí os métodos de maximizar/minimizar/fullscreen solicitados pela GUI.
+### 5. Sinergia Total (Cross-Device)
+Removi as restrições que impediam a Ollie de agir no PC se você estivesse usando o celular. Agora, abrir um app no Android pode disparar uma sugestão inteligente no PC (e vice-versa), criando um fluxo contínuo.
 
 ---
 
-## Como Validar a Nova Inteligência
+## Como testar a Orquestração
 
-### 1. Teste de "Visão"
-Abra um vídeo no **Opera GX** e pergunte no chat (celular ou PC): *"O que eu estou fazendo no computador?"*.
-A Ollie deve responder citando o título da janela ou do vídeo.
-
-### 2. Teste de Sinergia
-Tente o comando: *"Ollie, abre o YouTube no PC"* ou *"Fecha o Opera e abre o VS Code"*.
-A Ollie deve focar a janela se já estiver aberta ou abrir o programa se estiver fechado.
-
-### 3. Teste de Proatividade (Aprendizado)
-Abra o **Opera GX** e entre no **YouTube** por 3 dias seguidos no mesmo horário. No quarto dia, veja se a Ollie sugere a ação ou se ela já "espera" por isso no contexto de chat.
+1.  **Abra o Bloco de Notas (Notepad) ou Opera GX** no PC.
+2.  Pergunte no Chat: *"Ollie, o que eu estou fazendo no PC?"*. Ela deve ler o título da sua janela ativa.
+3.  Peça: *"Abre o YouTube pra mim"*. Se já estiver aberto no Opera, ela apenas trará a janela para a frente. Se estiver fechado, ela abrirá a URL.
+4.  No celular, abra um app que você usa muito (ex: Instagram). Depois peça no chat: *"Ollie, coloca isso no PC pra mim"*. Ela deve entender a correlação e abrir o site correspondente.
 
 > [!IMPORTANT]
-> Lembre-se de manter a **Ollie Master GUI** aberta no seu PC para servir de ponte entre o Render e o seu hardware local.
+> Certifique-se de que a **Ollie Master GUI** está aberta para processar as retransmissões do `ClientPc`.
 
 > [!TIP]
-> Use o log `logs/cognitivo.log` para ver exatamente o que a Ollie está "pensando" e quais hábitos ela detectou em cada interação.
+> A Ollie agora prioriza a **Ação** sobre a **Conversa**. Ela deve executar primeiro e confirmar depois, tornando a experiência muito mais ágil.

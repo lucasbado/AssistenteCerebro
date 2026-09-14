@@ -47,12 +47,14 @@ class AgentePcExecutor:
         comando = evento.payload.get("comando")
         if not comando: return
         
+        # 🚀 NORMALIZAÇÃO DE PAYLOAD: Garante que os parâmetros cheguem aos serviços
+        param = evento.payload.get("parametro") or evento.payload.get("valor") or evento.payload.get("app") or evento.payload.get("url") or evento.payload.get("query")
+        
         logger.info(f"🛠️ [Agente PC] Executando comando: {comando}")
         
         try:
             # --- COMANDOS VOICEMEETER ---
             if comando == "voicemeeter":
-                param = evento.payload.get("parametro")
                 if isinstance(param, str) and "=" in param:
                     # Passa a string bruta se contiver múltiplos comandos ou usa split seguro
                     if "," in param:
@@ -69,7 +71,7 @@ class AgentePcExecutor:
                     )
 
             elif comando == "volume_canal":
-                pc_control_service.set_gain(evento.payload.get("canal"), evento.payload.get("valor"))
+                pc_control_service.set_gain(evento.payload.get("canal"), evento.payload.get("valor") or param)
             
             elif comando == "mutar_mic":
                 pc_control_service.mutar_mic()
@@ -80,8 +82,7 @@ class AgentePcExecutor:
                 elif comando == "spotify_prev": pc_control_service.spotify_prev()
                 elif comando == "spotify_play_pause": pc_control_service.spotify_pause()
                 elif comando == "spotify_play":
-                    query = evento.payload.get("query") or evento.payload.get("app")
-                    if query: pc_control_service.tocar_spotify(query)
+                    if param: pc_control_service.tocar_spotify(param)
                 elif comando == "spotify_like": pc_control_service.spotify_like()
 
             # --- COMANDOS MOUSE/TECLADO ---
@@ -92,11 +93,11 @@ class AgentePcExecutor:
             elif comando == "mouse_scroll":
                 pc_control_service.mouse_scroll(evento.payload.get("quantidade", 0))
             elif comando == "executar_macro":
-                pc_control_service.executar_macro(evento.payload.get("macro"))
+                pc_control_service.executar_macro(evento.payload.get("macro") or param)
 
             # --- COMANDOS SISTEMA ---
-            elif comando == "abrir_app":
-                foi_focada = pc_control_service.abrir_app(evento.payload.get("app"))
+            elif comando == "abrir_app" or comando == "abrir_programa":
+                foi_focada = pc_control_service.abrir_app(param)
                 
                 if foi_focada:
                     from core.kernel import kernel
@@ -106,17 +107,19 @@ class AgentePcExecutor:
                         acao=TipoAcao.INTENCAO_INTERACAO,
                         origem=OrigemEvento.IA,
                         payload={
-                            "texto": f"O {evento.payload.get('app')} já estava aberto, trouxe a janela para frente!",
+                            "texto": f"O {param} já estava aberto, trouxe a janela para frente!",
                             "tipo_ws": "CHAT_RESPONSE"
                         }
                     ))
 
+            elif comando == "abrir_url":
+                pc_control_service.abrir_url(param)
+
             elif comando == "abrir_arquivo":
-                caminho = evento.payload.get("caminho") or evento.payload.get("parametro")
-                if pc_control_service.abrir_arquivo(caminho):
+                if pc_control_service.abrir_arquivo(param):
                     evento.estado = EstadoEvento.CONCLUIDO
                 else:
-                    logger.warning(f"Não foi possível abrir o arquivo: {caminho}")
+                    logger.warning(f"Não foi possível abrir o arquivo: {param}")
 
             elif comando == "listar_arquivos":
                 caminho = evento.payload.get("caminho") or evento.payload.get("parametro")
