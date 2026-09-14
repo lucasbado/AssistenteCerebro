@@ -27,14 +27,18 @@ PROCESS_BLACKLIST = ["explorer.exe", "svchost.exe", "dwm.exe", "ctfmon.exe", "py
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [PC_CLIENT] - %(message)s')
 
-def get_active_window_process_name() -> str | None:
+def get_active_window_info() -> dict | None:
     try:
         hwnd = win32gui.GetForegroundWindow()
         if not hwnd: return None
+        title = win32gui.GetWindowText(hwnd)
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
         if not pid: return None
         process = psutil.Process(pid)
-        return process.name()
+        return {
+            "processo": process.name(),
+            "titulo": title
+        }
     except: return None
 
 def command_listener():
@@ -62,18 +66,29 @@ def main():
     print("🖥️  Ollie Client PC Ativo! Monitorando janelas...")
     threading.Thread(target=command_listener, daemon=True).start()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
     last_process_name = None
+    last_title = None
+    
     try:
         while True:
-            process_name = get_active_window_process_name()
-            if process_name and process_name != last_process_name and process_name not in PROCESS_BLACKLIST:
-                data = {
-                    "categoria": "PC_ACTIVITY",
-                    "comando": "notificar_atividade",
-                    "payload": {"processo": process_name}
-                }
-                sock.sendto(json.dumps(data).encode('utf-8'), (OLLIE_HOST, OLLIE_PORT))
-                last_process_name = process_name
+            info = get_active_window_info()
+            if info:
+                process_name = info["processo"]
+                title = info["titulo"]
+                
+                # Só envia se o processo ou o título mudou (captura troca de abas no Opera GX)
+                if (process_name != last_process_name or title != last_title) and process_name not in PROCESS_BLACKLIST:
+                    data = {
+                        "categoria": "PC_ACTIVITY",
+                        "comando": "notificar_atividade",
+                        "payload": info
+                    }
+                    sock.sendto(json.dumps(data).encode('utf-8'), (OLLIE_HOST, OLLIE_PORT))
+                    last_process_name = process_name
+                    last_title = title
+                    logging.info(f"🖥️ Atividade: {process_name} | Janela: {title}")
+                    
             time.sleep(POLL_INTERVAL)
     except KeyboardInterrupt: pass
     finally: sock.close()

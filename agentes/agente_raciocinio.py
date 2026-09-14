@@ -19,7 +19,7 @@ from servicos.catalogo_semantico import catalogo
 from servicos.memoria_perfil import memoria_perfil
 from modelos.catalogo import EntidadeSemantica
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("AgenteRaciocinio")
 
 class AgenteRaciocinio:
     def __init__(self):
@@ -28,19 +28,12 @@ class AgenteRaciocinio:
         self.memoria_semantica = MemoriaSemantica()
         from servicos.memoria_trabalho import memoria_trabalho
         self.memoria_trabalho = memoria_trabalho
-        # 🔒 LOCK DE PROCESSAMENTO: Evita múltiplas chamadas simultâneas para o mesmo evento
+        # 🔒 LOCK DE PROCESSAMENTO
         self._locks_ativos = set()
 
     async def processar(self, evento: EventoCanonico):
-        # 0. Inicializa resultado padrão
-        resultado = {
-            "intencao_captada": "N/A",
-            "tipo_interacao": "IGNORAR",
-            "mensagem_dinamica": None,
-            "execucao_direta": None
-        }
-
-        texto_u = str(evento.payload.get("texto", "")).lower()
+        if evento.acao != TipoAcao.INTENCAO_RACIOCINIO:
+            return
 
         # 🌟 LÓGICA DE APRENDIZADO POR REJEIÇÃO
         if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO and evento.payload.get("tipo") == "SUGESTAO_REJEITADA":
@@ -49,397 +42,172 @@ class AgenteRaciocinio:
             obsidian_service.registrar_fato("Aprendizado", f"O usuário rejeitou a sugestão {id_orig} em {datetime.now().strftime('%d/%m/%Y %H:%M')}. Evitar proatividade similar neste contexto.")
             return
 
-        if evento.acao != TipoAcao.INTENCAO_RACIOCINIO:
-            return
-            
-        # 🛡️ TRAVA DE DUPLICIDADE (LOCK)
-        # Usamos o ID do evento para garantir que a mesma requisição não rode em paralelo.
         lock_id = evento.id
-        
-        if lock_id in self._locks_ativos:
-            logger.warning(f"🛡️ [Raciocínio] Evento {lock_id[:8]} já está em processamento.")
-            return
-        
+        if lock_id in self._locks_ativos: return
         self._locks_ativos.add(lock_id)
         
         try:
-            logger.info(f"🧠 [Raciocínio] Iniciando processamento de '{lock_id[:30]}'")
+            texto_u = str(evento.payload.get("texto", "")).lower()
+            logger.info(f"🧠 [Raciocínio] Processando evento de {evento.pacote}...")
 
-            # 1. Recupera Contexto do Obsidian (MODO ECONÔMICO)
+            # 1. Recupera Contexto do Obsidian
             conhecimento_atual = ""
-            
-            # 📉 ECONOMIA: Só lê Obsidian se a mensagem for longa ou não for apenas um "oi/olá"
             saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "tudo bem", "opa"]
             if len(texto_u) > 8 and not any(texto_u == s for s in saudacoes):
-                try:
-                    conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
-                except Exception as e:
-                    logger.warning(f"⚠️ Erro Obsidian: {e}")
-            else:
-                logger.info("📉 [Raciocínio] MODO ECONÔMICO: Ignorando Obsidian para saudação curta.")
-
-            # 🧠 1.1 BUSCA DE PADRÕES E RECORRÊNCIAS (ANTECIPAÇÃO)
-            habitos_contexto = []
-            try:
-                # Padrão 1: Associações do App atual
-                app_info = await catalogo.obter_app(evento.pacote)
-                if app_info and app_info.atributos.get("associacoes"):
-                    assoc = app_info.atributos["associacoes"]
-                    if "pc_default" in assoc:
-                        habitos_contexto.append(f"- Quando abre {evento.pacote}, costuma usar {assoc['pc_default']['programa']} no PC.")
-                    if "mobile_next" in assoc:
-                        habitos_contexto.append(f"- Costuma abrir {assoc['mobile_next']['pacote']} logo após este app.")
-                
-                # Padrão 2: Hábitos por período
-                from servicos.memoria_perfil import _get_time_slot
-                periodo = _get_time_slot(datetime.now())
-                top_app = await memoria_perfil.obter_item_mais_frequente_por_periodo("APP_USO", periodo)
-                if top_app:
-                    habitos_contexto.append(f"- Seu app mais usado no período da {periodo} é {top_app}.")
-                
-                top_artista = await memoria_perfil.obter_item_mais_frequente_por_periodo("ARTISTA_PREFERENCIA", periodo)
-                if top_artista:
-                    habitos_contexto.append(f"- Costuma ouvir {top_artista} agora.")
-            except Exception as e:
-                logger.warning(f"⚠️ Erro ao buscar recorrências: {e}")
-
-            habitos_str = "\n".join(habitos_contexto) if habitos_contexto else "Nenhum padrão detectado para este contexto ainda."
-                
-            # 🌟 FEEDBACK IMEDIATO (Thinking)
-            if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO and not any(x in texto_u for x in ["luz", "lampada", "apaga", "liga"]):
-                try:
-                    await kernel.publicar(evento.clonar(
-                        categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                        acao=TipoAcao.INTENCAO_INTERACAO,
-                        origem=OrigemEvento.IA,
-                        payload={"tipo_ws": "THINKING", "titulo": "Ollie", "texto": "..."}
-                    ))
+                try: conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
                 except: pass
 
-            # 2. Salva na Memória de Trabalho
+            # 2. Busca de Padrões e Recorrências
+            habitos_contexto = await self._harvest_current_habits(evento)
+            habitos_str = "\n".join(habitos_contexto) if habitos_contexto else "Nenhum padrão detectado ainda."
+                
+            # 3. Gerenciamento de Memória de Trabalho
             chave_conversa = "br.com.assistentecell.chat" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else evento.pacote
-            if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
-                if texto_u:
-                    try:
-                        await asyncio.wait_for(self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Usuário: {texto_u}"]), timeout=2.0)
-                    except: pass
+            if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO and texto_u:
+                await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Usuário: {texto_u}"])
 
-            # 3. Recupera histórico
-            historico = []
-            try:
-                historico = await asyncio.wait_for(self.memoria_trabalho.obter_contexto(chave_conversa), timeout=2.0)
-                cid = evento.metadados.get("correlacao_id")
-                if cid:
-                    historico.append(f"CONTEXTO: O usuário está respondendo especificamente à notificação {cid}.")
-            except: pass
+            historico = await self.memoria_trabalho.obter_contexto(chave_conversa) or []
 
-            # 4. Consulta o Córtex (LLM)
-            logger.info(f"🧠 [Raciocínio] 🚩 CHECKPOINT 6: Chamando LLM ({self.llm.modelo_atual})...")
-            try:
-                resultado = await asyncio.wait_for(
-                    self.llm.classificar_evento(
-                        categoria=evento.categoria.value,
-                        pacote=evento.pacote,
-                        payload=evento.payload,
-                        historico=historico,
-                        timestamp_dispositivo=evento.timestamp,
-                        conhecimento=conhecimento_atual,
-                        habitos=habitos_str # 🧠 INJEÇÃO DE RECORRÊNCIAS
-                    ),
-                    timeout=40.0
-                )
-            except asyncio.TimeoutError:
-                resultado = {"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": "Vixi, meu cérebro deu uma engasgada aqui na nuvem. Pode repetir?", "intencao_captada": "TIMEOUT"}
-            except Exception as e:
-                logger.error(f"❌ [Raciocínio] Erro LLM: {e}")
-                err_str = str(e).lower()
-                if "rate_limit" in err_str or "429" in err_str or "todos os modelos" in err_str:
-                    msg = "Vish, a Groq tá me barrando por velocidade! Dá um segundinho e tenta de novo?"
-                elif "400" in err_str or "model" in err_str:
-                    msg = "Eita, o modelo de IA mudou. Dá um segundinho que tô me atualizando!"
-                else:
-                    msg = "Vish, deu pane no meu sistema aqui! Tenta de novo em um segundinho?"
-                resultado = {"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": msg, "intencao_captada": "ERRO_IA"}
+            # 4. Invocação da LLM
+            resultado = await self.llm.classificar_evento(
+                categoria=evento.categoria.value,
+                pacote=evento.pacote,
+                payload=evento.payload,
+                historico=historico,
+                timestamp_dispositivo=evento.timestamp,
+                conhecimento=conhecimento_atual,
+                habitos=habitos_str
+            )
 
-            # 📝 LOG COGNITIVO (Observabilidade)
+            # 🚀 EXTRAÇÃO ROBUSTA (SCAVENGER)
+            exec_direta_raw = self._buscar_campo(resultado, "execucao_direta")
+            msg_ia = self._buscar_campo(resultado, "mensagem_dinamica")
+            tipo_interacao = resultado.get("tipo_interacao", "NOTIFICAR")
+
+            # 📝 LOG COGNITIVO
             self._registrar_log_cognitivo(texto_u, habitos_contexto, resultado)
 
-        except Exception as outer_e:
-            logger.error(f"💥 Erro fatal Raciocínio: {outer_e}")
-            resultado = {"tipo_interacao": "NOTIFICAR", "mensagem_dinamica": "Vish, deu pane no meu sistema aqui!"}
-        finally:
-            if lock_id in self._locks_ativos:
-                self._locks_ativos.remove(lock_id)
-
-        # 🌟 LOG DE DECISÃO
-        logger.info(f"📊 [BRAIN] Decision: {json.dumps(resultado, ensure_ascii=False)}")
-
-        # 🚀 EXTRAÇÃO ROBUSTA (SCAVENGER)
-        def buscar_campo(obj, campo):
-            if isinstance(obj, dict):
-                aliases = {
-                    "execucao_direta": ["execucao_direta", "comandos", "actions", "exec"],
-                    "mensagem_dinamica": ["mensagem_dinamica", "mensagem", "texto", "chat", "chat_response", "resposta"]
+            # 5. DISPACHO DE RESPOSTA (Ollie Falando)
+            if msg_ia and tipo_interacao in ["NOTIFICAR", "SUGERIR"]:
+                msg_limpa = re.sub(r"(?i)\b(eu\s+)?sou\s+a\s+ollie\b[,!.]*|\bollie\s+aqui\b[,!.]*", "", msg_ia).strip().capitalize()
+                
+                # Determina se é Chat ou Notificação de Sistema
+                tipo_ws = "CHAT_RESPONSE" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else "NOTIFICACAO"
+                
+                payload_notif = {
+                    "texto": msg_limpa, 
+                    "titulo": "Ollie", 
+                    "tipo_ws": tipo_ws,
+                    "contexto": resultado.get("contexto_extra", {})
                 }
-                alvos = aliases.get(campo, [campo])
-                for alvo in alvos:
-                    if alvo in obj and obj[alvo] is not None:
-                        val = obj[alvo]
-                        if campo == "mensagem_dinamica" and isinstance(val, list):
-                            return " ".join([str(x) for x in val])
-                        if val: return val
-                for v in obj.values():
-                    if isinstance(v, (dict, list)):
-                        res = buscar_campo(v, campo)
-                        if res: return res
-            elif isinstance(obj, list):
-                for item in obj:
-                    res = buscar_campo(item, campo)
-                    if res: return res
-            return None
-
-        # Captura os valores reais
-        scavenged_exec = buscar_campo(resultado, "execucao_direta")
-        scavenged_msg = buscar_campo(resultado, "mensagem_dinamica")
-        
-        if scavenged_exec: resultado["execucao_direta"] = scavenged_exec
-        if scavenged_msg: resultado["mensagem_dinamica"] = scavenged_msg
-
-        exec_direta_raw = resultado.get("execucao_direta")
-        msg_ia = resultado.get("mensagem_dinamica")
-        tipo_interacao = resultado.get("tipo_interacao") or "NOTIFICAR"
-
-        # 🚀 CORREÇÃO: Força execução se a IA sugeriu algo mas o usuário já deu uma ordem
-        if (not exec_direta_raw or exec_direta_raw == []) and ("luz" in texto_u or "apaga" in texto_u or "liga" in texto_u) and ("sim" in texto_u or "pode" in texto_u or "bora" in texto_u):
-             for msg in reversed((historico or [])[-5:]):
-                 msg_l = msg.lower()
-                 if "ollie:" in msg_l and ("você quer" in msg_l or "gostaria" in msg_l):
-                     if "luz do quarto" in msg_l: 
-                         acao = "desligar" if "apagar" in msg_l or "desligar" in msg_l else "ligar"
-                         exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": f"luz_quarto {acao}"}
-                         resultado["execucao_direta"] = exec_direta_raw
-                         break
-
-        # 🧠 CONSCIÊNCIA DE AÇÃO
-        if exec_direta_raw and msg_ia:
-            if "?" in msg_ia or any(x in msg_ia.lower() for x in ["quer", "gostaria", "deseja"]):
-                msg_ia = msg_ia.split("?")[0].strip() + "!"
-                if len(msg_ia) < 3: msg_ia = "Fechou, tá na mão!"
-                resultado["mensagem_dinamica"] = msg_ia
-
-        # 4. EXECUÇÃO DIRETA
-        # 🌟 PRIORIDADE: Publicamos a mensagem de confirmação ANTES de executar o comando
-        # para garantir que o usuário veja a Ollie respondendo enquanto o PC trabalha.
-        if msg_ia and tipo_interacao in ["NOTIFICAR", "SUGERIR"]:
-            # Remove apresentações repetitivas
-            msg_limpa = re.sub(r"(?i)\b(eu\s+)?sou\s+a\s+ollie\b[,!.]*|\bollie\s+aqui\b[,!.]*", "", msg_ia).strip().capitalize()
-
-            payload_notif = {"texto": msg_limpa, "titulo": "Ollie", "contexto": resultado.get("contexto_extra", {})}
-            if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
-                payload_notif["tipo_ws"] = "CHAT_RESPONSE"
-                await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Ollie: {msg_limpa}"])
-            
-            await kernel.publicar(evento.clonar(categoria=CategoriaEvento.INTENCAO_NOTIFICACAO, acao=TipoAcao.INTENCAO_INTERACAO, origem=OrigemEvento.IA, payload=payload_notif, metadados={"tipo_destino": "CHAT"}))
-
-        exec_direta_lista = []
-        if tipo_interacao != "SUGERIR":
-            if isinstance(exec_direta_raw, list): exec_direta_lista = exec_direta_raw
-            elif exec_direta_raw: exec_direta_lista = [exec_direta_raw]
-
-        for exec_direta in exec_direta_lista:
-            if not isinstance(exec_direta, dict): continue
-            if evento.categoria in [CategoriaEvento.NOTIFICACAO, CategoriaEvento.APP_FOREGROUND]: continue
-            
-            alvo = str(exec_direta.get("alvo", "PC")).upper().strip()
-            # 🛡️ ROBUSTEZ: Trata comando e parâmetro como string antes de limpar
-            comando = str(exec_direta.get("comando") or exec_direta.get("action") or "").lower().strip()
-            param = str(exec_direta.get("parametro") or exec_direta.get("param") or exec_direta.get("value") or "").strip()
-
-            if not comando: continue
-
-            logger.info(f"⚡ [Raciocínio] Disparando: {alvo} -> {comando}({param})")
-
-            if "pesquisa_web" in comando:
-                await kernel.publicar(evento.clonar(categoria=CategoriaEvento.INTENCAO_PESQUISA, payload={"query": param}))
-            elif alvo == "PC":
-                # Encaminha comando para o executor do PC (local ou via WS)
-                await kernel.publicar(EventoCanonico(
-                    categoria=CategoriaEvento.SISTEMA_COMANDO_PC, 
-                    acao=TipoAcao.NORMAL, 
-                    payload={"comando": comando, "parametro": param, "valor": param}, 
-                    pacote="pc.master", 
-                    metadados={"tipo_destino": "PC"}
+                
+                if tipo_ws == "CHAT_RESPONSE":
+                    await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Ollie: {msg_limpa}"])
+                
+                await kernel.publicar(evento.clonar(
+                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO, 
+                    acao=TipoAcao.INTENCAO_INTERACAO, 
+                    origem=OrigemEvento.IA, 
+                    payload=payload_notif, 
+                    metadados={"tipo_destino": "CHAT" if tipo_ws == "CHAT_RESPONSE" else "NOTIFICACAO"}
                 ))
-            elif alvo == "MOBILE":
-                from api.websocket import central_alertas
-                await central_alertas._broadcast({"tipo_ws": "COMANDO_SISTEMA", "acao": comando.upper(), "parametro": param, "valor": param})
 
-        # 🚀 EXTRAÇÃO ROBUSTA (SCAVENGER)
-        def buscar_campo(obj, campo):
-            if isinstance(obj, dict):
-                aliases = {
-                    "execucao_direta": ["execucao_direta", "comandos", "actions", "exec"],
-                    "mensagem_dinamica": ["mensagem_dinamica", "mensagem", "texto", "chat", "chat_response", "resposta"]
-                }
-                alvos = aliases.get(campo, [campo])
-                for alvo in alvos:
-                    if alvo in obj and obj[alvo] is not None:
-                        val = obj[alvo]
-                        if campo == "mensagem_dinamica" and isinstance(val, list):
-                            return " ".join([str(x) for x in val])
-                        if val: return val
-                for v in obj.values():
-                    if isinstance(v, (dict, list)):
-                        res = buscar_campo(v, campo)
-                        if res: return res
-            elif isinstance(obj, list):
-                for item in obj:
-                    res = buscar_campo(item, campo)
-                    if res: return res
-            return None
+            # 6. EXECUÇÃO DE COMANDOS (Ollie Agindo)
+            exec_direta_lista = []
+            if tipo_interacao != "SUGERIR":
+                if isinstance(exec_direta_raw, list): exec_direta_lista = exec_direta_raw
+                elif exec_direta_raw: exec_direta_lista = [exec_direta_raw]
 
-        # Captura os valores reais
-        scavenged_exec = buscar_campo(resultado, "execucao_direta")
-        scavenged_msg = buscar_campo(resultado, "mensagem_dinamica")
-        
-        if scavenged_exec: resultado["execucao_direta"] = scavenged_exec
-        if scavenged_msg: resultado["mensagem_dinamica"] = scavenged_msg
+            for exec_direta in exec_direta_lista:
+                if not isinstance(exec_direta, dict): continue
+                
+                alvo = str(exec_direta.get("alvo", "PC")).upper().strip()
+                comando = str(exec_direta.get("comando") or exec_direta.get("action") or "").lower().strip()
+                param = str(exec_direta.get("parametro") or exec_direta.get("param") or exec_direta.get("value") or "").strip()
 
-        exec_direta_raw = resultado.get("execucao_direta")
-        msg_ia = resultado.get("mensagem_dinamica")
-        tipo_interacao = resultado.get("tipo_interacao") or "NOTIFICAR"
+                if not comando: continue
+                logger.info(f"⚡ [Raciocínio] Executando: {alvo} -> {comando}({param})")
 
-        # 🚀 CORREÇÃO: Força execução se a IA sugeriu algo mas o usuário já deu uma ordem
-        if (not exec_direta_raw or exec_direta_raw == []) and ("luz" in texto_u or "apaga" in texto_u or "liga" in texto_u) and ("sim" in texto_u or "pode" in texto_u or "bora" in texto_u):
-             for msg in reversed((historico or [])[-5:]):
-                 msg_l = msg.lower()
-                 if "ollie:" in msg_l and ("você quer" in msg_l or "gostaria" in msg_l):
-                     if "luz do quarto" in msg_l: 
-                         acao = "desligar" if "apagar" in msg_l or "desligar" in msg_l else "ligar"
-                         exec_direta_raw = {"alvo": "MOBILE", "comando": "ENVIAR_COMANDO", "parametro": f"luz_quarto {acao}"}
-                         resultado["execucao_direta"] = exec_direta_raw
-                         break
+                if alvo == "PC":
+                    await kernel.publicar(EventoCanonico(
+                        categoria=CategoriaEvento.SISTEMA_COMANDO_PC, 
+                        acao=TipoAcao.NORMAL, 
+                        origem=OrigemEvento.IA,
+                        pacote="pc.master",
+                        payload={"comando": comando, "parametro": param}
+                    ))
+                elif alvo == "MOBILE":
+                    from api.websocket import central_alertas
+                    await central_alertas._broadcast({
+                        "tipo_ws": "COMANDO_SISTEMA", 
+                        "acao": comando.upper(), 
+                        "parametro": param
+                    })
 
-        # 🧠 CONSCIÊNCIA DE AÇÃO
-        if exec_direta_raw and msg_ia:
-            if "?" in msg_ia or any(x in msg_ia.lower() for x in ["quer", "gostaria", "deseja"]):
-                msg_ia = msg_ia.split("?")[0].strip() + "!"
-                if len(msg_ia) < 3: msg_ia = "Fechou, tá na mão!"
-                resultado["mensagem_dinamica"] = msg_ia
+            # 7. MEMÓRIA PERMANENTE (Obsidian)
+            mem_obs = resultado.get("memoria_obsidian")
+            if mem_obs and isinstance(mem_obs, dict):
+                titulo, fato = mem_obs.get("titulo"), mem_obs.get("fato")
+                if titulo and fato: obsidian_service.registrar_fato(titulo, fato)
 
-        # 4. EXECUÇÃO DIRETA
-        # 🌟 PRIORIDADE: Publicamos a mensagem de confirmação ANTES de executar o comando
-        # para garantir que o usuário veja a Ollie respondendo enquanto o PC trabalha.
-        if msg_ia and tipo_interacao in ["NOTIFICAR", "SUGERIR"]:
-            # Remove apresentações repetitivas
-            msg_limpa = re.sub(r"(?i)\b(eu\s+)?sou\s+a\s+ollie\b[,!.]*|\bollie\s+aqui\b[,!.]*", "", msg_ia).strip().capitalize()
-
-            payload_notif = {"texto": msg_limpa, "titulo": "Ollie", "contexto": resultado.get("contexto_extra", {})}
-            if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
-                payload_notif["tipo_ws"] = "CHAT_RESPONSE"
-                await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Ollie: {msg_limpa}"])
-            
-            await kernel.publicar(evento.clonar(categoria=CategoriaEvento.INTENCAO_NOTIFICACAO, acao=TipoAcao.INTENCAO_INTERACAO, origem=OrigemEvento.IA, payload=payload_notif, metadados={"tipo_destino": "CHAT"}))
-
-        exec_direta_lista = []
-        if tipo_interacao != "SUGERIR":
-            if isinstance(exec_direta_raw, list): exec_direta_lista = exec_direta_raw
-            elif exec_direta_raw: exec_direta_lista = [exec_direta_raw]
-
-        for exec_direta in exec_direta_lista:
-            if not isinstance(exec_direta, dict): continue
-            if evento.categoria in [CategoriaEvento.NOTIFICACAO, CategoriaEvento.APP_FOREGROUND]: continue
-            
-            alvo = str(exec_direta.get("alvo", "PC")).upper().strip()
-            # 🛡️ ROBUSTEZ: Trata comando e parâmetro como string antes de limpar
-            comando = str(exec_direta.get("comando") or exec_direta.get("action") or "").lower().strip()
-            param = str(exec_direta.get("parametro") or exec_direta.get("param") or exec_direta.get("value") or "").strip()
-
-            if not comando: continue
-
-            logger.info(f"⚡ [Raciocínio] Disparando: {alvo} -> {comando}({param})")
-
-            if "pesquisa_web" in comando:
-                await kernel.publicar(evento.clonar(categoria=CategoriaEvento.INTENCAO_PESQUISA, payload={"query": param}))
-            elif alvo == "PC":
-                # Encaminha comando para o executor do PC (local ou via WS)
-                await kernel.publicar(EventoCanonico(
-                    categoria=CategoriaEvento.SISTEMA_COMANDO_PC, 
-                    acao=TipoAcao.NORMAL, 
-                    payload={"comando": comando, "parametro": param, "valor": param}, 
-                    pacote="pc.master", 
-                    metadados={"tipo_destino": "PC"}
-                ))
-            elif alvo == "MOBILE":
-                from api.websocket import central_alertas
-                await central_alertas._broadcast({"tipo_ws": "COMANDO_SISTEMA", "acao": comando.upper(), "parametro": param, "valor": param})
-
-        # 6. MEMÓRIA PERMANENTE (Obsidian)
-        mem_obs = resultado.get("memoria_obsidian")
-        if mem_obs and isinstance(mem_obs, dict):
-            titulo, fato = str(mem_obs.get("titulo", "")), str(mem_obs.get("fato", ""))
-            if titulo and fato and not any(k in fato.lower() for k in ["notificação", "conversa"]):
-                obsidian_service.registrar_fato(titulo, fato)
-
-    def _registrar_log_cognitivo(self, usuario_diz: str, habitos: list, resultado: dict):
-        """Grava estruturadamente o pensamento da IA para auditoria."""
-        # Detecta se está no Render (Linux) ou Local (Windows)
-        log_dir = "logs" if os.getenv("RENDER") else "D:/Programacao/AssistenteCell/logs"
-        log_path = os.path.join(log_dir, "cognitivo.log")
-        
-        # Garante que o diretório existe
-        if not os.path.exists(log_dir):
-            try: os.makedirs(log_dir)
-            except: pass
-
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        entry = (
-            f"[{timestamp}] USUÁRIO: \"{usuario_diz}\"\n"
-            f"[HÁBITOS DETECTADOS]: {json.dumps(habitos, ensure_ascii=False)}\n"
-            f"[INTENÇÃO CAPTADA]: {resultado.get('intencao_captada', 'N/A')}\n"
-            f"[DECISÃO]: {resultado.get('tipo_interacao', 'N/A')}\n"
-            f"[EXECUÇÃO]: {json.dumps(resultado.get('execucao_direta', []), ensure_ascii=False)}\n"
-            f"[RESPOSTA]: \"{resultado.get('mensagem_dinamica', 'N/A')}\"\n"
-            f"{'-'*50}\n"
-        )
-        
-        try:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(entry)
         except Exception as e:
-            logger.error(f"Erro ao gravar log cognitivo: {e}")
+            logger.error(f"💥 Erro no Raciocínio: {e}")
+        finally:
+            self._locks_ativos.remove(lock_id)
+
+    def _buscar_campo(self, obj, campo):
+        if isinstance(obj, dict):
+            aliases = {
+                "execucao_direta": ["execucao_direta", "comandos", "actions", "exec"],
+                "mensagem_dinamica": ["mensagem_dinamica", "mensagem", "texto", "chat", "chat_response", "resposta"]
+            }
+            alvos = aliases.get(campo, [campo])
+            for alvo in alvos:
+                if alvo in obj and obj[alvo] is not None:
+                    val = obj[alvo]
+                    if campo == "mensagem_dinamica" and isinstance(val, list):
+                        return " ".join([str(x) for x in val])
+                    return val
+            for v in obj.values():
+                res = self._buscar_campo(v, campo)
+                if res: return res
+        elif isinstance(obj, list):
+            for item in obj:
+                res = self._buscar_campo(item, campo)
+                if res: return res
+        return None
 
     async def _harvest_current_habits(self, evento: EventoCanonico) -> list[str]:
-        """Extrai padrões de comportamento baseados no contexto atual."""
         habitos = []
         try:
-            # 1. Padrões de associação de App
+            # 1. Associações de App
             entidade = await catalogo.obter_app(evento.pacote)
             if entidade and entidade.atributos.get("associacoes"):
                 assoc = entidade.atributos["associacoes"]
                 if "pc_default" in assoc:
-                    habitos.append(f"PADRÃO: Quando você abre '{evento.pacote}', costuma usar '{assoc['pc_default']['programa']}' no PC.")
-                if "mobile_next" in assoc:
-                    habitos.append(f"PADRÃO: Você costuma abrir '{assoc['mobile_next']['pacote']}' logo após este app.")
+                    habitos.append(f"PADRÃO: Ao abrir '{evento.pacote}', você costuma usar '{assoc['pc_default']['programa']}' no PC.")
             
-            # 2. Padrões de horário
+            # 2. Padrões de Horário
             from servicos.memoria_perfil import _get_time_slot
             periodo = _get_time_slot(datetime.now())
-            
             top_app = await memoria_perfil.obter_item_mais_frequente_por_periodo("APP_USO", periodo)
-            if top_app:
-                habitos.append(f"ROTINA {periodo}: Seu app mais usado agora é '{top_app}'.")
-                
-            top_artista = await memoria_perfil.obter_item_mais_frequente_por_periodo("ARTISTA_PREFERENCIA", periodo)
-            if top_artista:
-                habitos.append(f"ROTINA {periodo}: Você costuma ouvir '{top_artista}' neste horário.")
-
-        except Exception as e:
-            logger.error(f"Erro no harvest de hábitos: {e}")
-        
+            if top_app: habitos.append(f"ROTINA {periodo}: Seu app mais usado agora é '{top_app}'.")
+        except: pass
         return habitos
 
-    async def sintetizar_com_pesquisa(self, evento_resultado: EventoCanonico):
-        # ... (Mantido o código de síntese sem alterações para brevidade) ...
-        pass
+    def _registrar_log_cognitivo(self, usuario_diz: str, habitos: list, resultado: dict):
+        log_dir = "logs" if os.getenv("RENDER") else "D:/Programacao/AssistenteCell/logs"
+        if not os.path.exists(log_dir): os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, "cognitivo.log")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry = (
+            f"[{timestamp}] USUÁRIO: \"{usuario_diz}\"\n"
+            f"[HÁBITOS]: {json.dumps(habitos, ensure_ascii=False)}\n"
+            f"[INTENÇÃO]: {resultado.get('intencao_captada', 'N/A')}\n"
+            f"[EXECUÇÃO]: {json.dumps(resultado.get('execucao_direta', []), ensure_ascii=False)}\n"
+            f"[RESPOSTA]: \"{resultado.get('mensagem_dinamica', 'N/A')}\"\n"
+            f"{'-'*50}\n"
+        )
+        try:
+            with open(log_path, "a", encoding="utf-8") as f: f.write(entry)
+        except: pass

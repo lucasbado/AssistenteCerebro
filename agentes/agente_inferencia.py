@@ -46,6 +46,39 @@ class AgenteInferencia:
         await self._padrao_rotina_noturna()
         await self._inferir_associacao_pc()
         await self._inferir_associacao_mobile()
+        await self._inferir_rotina_pc_horario()
+
+    async def _inferir_rotina_pc_horario(self):
+        """Aprende que certos programas ou sites do PC são abertos em horários específicos."""
+        from servicos.memoria_perfil import _get_time_slot
+        
+        # Filtra eventos de PC recentes
+        eventos_pc = [e for e in self.eventos_recentes if e.categoria == CategoriaEvento.PC_ACTIVITY]
+        if not eventos_pc: return
+
+        contador_periodo = defaultdict(lambda: defaultdict(int))
+        for e in eventos_pc:
+            processo = e.payload.get("processo", "").lower()
+            titulo = e.payload.get("titulo", "").lower()
+            
+            # Identificação inteligente de site vs programa
+            chave = processo
+            if any(n in processo for n in ["opera", "chrome", "edge", "firefox"]):
+                if "youtube" in titulo: chave = "YouTube"
+                elif "instagram" in titulo: chave = "Instagram"
+                elif "twitch" in titulo: chave = "Twitch"
+                elif "github" in titulo: chave = "GitHub"
+
+            if chave:
+                periodo = _get_time_slot(e.timestamp)
+                contador_periodo[periodo][chave] += 1
+
+        for periodo, processos in contador_periodo.items():
+            for chave, contagem in processos.items():
+                if contagem >= 3: # Limiar de 3 vezes no mesmo período
+                    logger.info(f"✨ [INFERENCIA] Rotina temporal detectada: {chave} na {periodo}")
+                    # Salva como um hábito de perfil para a LLM ver
+                    await memoria_perfil.registrar_uso_app(f"PC_ROUTINE_{periodo}", chave)
 
     async def _registrar_coocorrencia_mobile(self, evento_atual: EventoCanonico):
         """Registra quando dois apps diferentes são abertos em sequência rápida."""

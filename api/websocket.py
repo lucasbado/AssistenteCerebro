@@ -55,7 +55,7 @@ class GerenciadorNotificacoes:
         
         # Identifica se é comando para o Celular
         is_mobile_cmd = "_mobile" in comando_nome or ("abrir_app" in comando_nome and "pacote" in dados_para_envio) or (tipo_ws == "COMANDO_SISTEMA")
-        tem_comando_pc = ("comando" in dados_para_envio and not is_mobile_cmd) or (categoria == "SISTEMA_COMANDO_PC")
+        tem_comando_pc = ("comando" in dados_para_envio and not is_mobile_cmd) or (categoria == "SISTEMA_COMANDO_PC") or (metadados.get("tipo_destino") == "PC")
 
         # Define tipo_ws se ausente
         if not tipo_ws:
@@ -289,14 +289,26 @@ async def websocket_endpoint(websocket: WebSocket):
                     from core.kernel import kernel
                     from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
                     from core.evento import EventoCanonico
+                    from servicos.consciencia import consciencia
                     
-                    logger.info(f"🖥️ [WS BRIDGE] Atividade do PC recebida via ponte: {msg.get('payload')}")
+                    payload = msg.get("payload", {})
+                    logger.info(f"🖥️ [WS BRIDGE] Atividade do PC recebida via ponte: {payload}")
+                    
+                    # 🧠 CONSCIÊNCIA: Atualiza o que o usuário está vendo no PC
+                    consciencia.atualizar({
+                        "pc_state": {
+                            "processo_ativo": payload.get("processo"),
+                            "janela_ativa": payload.get("titulo"),
+                            "is_online": True
+                        }
+                    })
+
                     await kernel.publicar(EventoCanonico(
                         categoria=CategoriaEvento.PC_ACTIVITY,
                         acao=TipoAcao.NORMAL,
                         origem=OrigemEvento.PC,
                         pacote="pc.bridge.gui",
-                        payload=msg.get("payload", {})
+                        payload=payload
                     ))
                     
             except Exception as e:

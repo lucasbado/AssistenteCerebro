@@ -67,6 +67,12 @@ class ConscienciaSituacional:
             if pc.get("is_online"):
                 resumo.append(f"- CPU: {pc.get('cpu')}% | RAM: {pc.get('ram')}%")
                 
+                # Atividade de Janela
+                if pc.get("janela_ativa"):
+                    resumo.append(f"- Janela Ativa: \"{pc.get('janela_ativa')}\"")
+                if pc.get("processo_ativo"):
+                    resumo.append(f"- Processo em Foco: {pc.get('processo_ativo')}")
+
                 # Áudio (Voicemeeter)
                 audio = pc.get("audio_state", {})
                 if audio:

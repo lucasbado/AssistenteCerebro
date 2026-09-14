@@ -1,45 +1,43 @@
-# Walkthrough: Ativação do Ecossistema Ollie com Cloud Bridge (Nuvem)
+# Walkthrough: Ollie, a Orquestradora Multiplataforma
 
-Implementei a arquitetura de **Ponte (Bridge)** para permitir que a atividade do seu PC local chegue à Ollie rodando no **Render**, superando as limitações de tráfego UDP em nuvem.
+Transformei a Ollie em uma assistente que realmente "vê" e orquestra o seu ecossistema, aprendendo com seus hábitos no PC e no celular (focando no seu uso do Opera GX).
 
-## Arquitetura de Comunicação
+## Principais Evoluções
 
-```mermaid
-graph TD
-    A[ClientPc.py] -- "UDP (Local)" --> B[Ollie Master GUI]
-    B -- "WebSocket (Retransmissão)" --> C[Ollie Brain (Render)]
-    C -- "Kernel/AgenteRotina" --> C
-    C -- "WebSocket (Notificação)" --> D[Celular]
-```
+### 1. Visão Profunda (Opera GX & YouTube)
+O [ClientPc.py](file:///D:/Programacao/AssistenteCell/ClientPc.py) agora captura não apenas o processo (`opera.exe`), mas também o **Título da Janela** (ex: "Video Incrível - YouTube"). Isso permite que a Ollie saiba exatamente o que você está assistindo ou pesquisando.
 
-## Mudanças Realizadas
+### 2. Consciência Situacional em Tempo Real
+Atualizei a [consciencia.py](file:///D:/Programacao/AssistenteCell/servicos/consciencia.py) para injetar o estado atual do PC diretamente no prompt da IA. Agora, quando você fala com ela, ela já sabe se o seu PC está ligado e qual janela está na sua frente.
 
-### 1. GUI como Hub de Retransmissão
-Atualizei o [ollie_master_gui.py](file:///D:/Programacao/AssistenteCell/ollie_master_gui.py) para incluir um listener UDP local na porta **5005**. Agora a GUI "ouve" o `ClientPc.py` e reenvia as atividades instantaneamente para o Render via WebSocket.
+### 3. Orquestração Cross-Device Sem Travas
+Refatorei o [agente_raciocinio.py](file:///D:/Programacao/AssistenteCell/agentes/agente_raciocinio.py) para remover bloqueios antigos. Agora:
+- Eventos de celular (ex: abrir Instagram) podem disparar ações no PC.
+- A Ollie pode sugerir proativamente: "Vi que você abriu o WhatsApp no celular, quer que eu abra o WhatsApp Web no Opera pra você?".
 
-### 2. Receptor de Atividade na Nuvem
-O arquivo [api/websocket.py](file:///D:/Programacao/AssistenteCell/api/websocket.py) agora reconhece o tipo de mensagem `PC_ACTIVITY`. Quando a GUI envia uma atividade, o servidor no Render a publica no Kernel, permitindo que a inteligência da Ollie processe o evento.
+### 4. Aprendizado de Máquina (Correlação Temporal)
+O [agente_inferencia.py](file:///D:/Programacao/AssistenteCell/agentes/agente_inferencia.py) agora aprende padrões baseados no horário. Se você costuma abrir o YouTube às 20h, a Ollie notará esse padrão e passará a se antecipar.
 
-### 3. Ajuste de Inicialização Inteligente
-O [main.py](file:///D:/Programacao/AssistenteCell/main.py) foi configurado para **não** tentar abrir portas UDP quando estiver rodando no Render. Isso evita erros de permissão e economiza recursos, deixando a tarefa de escuta para a sua GUI local.
+### 5. Ponte de Execução Robusta
+Ajustei o [pc_control_service.py](file:///D:/Programacao/AssistenteCell/servicos/pc_control_service.py) para ser mais tolerante com títulos de janelas e incluí os métodos de maximizar/minimizar/fullscreen solicitados pela GUI.
 
-### 4. Rotina de Teste: Bloco de Notas
-A rotina em [routines.json](file:///D:/Programacao/AssistenteCell/config/routines.json) está ativa:
-- **Gatilho**: Abrir o `notepad.exe` no PC.
-- **Ação**: Notificação automática no celular enviada pelo cérebro da Ollie na nuvem.
+---
 
-## Como Testar Agora (Fluxo Completo)
+## Como Validar a Nova Inteligência
 
-1.  **Certifique-se de que a Ollie está rodando no Render.**
-2.  **Inicie a `ollie_master_gui.py` no seu PC** e confirme que ela conectou ao Render (Status: "ONLINE").
-3.  **Inicie o `ClientPc.py` no seu PC.**
-4.  **Abra o Bloco de Notas (Notepad).**
-5.  **Confirme o fluxo**:
-    - O log na sua GUI local deve mostrar a conexão.
-    - O celular deve receber a pergunta da Ollie: *"Notei que você abriu o Bloco de Notas. Precisa que eu salve algo na sua memória?"*
+### 1. Teste de "Visão"
+Abra um vídeo no **Opera GX** e pergunte no chat (celular ou PC): *"O que eu estou fazendo no computador?"*.
+A Ollie deve responder citando o título da janela ou do vídeo.
 
-> [!TIP]
-> Use o botão "REBOOT LINK" na GUI se notar que a conexão com o Render caiu. A ponte UDP inicia automaticamente junto com a GUI.
+### 2. Teste de Sinergia
+Tente o comando: *"Ollie, abre o YouTube no PC"* ou *"Fecha o Opera e abre o VS Code"*.
+A Ollie deve focar a janela se já estiver aberta ou abrir o programa se estiver fechado.
+
+### 3. Teste de Proatividade (Aprendizado)
+Abra o **Opera GX** e entre no **YouTube** por 3 dias seguidos no mesmo horário. No quarto dia, veja se a Ollie sugere a ação ou se ela já "espera" por isso no contexto de chat.
 
 > [!IMPORTANT]
-> Esta arquitetura permite que você tenha um PC potente em casa sendo controlado e monitorado por uma IA rodando em qualquer lugar do mundo (Render).
+> Lembre-se de manter a **Ollie Master GUI** aberta no seu PC para servir de ponte entre o Render e o seu hardware local.
+
+> [!TIP]
+> Use o log `logs/cognitivo.log` para ver exatamente o que a Ollie está "pensando" e quais hábitos ela detectou em cada interação.

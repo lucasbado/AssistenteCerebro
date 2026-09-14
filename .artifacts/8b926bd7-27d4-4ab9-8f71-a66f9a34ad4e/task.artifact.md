@@ -1,11 +1,15 @@
-# Tarefas: Ecossistema Ollie - Teste Integrado PC-Celular
-
-- [x] Criar o serviço de escuta UDP `servicos/pc_listener_service.py`
-- [x] Integrar o serviço no ciclo de vida em `main.py` (com trava para Render)
-- [x] Implementar Ponte UDP -> WebSocket em `ollie_master_gui.py`
-- [x] Implementar Receptor de Atividade em `api/websocket.py`
-- [x] Corrigir erro de atributo `OrigemEvento.PC` em `core/tipos.py`
-- [x] Atualizar o motor de rotinas em `agentes/agente_rotina.py` para suportar `PC_ACTIVITY`
-- [x] Adicionar a rotina de teste em `config/routines.json`
-- [ ] Verificar a retransmissão GUI -> Render nos logs (Aguardando ação do usuário)
-- [ ] Verificar o disparo da rotina e notificação no celular (Aguardando ação do usuário)
+- [x] **Visão Profunda (Hardware)**
+    - [x] Atualizar `ClientPc.py` para capturar e enviar o título da janela (Opera GX focus)
+    - [x] Atualizar `servicos/consciencia.py` para processar e armazenar o contexto de janela
+- [x] **Refatoração do Cérebro (Cognição)**
+    - [x] Limpar duplicidades e erros de validação em `agentes/agente_raciocinio.py`
+    - [x] Remover bloqueios de orquestração cross-device (Mobile -> PC)
+    - [x] Injetar consciência situacional em tempo real no prompt da LLM
+- [x] **Aprendizado de Máquina (Inferência)**
+    - [x] Expandir `agentes/agente_inferencia.py` para aprender correlações (Hora, App Mobile, Janela PC)
+- [x] **Ponte de Execução (Roteamento)**
+    - [x] Refinar `api/websocket.py` para garantir entrega infalível de `COMANDO_PC`
+    - [x] Melhorar `servicos/pc_control_service.py` para focar janelas por título (YouTube/Opera)
+- [x] **Verificação**
+    - [x] Testar abertura de apps via chat
+    - [x] Testar sugestão proativa baseada em janela ativa

@@ -638,22 +638,27 @@ class PcControlService:
         if not gw or not win32gui: return False
         
         try:
-            termo = termo.lower()
+            termo = termo.lower().strip()
             janelas = gw.getAllWindows()
             
+            # 1. TENTA MATCH EXATO OU QUASE EXATO NO TÍTULO
             for j in janelas:
-                if termo in j.title.lower():
+                titulo_l = j.title.lower()
+                if not titulo_l: continue
+                
+                # Se o termo está no título (ex: "youtube" em "Video - YouTube - Opera")
+                if termo in titulo_l:
                     # 💡 Restaura se estiver minimizada
                     if j.isMinimized:
                         j.restore()
                     
-                    # 🚀 Força o foco usando Win32 (mais robusto que pygetwindow puro)
+                    # 🚀 Força o foco usando Win32
                     try:
                         win32gui.ShowWindow(j._hWnd, win32con.SW_RESTORE)
                         win32gui.SetForegroundWindow(j._hWnd)
+                        logger.info(f"✅ [PCControl] Janela focada: {j.title}")
                         return True
                     except Exception as e:
-                        # Às vezes o Windows bloqueia SetForegroundWindow se não for o processo ativo
                         logger.warning(f"Falha ao focar janela '{j.title}': {e}")
                         j.activate()
                         return True
@@ -676,6 +681,25 @@ class PcControlService:
     def hibernar_pc(self):
         # Hibernar (Hibernate) - Salva estado no disco
         os.system("shutdown /h")
+
+    def janela_fullscreen(self, termo):
+        if not gw: return
+        for j in gw.getWindowsWithTitle(termo):
+            j.activate()
+            pyautogui.press('f11')
+            return
+
+    def janela_maximizar(self, termo):
+        if not gw: return
+        for j in gw.getWindowsWithTitle(termo):
+            j.maximize()
+            return
+
+    def janela_minimizar(self, termo):
+        if not gw: return
+        for j in gw.getWindowsWithTitle(termo):
+            j.minimize()
+            return
 
     def executar_macro(self, macro_key):
         keys = self.macros.get(macro_key)
