@@ -33,6 +33,7 @@ from agentes.agente_pc_profiler import AgentePcProfiler
 # Serviços
 from servicos.agente_contexto_sistema import AgenteContextoSistema
 from servicos.pc_control_service import pc_control_service
+from servicos.pc_listener_service import pc_listener_service
 from banco.database import inicializar_banco, async_engine
 
 # Routers (API)
@@ -164,10 +165,16 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(central_alertas.iniciar_monitor())
     ]
     
+    # 🖥️ LOCAL ONLY: Inicia listener UDP apenas se não estiver no Render
+    if not os.getenv("RENDER"):
+        tasks.append(asyncio.create_task(pc_listener_service.iniciar()))
+
     logger.info("🚀 AI Brain & PC Master Control online!")
     yield
     # --- SHUTDOWN ---
     for t in tasks: t.cancel()
+    if not os.getenv("RENDER"):
+        pc_listener_service.parar()
     pc_control_service.encerrar()
     await async_engine.dispose()
 

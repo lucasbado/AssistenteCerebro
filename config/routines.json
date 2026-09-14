@@ -24,5 +24,16 @@
             {"alvo": "IA", "comando": "NOTIFICAR", "parametro": "Bom dia! Seu PC está pronto. Deseja abrir sua agenda?"}
         ],
         "ativa": false
+    },
+    {
+        "nome": "Sincronização Ollie: Notepad",
+        "gatilho": {
+            "tipo": "PC_ACTIVITY",
+            "processo": "notepad.exe"
+        },
+        "acoes": [
+            {"alvo": "IA", "comando": "NOTIFICAR", "parametro": "Notei que você abriu o Bloco de Notas. Precisa que eu salve algo na sua memória?"}
+        ],
+        "ativa": true
     }
 ]

@@ -72,6 +72,12 @@ class AgenteRotina:
         if tipo == "APP_OPENED" and evento.categoria == CategoriaEvento.APP_FOREGROUND:
             return evento.pacote == gatilho.get("pacote")
             
+        # Gatilho: Atividade no PC (Processo)
+        if tipo == "PC_ACTIVITY" and evento.categoria == CategoriaEvento.PC_ACTIVITY:
+            processo_gatilho = str(gatilho.get("processo")).lower()
+            processo_evento = str(evento.payload.get("processo")).lower()
+            return processo_gatilho in processo_evento
+            
         # Gatilho: Evento de Sistema (ex: PC_LOGIN)
         if tipo == "EVENTO_SISTEMA" and evento.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO:
             return evento.payload.get("alvo") == gatilho.get("evento")

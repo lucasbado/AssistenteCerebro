@@ -282,6 +282,20 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Retransmite o status do PC para todos (especialmente para o Celular)
                     logger.info(f"🖥️ [WS] Status do PC recebido: {stats}")
                     await central_alertas._broadcast(msg)
+
+                elif tipo == "PC_ACTIVITY":
+                    from core.kernel import kernel
+                    from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
+                    from core.evento import EventoCanonico
+                    
+                    logger.info(f"🖥️ [WS BRIDGE] Atividade do PC recebida via ponte: {msg.get('payload')}")
+                    await kernel.publicar(EventoCanonico(
+                        categoria=CategoriaEvento.PC_ACTIVITY,
+                        acao=TipoAcao.NORMAL,
+                        origem=OrigemEvento.PC,
+                        pacote="pc.bridge.gui",
+                        payload=msg.get("payload", {})
+                    ))
                     
             except Exception as e:
                 logger.error(f"Erro ao processar mensagem WS: {e}")
