@@ -102,6 +102,12 @@ async def lifespan(app: FastAPI):
     # Filtro: Foco e Bem-estar são apenas registros, não disparam IA de imediato.
     kernel.registrar(lambda e: e.acao == TipoAcao.NORMAL and e.categoria == CategoriaEvento.APP_FOREGROUND, agentes_inst["foco"].processar)
     
+    # 🌟 ATIVAÇÃO: Agente de Bem-Estar (Monitora pausas em lazer)
+    kernel.registrar(lambda e: e.categoria == CategoriaEvento.APP_FOREGROUND, agentes_inst["bem_estar"].processar)
+
+    # 🌟 ATIVAÇÃO: Agente de Rotinas (Automações do routines.json)
+    kernel.registrar(lambda e: e.categoria in [CategoriaEvento.APP_FOREGROUND, CategoriaEvento.SISTEMA_COMANDO_INTERNO], agentes_inst["rotina"].processar)
+
     # ... outros registros mantidos, mas apenas o Raciocínio (IA) é filtrado por Ação Complexa
     kernel.registrar(lambda e: e.acao == TipoAcao.EVENTO_COMPLEXO, agentes_inst["roteador"].processar)
     kernel.registrar(lambda e: e.acao == TipoAcao.INTENCAO_RACIOCINIO, agentes_inst["raciocinio"].processar)
@@ -139,9 +145,21 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(3600)
             await kernel.publicar(EventoCanonico(categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO, acao=TipoAcao.NORMAL, origem=OrigemEvento.SISTEMA, pacote="sistema.rotina", payload={"tipo": "REFLEXAO_ROTINA"}))
 
+    async def loop_sumarizador():
+        """Gera um resumo do perfil a cada 24 horas."""
+        while True:
+            await asyncio.sleep(86400)
+            await kernel.publicar(EventoCanonico(
+                categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO, 
+                acao=TipoAcao.GERAR_RESUMO_PERFIL, 
+                origem=OrigemEvento.SISTEMA, 
+                pacote="sistema.sumarizador"
+            ))
+
     tasks = [
         asyncio.create_task(loop_clima()),
         asyncio.create_task(loop_rotina()),
+        asyncio.create_task(loop_sumarizador()),
         asyncio.create_task(kernel.iniciar()),
         asyncio.create_task(central_alertas.iniciar_monitor())
     ]

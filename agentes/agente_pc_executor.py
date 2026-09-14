@@ -14,9 +14,23 @@ class AgentePcExecutor:
     """
     
     async def processar(self, evento: EventoCanonico):
-        # Se estivermos na nuvem (sem VM e sem Pyautogui), não tentamos executar
-        if not pc_control_service.vm and os.getenv("RENDER"):
-            logger.info(f"☁️ [Agente PC] Rodando em nuvem. Comando '{evento.payload.get('comando')}' será roteado via WebSocket.")
+        # ☁️ ROTEAMENTO CLOUD: Se estivermos no Render, o comando deve ir via WebSocket para o PC Master
+        if os.getenv("RENDER"):
+            comando = evento.payload.get("comando")
+            if comando:
+                logger.info(f"☁️ [Agente PC] Rodando em nuvem. Comando '{comando}' sendo roteado via WebSocket para PC Master.")
+                from api.websocket import central_alertas
+                # Prepara o payload para o PC Master local (Relé)
+                payload_ws = {
+                    "tipo_ws": "COMANDO_PC",
+                    "comando": comando,
+                    "parametro": evento.payload.get("parametro"),
+                    "valor": evento.payload.get("valor"),
+                    "app": evento.payload.get("app"),
+                    "url": evento.payload.get("url")
+                }
+                await central_alertas._broadcast(payload_ws)
+                evento.estado = EstadoEvento.CONCLUIDO
             return
 
         if evento.acao == TipoAcao.EXECUTAR_PROGRAMA:
