@@ -107,7 +107,7 @@ async def lifespan(app: FastAPI):
     kernel.registrar(lambda e: e.categoria == CategoriaEvento.APP_FOREGROUND, agentes_inst["bem_estar"].processar)
 
     # 🌟 ATIVAÇÃO: Agente de Rotinas (Automações do routines.json)
-    kernel.registrar(lambda e: e.categoria in [CategoriaEvento.APP_FOREGROUND, CategoriaEvento.SISTEMA_COMANDO_INTERNO], agentes_inst["rotina"].processar)
+    kernel.registrar(lambda e: e.categoria in [CategoriaEvento.APP_FOREGROUND, CategoriaEvento.SISTEMA_COMANDO_INTERNO, CategoriaEvento.PC_ACTIVITY], agentes_inst["rotina"].processar)
 
     # ... outros registros mantidos, mas apenas o Raciocínio (IA) é filtrado por Ação Complexa
     kernel.registrar(lambda e: e.acao == TipoAcao.EVENTO_COMPLEXO, agentes_inst["roteador"].processar)
