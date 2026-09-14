@@ -23,12 +23,14 @@ class MemoriaSemantica:
 
         # 2. Fallback Assíncrono para o SQLite
         async with AsyncSessionLocal() as session:
+            # 🛡️ FIX: Ordenamos por ID decrescente e limitamos a 1 para evitar MultipleResultsFound
             stmt = select(EntidadeSemanticaDB).where(
                 EntidadeSemanticaDB.tipo == tipo,
                 EntidadeSemanticaDB.chave == chave
-            )
+            ).order_by(EntidadeSemanticaDB.id.desc()).limit(1)
+            
             resultado = await session.execute(stmt)
-            entidade_db = resultado.scalar_one_or_none()
+            entidade_db = resultado.scalars().first()
 
             if entidade_db is None:
                 return None
@@ -55,9 +57,10 @@ class MemoriaSemantica:
             stmt = select(EntidadeSemanticaDB).where(
                 EntidadeSemanticaDB.tipo == entidade.tipo,
                 EntidadeSemanticaDB.chave == entidade.chave
-            )
+            ).order_by(EntidadeSemanticaDB.id.desc())
+            
             resultado = await session.execute(stmt)
-            existente = resultado.scalar_one_or_none()
+            existente = resultado.scalars().first()
 
             payload_json = entidade.model_dump()
 
@@ -88,9 +91,10 @@ class MemoriaSemantica:
             stmt = select(EntidadeSemanticaDB).where(
                 EntidadeSemanticaDB.tipo == tipo,
                 EntidadeSemanticaDB.chave == chave
-            )
+            ).order_by(EntidadeSemanticaDB.id.desc())
+            
             resultado = await session.execute(stmt)
-            existente = resultado.scalar_one_or_none()
+            existente = resultado.scalars().first()
 
             if existente:
                 await session.delete(existente)

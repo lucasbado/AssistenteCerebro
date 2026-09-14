@@ -410,6 +410,36 @@ class AgenteRaciocinio:
         except Exception as e:
             logger.error(f"Erro ao gravar log cognitivo: {e}")
 
+    async def _harvest_current_habits(self, evento: EventoCanonico) -> list[str]:
+        """Extrai padrões de comportamento baseados no contexto atual."""
+        habitos = []
+        try:
+            # 1. Padrões de associação de App
+            entidade = await catalogo.obter_app(evento.pacote)
+            if entidade and entidade.atributos.get("associacoes"):
+                assoc = entidade.atributos["associacoes"]
+                if "pc_default" in assoc:
+                    habitos.append(f"PADRÃO: Quando você abre '{evento.pacote}', costuma usar '{assoc['pc_default']['programa']}' no PC.")
+                if "mobile_next" in assoc:
+                    habitos.append(f"PADRÃO: Você costuma abrir '{assoc['mobile_next']['pacote']}' logo após este app.")
+            
+            # 2. Padrões de horário
+            from servicos.memoria_perfil import _get_time_slot
+            periodo = _get_time_slot(datetime.now())
+            
+            top_app = await memoria_perfil.obter_item_mais_frequente_por_periodo("APP_USO", periodo)
+            if top_app:
+                habitos.append(f"ROTINA {periodo}: Seu app mais usado agora é '{top_app}'.")
+                
+            top_artista = await memoria_perfil.obter_item_mais_frequente_por_periodo("ARTISTA_PREFERENCIA", periodo)
+            if top_artista:
+                habitos.append(f"ROTINA {periodo}: Você costuma ouvir '{top_artista}' neste horário.")
+
+        except Exception as e:
+            logger.error(f"Erro no harvest de hábitos: {e}")
+        
+        return habitos
+
     async def sintetizar_com_pesquisa(self, evento_resultado: EventoCanonico):
         # ... (Mantido o código de síntese sem alterações para brevidade) ...
         pass
