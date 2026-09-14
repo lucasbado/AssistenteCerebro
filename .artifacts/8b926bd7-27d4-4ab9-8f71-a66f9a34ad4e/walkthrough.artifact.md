@@ -1,35 +1,36 @@
-# Walkthrough: Ollie, a Orquestradora de Ecossistemas
+# Walkthrough: Ollie, a Arquiteta de Rotinas
 
-Transformei a Ollie em uma assistente verdadeiramente multiplataforma, resolvendo os problemas de execução e dando a ela a capacidade de "enxergar" o que você faz no seu **Opera GX**.
+Agora a Ollie não apenas observa, mas ativamente **constrói o ecossistema** de automações para você, sugerindo rotinas baseadas no seu comportamento real entre o PC e o celular.
 
-## O que foi corrigido e aprimorado
+## O que foi implementado
 
-### 1. Fim dos Travamentos (Render FIX)
-Restaurei os métodos de síntese de pesquisa no [agente_raciocinio.py](file:///D:/Programacao/AssistenteCell/agentes/agente_raciocinio.py). Isso resolve o erro de inicialização que derrubou o servidor no Render.
+### 1. Motor de Sugestão de Rotinas
+Implementei a lógica de "Reflexão" no [agente_rotina.py](file:///D:/Programacao/AssistenteCell/agentes/agente_rotina.py). Periodicamente (ou sob comando), a Ollie analisa a memória de perfil e, se notar que você usa o mesmo programa no PC repetidamente em um certo horário, ela gera uma **Sugestão de Regra**.
 
-### 2. Comandos que Funcionam (Payload Unificado)
-Descobri por que a Ollie não estava abrindo seus apps: havia uma divergência nos nomes dos campos entre o cérebro e o executor. Agora, o [AgentePcExecutor.py](file:///D:/Programacao/AssistenteCell/agentes/agente_pc_executor.py) é inteligente o suficiente para extrair o nome do app ou a URL de qualquer formato de comando enviado pela IA.
+### 2. Gestão de Rotinas (API de Capabilities)
+Criei um novo endpoint em [router_capabilities.py](file:///D:/Programacao/AssistenteCell/api/router_capabilities.py) que permite:
+- Listar as rotinas atuais do `routines.json`.
+- Adicionar novas rotinas (quando você aceita uma sugestão no app).
+- Remover rotinas existentes.
 
-### 3. Visão de Abas (Opera GX)
-O [ClientPc.py](file:///D:/Programacao/AssistenteCell/ClientPc.py) agora envia o **Título da Janela**. Se você estiver no YouTube, a Ollie saberá o título do vídeo. Isso permite uma gestão de janelas muito mais fina, evitando abrir abas duplicadas se o site já estiver aberto.
+### 3. Integração na Home (Cards de Decisão)
+O [servico_home.py](file:///D:/Programacao/AssistenteCell/api/servico.py) e o [agregador_perfil.py](file:///D:/Programacao/AssistenteCell/servicos/agregador_perfil.py) foram atualizados para incluir os padrões de PC detectados. Agora, a LLM verá esses padrões e poderá criar cards de "Sugestão de Regra" que aparecem na tela inicial do seu celular com um botão para "Aceitar".
 
-### 4. Machine Learning & Hábitos Temporais
-O [agente_inferencia.py](file:///D:/Programacao/AssistenteCell/agentes/agente_inferencia.py) agora rastreia recorrências por horário. Ele aprende que você abre o YouTube no PC sempre no mesmo período e injeta esse hábito no cérebro da Ollie para que ela se antecipe.
-
-### 5. Sinergia Total (Cross-Device)
-Removi as restrições que impediam a Ollie de agir no PC se você estivesse usando o celular. Agora, abrir um app no Android pode disparar uma sugestão inteligente no PC (e vice-versa), criando um fluxo contínuo.
+### 4. Gatilho de Teste Manual
+Adicionei em [testes.py](file:///D:/Programacao/AssistenteCell/api/testes.py) o endpoint `POST /testes/reflexao-rotina`. Isso permite que você force a Ollie a pensar sobre seus hábitos agora mesmo, sem esperar o ciclo automático.
 
 ---
 
-## Como testar a Orquestração
+## Como testar a Criação de Rotinas
 
-1.  **Abra o Bloco de Notas (Notepad) ou Opera GX** no PC.
-2.  Pergunte no Chat: *"Ollie, o que eu estou fazendo no PC?"*. Ela deve ler o título da sua janela ativa.
-3.  Peça: *"Abre o YouTube pra mim"*. Se já estiver aberto no Opera, ela apenas trará a janela para a frente. Se estiver fechado, ela abrirá a URL.
-4.  No celular, abra um app que você usa muito (ex: Instagram). Depois peça no chat: *"Ollie, coloca isso no PC pra mim"*. Ela deve entender a correlação e abrir o site correspondente.
-
-> [!IMPORTANT]
-> Certifique-se de que a **Ollie Master GUI** está aberta para processar as retransmissões do `ClientPc`.
+1.  **Gere Histórico**: Abra o Bloco de Notas (Notepad) ou o Opera GX no mesmo período do dia (ex: Manhã) por 3 a 5 vezes.
+2.  **Force a Reflexão**: Chame o endpoint `POST /testes/reflexao-rotina` (via Swagger ou Postman no Render).
+3.  **Verifique os Logs**: Você verá `💡 [AgenteRotina] Padrão forte detectado... Gerando sugestão`.
+4.  **Verifique a Home do App**: Um card de **Sugestão de Regra** deve aparecer na tela inicial do celular com a justificativa: *"Notei que você sempre abre o Notepad na Manhã. Quer que eu faça isso automaticamente?"*.
+5.  **Aceite a Rotina**: Ao clicar em aceitar no app, a Ollie salvará a regra no `routines.json` e ela passará a ser executada sempre que o gatilho ocorrer.
 
 > [!TIP]
-> A Ollie agora prioriza a **Ação** sobre a **Conversa**. Ela deve executar primeiro e confirmar depois, tornando a experiência muito mais ágil.
+> Use a Ollie Master GUI para monitorar as retransmissões do `ClientPc`. Se a Ollie "ver" o processo o suficiente, ela vai te oferecer a automação.
+
+> [!IMPORTANT]
+> A Ollie agora funciona como um sistema de **Machine Learning Humano-Assistido**: ela aprende o padrão, mas pede sua permissão antes de automatizar sua vida.

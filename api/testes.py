@@ -82,3 +82,21 @@ async def testar_pesquisa_web(query: str = Query(..., description="A pergunta pa
 
     logger.info("2/2 - Teste disparado. Verifique os logs para o fluxo de pesquisa e síntese.")
     return {"status": "Teste de pesquisa web iniciado.", "detalhes": f"Intenção de pesquisa por '{query}' publicada.", "evento_id": evento.id}
+
+@router.post("/testes/reflexao-rotina", tags=["Testes"])
+async def testar_reflexao_rotina():
+    """
+    Força o sistema a analisar os padrões de uso e sugerir novas rotinas (Build Routines).
+    """
+    logger.info(">>> INICIANDO TESTE DE REFLEXÃO DE ROTINA <<<")
+    
+    evento = EventoCanonico(
+        categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO,
+        acao=TipoAcao.NORMAL,
+        origem=OrigemEvento.SISTEMA,
+        pacote="sistema.rotina",
+        payload={"tipo": "REFLEXAO_ROTINA"}
+    )
+    await kernel.publicar(evento)
+    
+    return {"status": "Reflexão de rotina iniciada.", "detalhes": "O sistema está analisando os padrões para sugerir novas rotinas."}

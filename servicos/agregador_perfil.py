@@ -22,20 +22,30 @@ class AgregadorPerfil:
 
     async def obter_dados_perfil_consolidado(self) -> dict:
         """
-        Busca os dados de perfil de uso de apps e música.
-        Assume que memoria_perfil.obter_top_entidades retorna uma lista de objetos com 'valor' e 'score'.
+        Busca os dados de perfil de uso de apps, música e rotinas aprendidas.
         """
         try:
-            top_apps_bruto = await memoria_perfil.obter_top_entidades(categoria="APP_USO", limite=5)
-            # Corrigido: A categoria correta é ARTISTA_PREFERENCIA (conforme definido em memoria_perfil.py)
+            top_apps_bruto = await memoria_perfil.obter_top_entidades(categoria="APP_USO", limite=10)
             top_artistas_bruto = await memoria_perfil.obter_top_entidades(categoria="ARTISTA_PREFERENCIA", limite=5)
+            
+            # 🧠 NOVO: Coleta rotinas aprendidas (Manhã, Tarde, Noite, Madrugada)
+            rotinas_aprendidas = []
+            for periodo in ["MANHA", "TARDE", "NOITE", "MADRUGADA"]:
+                itens = await memoria_perfil.obter_top_entidades(categoria=f"PC_ROUTINE_{periodo}", limite=3)
+                for it in itens:
+                    rotinas_aprendidas.append({
+                        "periodo": periodo,
+                        "programa": it.valor,
+                        "score": it.score
+                    })
 
             return {
                 "apps": [AppInfo(pacote=item.valor, score=item.score) for item in top_apps_bruto],
                 "artistas": [ArtistaInfo(nome=item.valor, score=item.score) for item in top_artistas_bruto],
+                "rotinas_pc": rotinas_aprendidas
             }
         except Exception as e:
             logger.error(f"Erro ao agregar dados do perfil: {e}")
-            return {"apps": [], "artistas": []}
+            return {"apps": [], "artistas": [], "rotinas_pc": []}
 
 agregador_perfil = AgregadorPerfil()

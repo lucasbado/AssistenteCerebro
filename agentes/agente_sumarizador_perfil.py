@@ -23,47 +23,34 @@ class AgenteSumarizadorPerfil:
         logger.info("🧠 [Sumarizador] Iniciando geração de resumo de perfil de usuário.")
 
         # 1. Coletar todos os dados do perfil com confiança mínima
-        fatos_perfil = await memoria_perfil.obter_perfil_completo(confianca_minima=0.6)
-        if not fatos_perfil:
+        # Agora usamos o agregador para ter uma visão rica (incluindo rotinas de PC)
+        from servicos.agregador_perfil import agregador_perfil
+        dados_perfil = await agregador_perfil.obter_dados_perfil_consolidado()
+        
+        if not dados_perfil.get("apps") and not dados_perfil.get("artistas") and not dados_perfil.get("rotinas_pc"):
             await self._publicar_resultado("Ainda não aprendi o suficiente sobre você para criar um resumo. Use mais o seu celular!", evento)
             return
 
-        # 2. Formatar os dados para a LLM
-        dados_formatados = self._formatar_fatos_para_llm(fatos_perfil)
+        # 2. Formatar os dados para a LLM (usando a mesma lógica do PerfilServico para consistência)
+        from servicos.perfil_servico import servico_perfil
+        dados_formatados = await servico_perfil._formatar_dados_para_llm(dados_perfil)
 
-        # 3. Chamar a LLM para gerar o resumo
+        # 3. Chamar a LLM para gerar o resumo e cards
         resultado_llm = await self.llm.resumir_perfil_usuario(dados_formatados)
         resumo = resultado_llm.get("resumo")
+        cards = resultado_llm.get("cards", [])
 
-        # 4. Publicar o resultado como uma interação
-        await self._publicar_resultado(resumo, evento)
-        logger.info("🧠 [Sumarizador] Resumo de perfil enviado ao usuário.")
+        # 4. Publicar o resultado
+        # Se houver cards, enviamos eles para que o frontend possa renderizar
+        await self._publicar_resultado(resumo, evento, cards)
+        logger.info(f"🧠 [Sumarizador] Resumo enviado com {len(cards)} cards de sugestão.")
 
     def _formatar_fatos_para_llm(self, fatos: list) -> str:
-        """Converte a lista de fatos do banco em um texto legível para a LLM."""
-        dados = defaultdict(list)
-        for fato in fatos:
-            # Ex: ARTISTA_PREFERENCIA_MANHA -> ARTISTA_PREFERENCIA
-            categoria_base = '_'.join(fato.categoria.split('_')[:-1]) if '_' in fato.categoria else fato.categoria
-            dados[categoria_base].append(f"- {fato.valor} (Confiança: {fato.confianca:.0%})")
+        # Método obsoleto, removido em favor da orquestração com PerfilServico
+        return ""
 
-        texto_formatado = []
-        if dados.get("CONTATO_INTERACAO"):
-            texto_formatado.append("Contatos com quem você mais interage:")
-            texto_formatado.extend(dados["CONTATO_INTERACAO"])
-        
-        if dados.get("APP_USO"):
-            texto_formatado.append("\nAplicativos que você mais usa:")
-            texto_formatado.extend(dados["APP_USO"])
-
-        if dados.get("ARTISTA_PREFERENCIA"):
-            texto_formatado.append("\nArtistas que você mais ouve:")
-            texto_formatado.extend(dados["ARTISTA_PREFERENCIA"])
-
-        return "\n".join(texto_formatado)
-
-    async def _publicar_resultado(self, resumo: str, evento_original: EventoCanonico):
-        """Envia o resumo para o usuário através de uma notificação."""
+    async def _publicar_resultado(self, resumo: str, evento_original: EventoCanonico, cards: list = None):
+        """Envia o resumo e os cards para o usuário."""
         await kernel.publicar(
             evento_original.clonar(
                 categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
@@ -72,6 +59,8 @@ class AgenteSumarizadorPerfil:
                 payload={
                     "titulo": "O que aprendi sobre você",
                     "texto": resumo,
+                    "tipo_ws": "RESUMO_PERFIL",
+                    "cards": cards or []
                 }
             )
         )

@@ -22,17 +22,24 @@ class ServicoPerfil:
         fatos = []
         total_app_score = sum(app.score for app in dados_agregados.get("apps", []))
         if total_app_score > 0:
-            fatos.append("Fatos sobre uso de aplicativos:")
+            fatos.append("### USO DE APLICATIVOS (CELULAR):")
             for app in dados_agregados["apps"]:
                 percentual = (app.score / total_app_score) * 100
-                fatos.append(f"- Usa o app '{app.pacote}' com {percentual:.1f}% de frequência relativa.")
+                fatos.append(f"- '{app.pacote}': {percentual:.1f}% de uso.")
 
         total_artista_score = sum(artista.score for artista in dados_agregados.get("artistas", []))
         if total_artista_score > 0:
-            fatos.append("\nFatos sobre preferências musicais:")
+            fatos.append("\n### PREFERÊNCIAS MUSICAIS:")
             for artista in dados_agregados["artistas"]:
                 percentual = (artista.score / total_artista_score) * 100
-                fatos.append(f"- Ouve o artista '{artista.nome}' com {percentual:.1f}% de frequência relativa.")
+                fatos.append(f"- '{artista.nome}': {percentual:.1f}% de escuta.")
+
+        # 🧠 NOVO: Injeção de Rotinas Aprendidas
+        rotinas_pc = dados_agregados.get("rotinas_pc", [])
+        if rotinas_pc:
+            fatos.append("\n### PADRÕES DE PC DETECTADOS (CORRELAÇÃO TEMPORAL):")
+            for rotina in rotinas_pc:
+                fatos.append(f"- No período da {rotina['periodo']}, o usuário costuma usar '{rotina['programa']}' no PC.")
 
         return "\n".join(fatos) if fatos else "Nenhum dado de perfil disponível para análise."
 
