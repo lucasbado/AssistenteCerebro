@@ -4,6 +4,7 @@
 - [x] Integrar o serviço no ciclo de vida em `main.py` (com trava para Render)
 - [x] Implementar Ponte UDP -> WebSocket em `ollie_master_gui.py`
 - [x] Implementar Receptor de Atividade em `api/websocket.py`
+- [x] Corrigir erro de atributo `OrigemEvento.PC` em `core/tipos.py`
 - [x] Atualizar o motor de rotinas em `agentes/agente_rotina.py` para suportar `PC_ACTIVITY`
 - [x] Adicionar a rotina de teste em `config/routines.json`
 - [ ] Verificar a retransmissão GUI -> Render nos logs (Aguardando ação do usuário)

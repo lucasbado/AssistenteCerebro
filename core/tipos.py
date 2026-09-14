@@ -42,6 +42,7 @@ class OrigemEvento(str, Enum):
     ANDROID = "ANDROID"
     IA = "IA"
     SISTEMA = "SISTEMA"
+    PC = "PC"
 
 class EstadoEvento(str, Enum):
     NOVO = "NOVO"
