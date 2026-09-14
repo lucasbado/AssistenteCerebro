@@ -15,7 +15,9 @@ class AgenteRotina:
     Carrega regras de routines.json e as aplica baseando-se em gatilhos de eventos.
     """
     def __init__(self):
-        self.config_path = "D:/Programacao/AssistenteCell/config/routines.json"
+        # Caminho dinâmico para funcionar em qualquer diretório (Local ou Render)
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.config_path = os.path.join(base_dir, "config", "routines.json")
         self.routines = []
         self._carregar_rotinas()
 
@@ -24,8 +26,11 @@ class AgenteRotina:
             try:
                 with open(self.config_path, "r", encoding="utf-8") as f:
                     self.routines = json.load(f)
+                logger.info(f"📂 [AgenteRotina] {len(self.routines)} rotinas carregadas com sucesso de {self.config_path}")
             except Exception as e:
                 logger.error(f"Erro ao carregar rotinas: {e}")
+        else:
+            logger.warning(f"⚠️ [AgenteRotina] Arquivo de rotinas não encontrado em: {self.config_path}")
 
     def _salvar_rotinas(self):
         try:
@@ -49,6 +54,7 @@ class AgenteRotina:
             if not rotina.get("ativa", True): continue
             
             gatilho = rotina.get("gatilho", {})
+            logger.debug(f"🔍 Verificando rotina '{rotina['nome']}' para evento {evento.categoria}")
             if self._validar_gatilho(gatilho, evento):
                 logger.info(f"🚀 Gatilho de rotina detectado: {rotina['nome']}")
                 await self._executar_acoes(rotina.get("acoes", []), evento)
