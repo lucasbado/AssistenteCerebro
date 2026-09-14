@@ -82,6 +82,7 @@ class AgenteRotina:
         if tipo == "PC_ACTIVITY" and evento.categoria == CategoriaEvento.PC_ACTIVITY:
             processo_gatilho = str(gatilho.get("processo")).lower()
             processo_evento = str(evento.payload.get("processo")).lower()
+            logger.info(f"🧪 [AgenteRotina] Comparando Gatilho '{processo_gatilho}' com Evento '{processo_evento}'")
             return processo_gatilho in processo_evento
             
         # Gatilho: Evento de Sistema (ex: PC_LOGIN)
@@ -104,34 +105,37 @@ class AgenteRotina:
 
     async def _executar_acoes(self, acoes: list, evento_origem: EventoCanonico):
         for acao in acoes:
-            alvo = acao.get("alvo")
-            comando = acao.get("comando")
-            param = acao.get("parametro")
+            try:
+                alvo = acao.get("alvo")
+                comando = acao.get("comando")
+                param = acao.get("parametro")
 
-            if alvo == "PC":
-                await kernel.publicar(EventoCanonico(
-                    categoria=CategoriaEvento.SISTEMA_COMANDO_PC,
-                    acao=TipoAcao.NORMAL,
-                    origem=OrigemEvento.SISTEMA,
-                    payload={"comando": comando, "parametro": param}
-                ))
-            elif alvo == "IA":
-                # Gera uma notificação ou interação da IA
-                await kernel.publicar(evento_origem.clonar(
-                    id=None,
-                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                    acao=TipoAcao.INTENCAO_INTERACAO,
-                    origem=OrigemEvento.IA,
-                    payload={"texto": param, "tipo_interacao": comando}
-                ))
-            elif alvo == "MOBILE":
-                # Comando para o SystemCommandHandler do Android
-                from api.websocket import central_alertas
-                await central_alertas._broadcast({
-                    "tipo_ws": "COMANDO_SISTEMA",
-                    "acao": comando,
-                    "parametro": param
-                })
+                if alvo == "PC":
+                    await kernel.publicar(EventoCanonico(
+                        categoria=CategoriaEvento.SISTEMA_COMANDO_PC,
+                        acao=TipoAcao.NORMAL,
+                        origem=OrigemEvento.SISTEMA,
+                        pacote="sistema.rotina",
+                        payload={"comando": comando, "parametro": param}
+                    ))
+                elif alvo == "IA":
+                    # Gera uma notificação ou interação da IA
+                    await kernel.publicar(evento_origem.clonar(
+                        categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                        acao=TipoAcao.INTENCAO_INTERACAO,
+                        origem=OrigemEvento.IA,
+                        payload={"texto": param, "tipo_interacao": comando}
+                    ))
+                elif alvo == "MOBILE":
+                    # Comando para o SystemCommandHandler do Android
+                    from api.websocket import central_alertas
+                    await central_alertas._broadcast({
+                        "tipo_ws": "COMANDO_SISTEMA",
+                        "acao": comando,
+                        "parametro": param
+                    })
+            except Exception as e:
+                logger.error(f"❌ [AgenteRotina] Erro ao executar ação {acao}: {e}")
 
     async def _reagir_chegada_local(self, local: str, evento_origem: EventoCanonico):
         # ... mantida a lógica legada se desejar ...

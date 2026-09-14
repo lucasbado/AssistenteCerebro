@@ -41,6 +41,7 @@ class AgentePcProfiler:
                 categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                 acao=TipoAcao.INTENCAO_INTERACAO,
                 origem=OrigemEvento.IA,
+                pacote="pc.profiler",
                 payload={
                     "titulo": "Estudo do PC Concluído",
                     "texto": f"Terminei de mapear seu computador! Agora já sei onde ficam suas pastas de {', '.join(list(atalhos_encontrados.keys())[:3])}.",

@@ -61,6 +61,7 @@ class AgenteClima:
                             categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                             acao=TipoAcao.INTENCAO_INTERACAO,
                             origem=OrigemEvento.SISTEMA,
+                            pacote="sistema.clima",
                             payload={
                                 "titulo": "Alerta de Chuva",
                                 "texto": f"Parece que vai chover em breve ({contexto_clima['temperatura']}°C). Não esqueça o guarda-chuva se for sair!",
