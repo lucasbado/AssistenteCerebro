@@ -80,13 +80,15 @@ class AgenteFoco:
         if self._local_atual == "TRABALHO" and any(c in categoria for c in ["social", "jogos", "entretenimento"]):
             logger.info("💡 AgenteFoco: Detectado app de lazer no trabalho.")
             # Disparar um insight suave (que aparecerá na Home)
+            # 🌟 CORREÇÃO: Removido id=None e categoria corrigida para INTENCAO_NOTIFICACAO
             await kernel.publicar(
                 evento.clonar(
-                    id=None,
-                    categoria=CategoriaEvento.INSIGHT_MEMORIA, 
-                    acao=TipoAcao.NORMAL,
+                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO, 
+                    acao=TipoAcao.INTENCAO_INTERACAO,
+                    origem=OrigemEvento.IA,
                     payload={
                         "tipo": "insight",
+                        "tipo_ws": "NOTIFICACAO",
                         "conteudo": {
                             "title": "Foco no Trabalho",
                             "text": "Notei que você costuma ser mais produtivo quando evita distrações agora. Deseja que eu ative o Não Perturbe?"

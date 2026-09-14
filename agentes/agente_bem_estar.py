@@ -55,9 +55,9 @@ class AgenteBemEstar:
             logger.info(f"🧘 AgenteBemEstar: Usuário no app {pacote} há {tempo_uso:.1f} minutos. Sugerindo pausa via IA.")
             
             # Eleva para um evento complexo para que a IA gere a mensagem
+            # 🌟 CORREÇÃO: Removido id=None para evitar falha de validação Pydantic
             await kernel.publicar(
                 evento.clonar(
-                    id=None,
                     categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                     acao=TipoAcao.INTENCAO_INTERACAO,
                     origem=OrigemEvento.IA,

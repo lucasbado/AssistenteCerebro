@@ -120,11 +120,19 @@ class AgenteRotina:
                     ))
                 elif alvo == "IA":
                     # Gera uma notificação ou interação da IA
+                    # 🌟 AJUSTE: Adicionamos metadados para garantir que chegue como NOTIFICACAO no Android
                     await kernel.publicar(evento_origem.clonar(
                         categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                         acao=TipoAcao.INTENCAO_INTERACAO,
                         origem=OrigemEvento.IA,
-                        payload={"texto": param, "tipo_interacao": comando}
+                        pacote="sistema.rotina",
+                        payload={
+                            "texto": param, 
+                            "tipo_interacao": comando,
+                            "tipo_ws": "NOTIFICACAO",  # Força o tipo correto
+                            "urgencia": "ALTA"
+                        },
+                        metadados={"tipo_destino": "NOTIFICACAO"}
                     ))
                 elif alvo == "MOBILE":
                     # Comando para o SystemCommandHandler do Android

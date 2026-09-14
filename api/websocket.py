@@ -59,7 +59,9 @@ class GerenciadorNotificacoes:
 
         # Define tipo_ws se ausente
         if not tipo_ws:
-            if metadados.get("tipo_destino") == "CHAT" or origem == "IA" or categoria == "INTENCAO_NOTIFICACAO":
+            if metadados.get("tipo_destino") == "NOTIFICACAO":
+                dados_para_envio['tipo_ws'] = 'NOTIFICACAO'
+            elif metadados.get("tipo_destino") == "CHAT" or origem == "IA" or categoria == "INTENCAO_NOTIFICACAO":
                 dados_para_envio['tipo_ws'] = 'CHAT_RESPONSE'
             else:
                 dados_para_envio['tipo_ws'] = 'NOTIFICACAO'
