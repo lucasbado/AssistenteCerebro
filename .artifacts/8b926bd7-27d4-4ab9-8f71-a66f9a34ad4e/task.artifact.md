@@ -1,7 +1,9 @@
-# Tarefas: Motor de Descoberta de Rotinas (Ollie Discovery)
+# Tarefas: Ollie Automação Ativa (Auto-Geração de Rotinas)
 
-- [x] Criar o serviço `servicos/routine_discovery_service.py`
-- [x] Adicionar o endpoint de descoberta em `api/router_capabilities.py`
-- [x] Integrar sugestões automáticas no `ServicoHome` (`api/servico.py`)
-- [x] Atualizar `AgenteRotina` para usar o motor de descoberta
-- [x] Verificar geração de sugestões baseada nos 1165 padrões
+- [x] Criar o arquivo de rotinas descobertas `config/discovered_routines.json`
+- [x] Implementar o serviço `servicos/routine_generator_service.py`
+- [x] Adicionar endpoints de aprovação em `api/router_capabilities.py`
+- [x] Implementar o loop de auto-geração em `main.py`
+- [x] Integrar o gerador no `AgenteRotina` para auto-reflexão
+- [ ] Verificar a criação de rotinas no `discovered_routines.json`
+- [ ] Verificar a promoção de rotinas para o arquivo principal

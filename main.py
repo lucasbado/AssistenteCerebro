@@ -34,6 +34,7 @@ from agentes.agente_pc_profiler import AgentePcProfiler
 from servicos.agente_contexto_sistema import AgenteContextoSistema
 from servicos.pc_control_service import pc_control_service
 from servicos.pc_listener_service import pc_listener_service
+from servicos.routine_generator_service import routine_generator_service
 from banco.database import inicializar_banco, async_engine
 
 # Routers (API)
@@ -158,10 +159,23 @@ async def lifespan(app: FastAPI):
                 pacote="sistema.sumarizador"
             ))
 
+    async def loop_gerador_rotinas():
+        """Varre padrões e gera rotinas para verificação a cada 12 horas."""
+        while True:
+            # Espera 1h inicial para carregar dados se necessário
+            await asyncio.sleep(3600)
+            logger.info("🧠 Iniciando ciclo de auto-geração de rotinas...")
+            try:
+                await routine_generator_service.run_batch_generation()
+            except Exception as e:
+                logger.error(f"Erro no loop de geração: {e}")
+            await asyncio.sleep(43200)
+
     tasks = [
         asyncio.create_task(loop_clima()),
         asyncio.create_task(loop_rotina()),
         asyncio.create_task(loop_sumarizador()),
+        asyncio.create_task(loop_gerador_rotinas()),
         asyncio.create_task(kernel.iniciar()),
         asyncio.create_task(central_alertas.iniciar_monitor())
     ]

@@ -4,11 +4,13 @@ import json
 import os
 from pydantic import BaseModel
 from servicos.routine_discovery_service import routine_discovery_service
+from servicos.routine_generator_service import routine_generator_service
 
 router = APIRouter()
 logger = logging.getLogger("CapabilitiesAPI")
 
 ROUTINES_PATH = "D:/Programacao/AssistenteCell/config/routines.json"
+DISCOVERED_PATH = "D:/Programacao/AssistenteCell/config/discovered_routines.json"
 
 class RoutineAction(BaseModel):
     alvo: str
@@ -32,12 +34,90 @@ class RoutineCreate(BaseModel):
 @router.get("/discover")
 async def discover_routines(min_conf: float = Query(0.8, description="Confiança mínima para sugestões.")):
     """
-    Varre o banco de dados em busca de padrões para novas rotinas.
+    Varre o banco de dados em busca de padrões para novas rotinas (apenas sugestões).
     """
     try:
         return await routine_discovery_service.discover_suggestions(min_confidence=min_conf)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro na descoberta: {e}")
+
+@router.post("/discover/run")
+async def trigger_generation():
+    """
+    Força a materialização de rotinas no arquivo de descoberta.
+    """
+    try:
+        await routine_generator_service.run_batch_generation()
+        return {"status": "success", "message": "Geração de rotinas iniciada."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro na geração: {e}")
+
+@router.get("/discovered")
+async def list_discovered():
+    """Lista rotinas que a Ollie criou e estão aguardando verificação."""
+    if not os.path.exists(DISCOVERED_PATH): return []
+    try:
+        with open(DISCOVERED_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except: return []
+
+@router.post("/approve/{nome}")
+async def approve_routine(nome: str):
+    """Aprova uma rotina descoberta, movendo-a para o arquivo principal."""
+    if not os.path.exists(DISCOVERED_PATH):
+        raise HTTPException(status_code=404, detail="Fila de descoberta vazia.")
+    
+    try:
+        with open(DISCOVERED_PATH, "r", encoding="utf-8") as f:
+            discovered = json.load(f)
+        
+        # Encontra a rotina alvo
+        target = next((r for r in discovered if r["nome"] == nome), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="Rotina não encontrada na fila.")
+        
+        # Carrega rotinas ativas
+        active = []
+        if os.path.exists(ROUTINES_PATH):
+            with open(ROUTINES_PATH, "r", encoding="utf-8") as f:
+                active = json.load(f)
+        
+        # Remove justificativa e ativa a rotina antes de mover
+        target.pop("justificativa", None)
+        target["ativa"] = True
+        active.append(target)
+        
+        # Remove da fila de descoberta
+        new_discovered = [r for r in discovered if r["nome"] != nome]
+        
+        # Salva ambos os arquivos
+        with open(ROUTINES_PATH, "w", encoding="utf-8") as f:
+            json.dump(active, f, indent=4)
+        with open(DISCOVERED_PATH, "w", encoding="utf-8") as f:
+            json.dump(new_discovered, f, indent=4)
+            
+        return {"status": "success", "message": f"Rotina '{nome}' ativada!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/discovered/{nome}")
+async def reject_routine(nome: str):
+    """Descarta uma rotina sugerida pela Ollie."""
+    if not os.path.exists(DISCOVERED_PATH):
+        raise HTTPException(status_code=404, detail="Fila de descoberta vazia.")
+    
+    try:
+        with open(DISCOVERED_PATH, "r", encoding="utf-8") as f:
+            discovered = json.load(f)
+            
+        new_discovered = [r for r in discovered if r["nome"] != nome]
+        
+        with open(DISCOVERED_PATH, "w", encoding="utf-8") as f:
+            json.dump(new_discovered, f, indent=4)
+            
+        return {"status": "success", "message": f"Rotina '{nome}' descartada."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/routines")
 async def list_routines():

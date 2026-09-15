@@ -1,46 +1,42 @@
-# Plano de Implementação: Motor de Descoberta de Rotinas (Ollie Discovery)
+# Plano de Implementação: Ollie Automação Ativa (Auto-Geração de Rotinas)
 
-Este plano descreve a criação de um serviço de processamento em lote que analisa os mais de 1100 padrões históricos na base de dados para gerar sugestões de rotinas inteligentes e orquestradas.
-
-## Objetivos
-- Analisar a `memoria_perfil` e `memoria_semantica` em busca de hábitos consolidados.
-- Cruzar dados de **Tempo**, **Aplicativos Mobile** e **Atividade PC**.
-- Apresentar sugestões "prontas para aprovação" na tela inicial do usuário.
+Este plano descreve como a Ollie passará a criar rotinas automaticamente no sistema a partir dos padrões aprendidos, permitindo uma revisão rápida antes da ativação final.
 
 ## Mudanças Propostas
 
-### 1. Serviço de Descoberta
-#### [NEW] [routine_discovery_service.py](file:///D:/Programacao/AssistenteCell/servicos/routine_discovery_service.py)
-- Implementar o `RoutineDiscoveryService` com os seguintes scanners:
-    - **Scanner Temporal**: Identifica apps e programas que dominam faixas de horário (ex: "Notepad na Manhã").
-    - **Scanner de Sinergia (Cross-Device)**: Usa as associações aprendidas (ex: "Instagram no Celular -> abrir Instagram no PC").
-    - **Scanner de Fluxo (Sequencial)**: Identifica apps abertos em sequência no celular.
-- Método `gerar_sugestoes_em_lote()`: Retorna uma lista de cards de sugestão formatados.
+### 1. Motor de Geração Automática
+#### [NEW] [routine_generator_service.py](file:///D:/Programacao/AssistenteCell/servicos/routine_generator_service.py)
+- Criar o `RoutineGeneratorService` que:
+    - Lê os Top 50 padrões de sinergia e temporalidade.
+    - Usa a LLM para converter esses padrões em **Rotinas Completas** (Gatilho + Múltiplas Ações).
+    - **Nomes Criativos**: A LLM gerará nomes como "Madrugada Produtiva" ou "Sinergia Gamer".
+    - **Justificativa**: Incluirá um campo `justificativa` que servirá como sub-explicação para o usuário entender o porquê daquela rotina.
 
-### 2. API de Descoberta
-#### [MODIFY] [router_capabilities.py](file:///D:/Programacao/AssistenteCell/api/router_capabilities.py)
-- Adicionar endpoint `GET /api/v1/capabilities/discover`.
-- Este endpoint permitirá ao app forçar uma varredura completa da base de 1165 registros.
+### 2. Área de Verificação (Staging)
+#### [NEW] [discovered_routines.json](file:///D:/Programacao/AssistenteCell/config/discovered_routines.json)
+- Um novo arquivo JSON que servirá como a "caixa de entrada" para rotinas criadas pela Ollie.
+- As rotinas aqui **não** são executadas até serem verificadas pelo usuário.
 
-### 3. Integração com a Tela Inicial
-#### [MODIFY] [api/servico.py](file:///D:/Programacao/AssistenteCell/api/servico.py)
-- Integrar o `RoutineDiscoveryService` no `ServicoHome`.
-- Se o sistema detectar padrões de alta confiança que ainda não são rotinas, eles aparecerão automaticamente como cards na Home.
+### 3. API de Verificação e Promoção
+#### [MODIFY] [api/router_capabilities.py](file:///D:/Programacao/AssistenteCell/api/router_capabilities.py)
+- Adicionar endpoints:
+    - `GET /discovered`: Lista as rotinas criadas pela Ollie.
+    - `POST /approve/{nome}`: Move a rotina de `discovered_routines.json` para `routines.json` (ativando-a).
+    - `DELETE /discovered/{nome}`: Descarta a rotina sugerida.
 
-### 4. Agente de Rotinas
-#### [MODIFY] [agentes/agente_rotina.py](file:///D:/Programacao/AssistenteCell/agentes/agente_rotina.py)
-- Melhorar a capacidade de auto-reflexão para que ele use o novo serviço de descoberta durante o ciclo `REFLEXAO_ROTINA`.
+### 4. Ciclo de Auto-Geração
+#### [MODIFY] [main.py](file:///D:/Programacao/AssistenteCell/main.py)
+- Adicionar um loop de fundo (`loop_descoberta`) que roda a cada 12 horas para processar novos padrões e popular a fila de verificação.
 
 ## Plano de Verificação
 
-### Teste de Lote
-1. Chamar `GET /api/v1/capabilities/discover`.
-2. Verificar se o sistema sugere rotinas baseadas nos dados reais (ex: a associação `com.android.chrome` -> `opera.exe` encontrada na pesquisa).
-
-### Teste de Aceitação
-1. "Aceitar" uma sugestão descoberta via interface (ou API).
-2. Confirmar que a regra foi gravada no `config/routines.json`.
+### Fluxo de Trabalho
+1. **Ollie**: Varre os 1165 padrões e encontra o hábito de "Notepad na Manhã".
+2. **Sistema**: Cria a rotina em `discovered_routines.json`.
+3. **Usuário**: Abre o App -> Seção "Rotinas Descobertas" -> Clica em "Verificar".
+4. **App**: Mostra o que a rotina faz. Você clica em "Confirmar e Ativar".
+5. **Resultado**: A rotina é movida para `routines.json` e passa a funcionar instantaneamente.
 
 ## User Review Required
 > [!IMPORTANT]
-> Com 1165 padrões, a Ollie pode gerar muitas sugestões de uma vez. Vou implementar um filtro de **Confiança Mínima (0.8)** para mostrar apenas o que é realmente um hábito sólido. Você concorda com esse filtro inicial?
+> Você prefere que a Ollie crie as rotinas com um nome sugerido por ela (ex: "Sinergia Noturna: Chrome") ou quer que ela use um formato fixo (ex: "Descoberta #42")?

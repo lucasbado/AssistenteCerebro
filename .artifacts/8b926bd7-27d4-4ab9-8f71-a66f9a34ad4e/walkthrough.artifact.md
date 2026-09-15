@@ -1,35 +1,37 @@
-# Walkthrough: Ollie Discovery - Motor de Construção de Rotinas
+# Walkthrough: Ollie Automação Ativa - Geração de Rotinas em Lote
 
-Agora a Ollie utiliza os mais de 1100 padrões aprendidos para construir ativamente o seu ecossistema de automação, cruzando dados de tempo e dispositivos.
+Transformei a Ollie de uma "sugeridora" em uma **arquiteta ativa**. Agora ela materializa os padrões aprendidos em objetos de rotina completos, aguardando apenas a sua validação final.
 
 ## O que foi implementado
 
-### 1. Motor de Descoberta (Ollie Discovery)
-Criei o [routine_discovery_service.py](file:///D:/Programacao/AssistenteCell/servicos/routine_discovery_service.py), um serviço de inteligência que varre toda a sua base de dados em busca de:
-- **Hábitos Temporais**: Identifica apps e programas que você usa repetidamente em horários específicos.
-- **Sinergia Cross-Device**: Identifica associações entre abrir um app no celular e um programa no PC.
-- **Fluxos de Apps**: Identifica sequências de abertura de aplicativos no Android.
+### 1. Motor de Materialização (Routine Generator)
+Criei o [routine_generator_service.py](file:///D:/Programacao/AssistenteCell/servicos/routine_generator_service.py). Este serviço pega as sugestões brutas e as transforma em rotinas estruturadas (JSON).
+- Ele utiliza a **LLM** para dar nomes criativos (ex: "Madrugada de Código", "Foco no Trabalho").
+- Ele preenche o campo `justificativa`, que serve como a sub-explicação solicitada.
 
-### 2. Aprendizado de Máquina Contínuo
-O [agente_inferencia.py](file:///D:/Programacao/AssistenteCell/agentes/agente_inferencia.py) foi atualizado para registrar o uso de aplicativos por período (`MANHA`, `TARDE`, etc.), criando a base necessária para o motor de descoberta encontrar padrões de tempo.
+### 2. Ambiente de Verificação (Staging)
+As novas rotinas não entram "ao vivo" imediatamente. Elas são salvas em [discovered_routines.json](file:///D:/Programacao/AssistenteCell/config/discovered_routines.json). Isso garante que você tenha controle total sobre o que a Ollie automatiza.
 
-### 3. Cards de Sugestão na Home
-O [servico_home.py](file:///D:/Programacao/AssistenteCell/api/servico.py) agora integra o motor de descoberta. Sempre que a Ollie encontrar um novo padrão sólido, um card de **Sugestão de Regra** aparecerá automaticamente na tela inicial do celular.
+### 3. API de Promoção de Rotinas
+Atualizei o [router_capabilities.py](file:///D:/Programacao/AssistenteCell/api/router_capabilities.py) com novos comandos:
+- `GET /discovered`: Para você ver o que a Ollie preparou.
+- `POST /approve/{nome}`: Para ativar a rotina (ela é movida para o arquivo principal).
+- `DELETE /discovered/{nome}`: Para descartar o que você não gostou.
 
-### 4. API de Gestão de Rotinas
-Implementei em [router_capabilities.py](file:///D:/Programacao/AssistenteCell/api/router_capabilities.py) a infraestrutura para que você possa listar, aceitar e remover rotinas diretamente pelo App Android.
+### 4. Ciclo de Auto-Geração
+Adicionei um loop de fundo no [main.py](file:///D:/Programacao/AssistenteCell/main.py) que roda a cada 12 horas, garantindo que novos hábitos sejam transformados em rotinas sem que você precise pedir.
 
 ---
 
-## Como Validar a Descoberta
+## Como Verificar as Rotinas Criadas
 
-1.  **Acesse a Home**: Abra o app no celular. Se houver padrões com confiança maior que 85%, eles já aparecerão como cards de sugestão.
-2.  **Teste de Lote**: Você pode usar o novo endpoint `GET /api/v1/capabilities/discover` para ver todos os padrões que a Ollie "tem na manga" para você.
-3.  **Aceite uma Sugestão**: Clique em aceitar no card da Home. A regra será gravada no seu `routines.json` e a Ollie passará a executá-la automaticamente.
-4.  **Criação de Histórico**: Continue usando o celular e o PC normalmente. O Agente de Inferência agora anota o horário de cada app aberto, alimentando o motor de descoberta.
+1.  **Acesse a Fila de Descoberta**: Use o endpoint `GET /api/v1/capabilities/discovered` (no Swagger do Render).
+2.  **Revise o Plano da Ollie**: Cada item terá um `nome`, um `gatilho`, uma lista de `acoes` e a `justificativa` (ex: *"Notei que você sempre abre o Bloco de Notas após o WhatsApp"*).
+3.  **Ative com um Clique**: Se gostar de uma rotina, use o endpoint `POST /api/v1/capabilities/approve/{Nome Da Rotina}`.
+4.  **Pronto**: A rotina agora está ativa em `routines.json` e a Ollie passará a executá-la no seu PC/Celular.
 
 > [!TIP]
-> A Ollie agora prioriza **hábitos consolidados**. Se você quiser forçar uma nova sugestão, use o mesmo app no mesmo horário por 3 ou 4 dias.
+> Você pode forçar a geração agora mesmo chamando `POST /api/v1/capabilities/discover/run`. A Ollie varrerá seus 1165 padrões e populará a fila de verificação instantaneamente.
 
 > [!IMPORTANT]
-> O arquivo [routines.json](file:///D:/Programacao/AssistenteCell/config/routines.json) é o repositório final de todas as regras aceitas. Ele é o "Cérebro Operacional" da Ollie.
+> Esta arquitetura garante que a Ollie seja **proativa**, mas que você continue sendo o **mestre do sistema**.

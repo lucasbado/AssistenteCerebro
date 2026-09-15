@@ -169,32 +169,15 @@ class AgenteRotina:
 
     async def _analisar_padroes_gerais(self):
         """
-        Analisa os padrões aprendidos na memória de perfil e gera sugestões proativas
-        usando o motor de descoberta.
+        Analisa os padrões aprendidos na memória de perfil e gera rotinas reais
+        no arquivo de descoberta para verificação do usuário.
         """
         logger.info("🧠 [AgenteRotina] Iniciando reflexão profunda de hábitos...")
-        from servicos.routine_discovery_service import routine_discovery_service
+        from servicos.routine_generator_service import routine_generator_service
         
-        # Busca sugestões de alta confiança
-        sugestoes = await routine_discovery_service.discover_suggestions(min_confidence=0.8)
-        
-        for sug in sugestoes:
-            try:
-                conteudo = sug["conteudo"]
-                logger.info(f"💡 [AgenteRotina] Sugerindo nova regra: {conteudo.get('justificativa')}")
-                
-                # Publica o card de sugestão via Kernel para que o AgenteNotificacoes ou Home capte
-                await kernel.publicar(EventoCanonico(
-                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                    acao=TipoAcao.INTENCAO_INTERACAO,
-                    origem=OrigemEvento.IA,
-                    pacote="sistema.rotina",
-                    payload={
-                        "tipo_ws": "SUGESTAO_REGRA",
-                        "titulo": "Hábito Detectado",
-                        "texto": conteudo.get("justificativa"),
-                        "card": sug
-                    }
-                ))
-            except Exception as e:
-                logger.error(f"Erro ao processar sugestão na reflexão: {e}")
+        try:
+            # Em vez de apenas sugerir no Kernel, agora materializamos em arquivo
+            await routine_generator_service.run_batch_generation()
+            logger.info("✅ [AgenteRotina] Novas rotinas materializadas em discovered_routines.json")
+        except Exception as e:
+            logger.error(f"Erro ao processar geração na reflexão: {e}")
