@@ -1,17 +1,7 @@
-- [x] **Visão Profunda (Hardware)**
-    - [x] Atualizar `ClientPc.py` para capturar e enviar o título da janela (Opera GX focus)
-    - [x] Atualizar `servicos/consciencia.py` para processar e armazenar o contexto de janela
-- [x] **Refatoração do Cérebro (Cognição)**
-    - [x] Restaurar método `sintetizar_com_pesquisa` em `agentes/agente_raciocinio.py` (FIX Render crash)
-    - [x] Unificar extração de comandos no `AgentePcExecutor.py` (FIX comandos falhando)
-    - [x] Remover bloqueios de orquestração cross-device (Mobile -> PC)
-    - [x] Injetar consciência situacional em tempo real no prompt da LLM
-    - [x] Adicionar regras de Gestão de Janelas e Sinergia no `servicos/llm.py`
-- [x] **Aprendizado de Máquina (Inferência)**
-    - [x] Expandir `agentes/agente_inferencia.py` para aprender correlações (Hora, App Mobile, Janela PC)
-- [x] **Ponte de Execução (Roteamento)**
-    - [x] Refinar `api/websocket.py` para garantir entrega infalível de `COMANDO_PC`
-    - [x] Melhorar `servicos/pc_control_service.py` para focar janelas por título (YouTube/Opera)
-- [x] **Verificação**
-    - [x] Testar abertura de apps via chat
-    - [x] Testar sugestão proativa baseada em janela ativa
+# Tarefas: Motor de Descoberta de Rotinas (Ollie Discovery)
+
+- [x] Criar o serviço `servicos/routine_discovery_service.py`
+- [x] Adicionar o endpoint de descoberta em `api/router_capabilities.py`
+- [x] Integrar sugestões automáticas no `ServicoHome` (`api/servico.py`)
+- [x] Atualizar `AgenteRotina` para usar o motor de descoberta
+- [x] Verificar geração de sugestões baseada nos 1165 padrões

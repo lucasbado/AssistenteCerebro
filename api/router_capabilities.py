@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 import logging
 import json
 import os
 from pydantic import BaseModel
+from servicos.routine_discovery_service import routine_discovery_service
 
 router = APIRouter()
 logger = logging.getLogger("CapabilitiesAPI")
@@ -27,6 +28,16 @@ class RoutineCreate(BaseModel):
     gatilho: RoutineTrigger
     acoes: list[RoutineAction]
     ativa: bool = True
+
+@router.get("/discover")
+async def discover_routines(min_conf: float = Query(0.8, description="Confiança mínima para sugestões.")):
+    """
+    Varre o banco de dados em busca de padrões para novas rotinas.
+    """
+    try:
+        return await routine_discovery_service.discover_suggestions(min_confidence=min_conf)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro na descoberta: {e}")
 
 @router.get("/routines")
 async def list_routines():

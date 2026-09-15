@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 from servicos.perfil_servico import servico_perfil
 from servicos.servico import servico_timeline
 from api.status import servico_status
+from servicos.routine_discovery_service import routine_discovery_service
 
 # Imports para a nova estrutura de cards
 from .dto import (
@@ -73,14 +74,37 @@ class ServicoHome:
                     logger.error(f"Erro na task {task_name}: {e}", exc_info=True)
                     return None
 
-            perfil_cognitivo, timeline, status_sistema = await asyncio.gather(
+            perfil_cognitivo, timeline, status_sistema, sugestoes_descubertas = await asyncio.gather(
                 safe_task(servico_perfil.gerar_perfil_cognitivo(), "perfil"),
                 safe_task(servico_timeline.gerar_timeline(), "timeline"),
-                safe_task(servico_status.gerar_status_sistema(), "status")
+                safe_task(servico_status.gerar_status_sistema(), "status"),
+                safe_task(routine_discovery_service.discover_suggestions(min_confidence=0.85), "discovery")
             )
 
             # 2. Monta a lista de cards dinamicamente
             cards: list[AnyCard] = []
+
+            # Adiciona sugestões descobertas automaticamente se houver
+            if sugestoes_descubertas:
+                for sug in sugestoes_descubertas:
+                    try:
+                        conteudo = sug["conteudo"]
+                        if sug["tipo"] == "sugestao_regra":
+                            cards.append(SugestaoRegraCard(conteudo=SugestaoRegraContent(
+                                nome=str(conteudo.get("nome", "Nova Rotina")),
+                                skill_id=str(conteudo["skill_id"]),
+                                trigger_package=str(conteudo["trigger_package"]),
+                                action_type=str(conteudo["action_type"]),
+                                action_parameter=str(conteudo["action_parameter"]),
+                                justificativa=str(conteudo.get("justificativa", ""))
+                            )))
+                        elif sug["tipo"] == "insight":
+                             cards.append(InsightCard(conteudo=InsightContent(
+                                 title=str(conteudo.get("title", "Destaque")),
+                                 text=str(conteudo.get("text", ""))
+                             )))
+                    except Exception as e:
+                        logger.error(f"Erro ao converter sugestão descoberta: {e}")
 
             # Processa os cards dinâmicos gerados pela LLM (Insight, Dica, Piada, Sugestão de Regra)
             if perfil_cognitivo and hasattr(perfil_cognitivo, "cards_dinamicos") and perfil_cognitivo.cards_dinamicos:

@@ -46,6 +46,7 @@ class PiadaContent(BaseModel):
 
 class SugestaoRegraContent(BaseModel):
     """Conteúdo para o card de sugestão de regra automática."""
+    nome: Optional[str] = "Nova Rotina"
     skill_id: str = "automacao"
     trigger_package: str = ""
     action_type: str = "OPEN_APP"

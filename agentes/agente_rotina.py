@@ -170,28 +170,20 @@ class AgenteRotina:
     async def _analisar_padroes_gerais(self):
         """
         Analisa os padrões aprendidos na memória de perfil e gera sugestões proativas
-        de rotinas se elas ainda não existirem.
+        usando o motor de descoberta.
         """
-        logger.info("🧠 [AgenteRotina] Analisando padrões para novas rotinas...")
-        from servicos.memoria_perfil import memoria_perfil
+        logger.info("🧠 [AgenteRotina] Iniciando reflexão profunda de hábitos...")
+        from servicos.routine_discovery_service import routine_discovery_service
         
-        for periodo in ["MANHA", "TARDE", "NOITE", "MADRUGADA"]:
-            top_itens = await memoria_perfil.obter_top_entidades(categoria=f"PC_ROUTINE_{periodo}", limite=1)
-            if not top_itens: continue
-            
-            top = top_itens[0]
-            if top.score >= 5: # Limiar de confiança para sugerir
-                programa = top.valor
-                nome_rotina = f"Rotina {periodo}: {programa}"
+        # Busca sugestões de alta confiança
+        sugestoes = await routine_discovery_service.discover_suggestions(min_confidence=0.8)
+        
+        for sug in sugestoes:
+            try:
+                conteudo = sug["conteudo"]
+                logger.info(f"💡 [AgenteRotina] Sugerindo nova regra: {conteudo.get('justificativa')}")
                 
-                # Verifica se já existe
-                if any(r["nome"] == nome_rotina for r in self.routines):
-                    continue
-                
-                logger.info(f"💡 [AgenteRotina] Padrão forte detectado: {programa} na {periodo}. Gerando sugestão.")
-                
-                # Publica um card de sugestão para o usuário (via Home)
-                # O motor da Home vai capturar isso se o AgentePerfil/Sumarizador não o fizer
+                # Publica o card de sugestão via Kernel para que o AgenteNotificacoes ou Home capte
                 await kernel.publicar(EventoCanonico(
                     categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                     acao=TipoAcao.INTENCAO_INTERACAO,
@@ -199,17 +191,10 @@ class AgenteRotina:
                     pacote="sistema.rotina",
                     payload={
                         "tipo_ws": "SUGESTAO_REGRA",
-                        "titulo": "Nova Rotina Sugerida",
-                        "texto": f"Notei que você sempre abre o {programa} no período da {periodo}. Quer que eu faça isso automaticamente?",
-                        "card": {
-                            "tipo": "sugestao_regra",
-                            "conteudo": {
-                                "skill_id": "automacao_pc",
-                                "trigger_package": "sistema.periodo",
-                                "action_type": "PC_COMMAND",
-                                "action_parameter": f"abrir_app:{programa}",
-                                "justificativa": f"Você usou {programa} {top.score} vezes neste horário recentemente."
-                            }
-                        }
+                        "titulo": "Hábito Detectado",
+                        "texto": conteudo.get("justificativa"),
+                        "card": sug
                     }
                 ))
+            except Exception as e:
+                logger.error(f"Erro ao processar sugestão na reflexão: {e}")

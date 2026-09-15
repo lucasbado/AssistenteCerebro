@@ -23,7 +23,7 @@ class AgenteInferencia:
 
     async def processar(self, evento: EventoCanonico):
         self.eventos_recentes.append(evento)
-        self._atualizar_frequencias(evento)
+        await self._atualizar_frequencias(evento)
 
         # NOVO: Processa eventos de atividade do PC para aprender rotinas
         if evento.categoria == CategoriaEvento.PC_ACTIVITY:
@@ -31,9 +31,14 @@ class AgenteInferencia:
 
         await self._inferir_padroes(evento)
 
-    def _atualizar_frequencias(self, evento: EventoCanonico):
+    async def _atualizar_frequencias(self, evento: EventoCanonico):
         if evento.categoria == CategoriaEvento.APP_FOREGROUND:
             self.uso_apps[evento.pacote].append(evento.timestamp)
+            
+            # 🧠 NOVO: Registra uso por período para descoberta de rotinas temporais
+            from servicos.memoria_perfil import _get_time_slot
+            periodo = _get_time_slot(evento.timestamp)
+            await memoria_perfil.registrar_uso_app(f"APP_USO_{periodo}", evento.pacote)
 
     async def _inferir_padroes(self, evento: EventoCanonico):
         # 🌟 NOVO: Monitoramento de coocorrência Celular -> Celular

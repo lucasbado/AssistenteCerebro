@@ -1,53 +1,46 @@
-# Plano de Implementação: Ollie, a Orquestradora Inteligente
+# Plano de Implementação: Motor de Descoberta de Rotinas (Ollie Discovery)
 
-Este plano visa transformar a Ollie em uma assistente que realmente aprende e orquestra o ecossistema PC-Celular, resolvendo falhas de execução e adicionando "visão" profunda ao que ocorre no computador.
+Este plano descreve a criação de um serviço de processamento em lote que analisa os mais de 1100 padrões históricos na base de dados para gerar sugestões de rotinas inteligentes e orquestradas.
 
-## Problemas Críticos Atuais
-1.  **Código Corrompido**: O `AgenteRaciocinio.py` possui blocos de código duplicados que sabotam a lógica de decisão.
-2.  **Bloqueio de Orquestração**: A IA está proibida de agir no PC se o gatilho vier de uma notificação de celular (uma barreira artificial que impede a sinergia).
-3.  **Cegueira de Conteúdo**: A Ollie sabe que o navegador está aberto, mas não sabe se você está vendo um vídeo de culinária ou codando.
-4.  **Falhas de Ponte**: Comandos enviados via nuvem não estão sendo executados localmente por falta de clareza no roteamento.
+## Objetivos
+- Analisar a `memoria_perfil` e `memoria_semantica` em busca de hábitos consolidados.
+- Cruzar dados de **Tempo**, **Aplicativos Mobile** e **Atividade PC**.
+- Apresentar sugestões "prontas para aprovação" na tela inicial do usuário.
 
 ## Mudanças Propostas
 
-### 1. Refatoração e Limpeza Total
-#### [MODIFY] [agentes/agente_raciocinio.py](file:///D:/Programacao/AssistenteCell/agentes/agente_raciocinio.py)
-- Remover duplicidades massivas de código.
-- **Liberar Cross-Device**: Remover a restrição que impede ações de PC disparadas por eventos de Celular.
-- Melhorar a extração de comandos (`Scavenger`) para lidar com diferentes formatos de resposta da LLM.
+### 1. Serviço de Descoberta
+#### [NEW] [routine_discovery_service.py](file:///D:/Programacao/AssistenteCell/servicos/routine_discovery_service.py)
+- Implementar o `RoutineDiscoveryService` com os seguintes scanners:
+    - **Scanner Temporal**: Identifica apps e programas que dominam faixas de horário (ex: "Notepad na Manhã").
+    - **Scanner de Sinergia (Cross-Device)**: Usa as associações aprendidas (ex: "Instagram no Celular -> abrir Instagram no PC").
+    - **Scanner de Fluxo (Sequencial)**: Identifica apps abertos em sequência no celular.
+- Método `gerar_sugestoes_em_lote()`: Retorna uma lista de cards de sugestão formatados.
 
-### 2. Visão Profunda (Ollie "Vê" o Conteúdo)
-#### [MODIFY] [ClientPc.py](file:///D:/Programacao/AssistenteCell/ClientPc.py)
-- Capturar o **Título da Janela** (ex: "Como fazer bolo - YouTube").
-- Enviar o título via UDP -> Bridge -> Render.
-- Isso permitirá frases como: "Ollie, fecha esse vídeo de bolo e abre meu VS Code".
+### 2. API de Descoberta
+#### [MODIFY] [router_capabilities.py](file:///D:/Programacao/AssistenteCell/api/router_capabilities.py)
+- Adicionar endpoint `GET /api/v1/capabilities/discover`.
+- Este endpoint permitirá ao app forçar uma varredura completa da base de 1165 registros.
 
-### 3. Consciência de Ambiente (Memória Viva)
-#### [MODIFY] [servicos/consciencia.py](file:///D:/Programacao/AssistenteCell/servicos/consciencia.py)
-- Armazenar o `titulo_janela` e o `processo_ativo`.
-- Adicionar um "Heartbeat" de consciência: se o PC está online, a IA deve saber disso antes de sugerir qualquer comando de hardware.
+### 3. Integração com a Tela Inicial
+#### [MODIFY] [api/servico.py](file:///D:/Programacao/AssistenteCell/api/servico.py)
+- Integrar o `RoutineDiscoveryService` no `ServicoHome`.
+- Se o sistema detectar padrões de alta confiança que ainda não são rotinas, eles aparecerão automaticamente como cards na Home.
 
-### 4. Inteligência de Aprendizado (ML-Like)
-#### [MODIFY] [agentes/agente_inferencia.py](file:///D:/Programacao/AssistenteCell/agentes/agente_inferencia.py)
-- **Matriz de Correlação**: Registrar não apenas app-processo, mas (Horário, AppCelular, AppPC).
-- **Proatividade Temporal**: Se o usuário abre o YouTube toda segunda às 20h, a Ollie gerará um card de sugestão ou perguntará: "Bora pro YouTube? Já deu o horário!".
-
-### 5. Correção da Ponte de Execução
-#### [MODIFY] [api/websocket.py](file:///D:/Programacao/AssistenteCell/api/websocket.py)
-- Garantir que mensagens do tipo `COMANDO_PC` sejam entregues com prioridade zero de erro ao `PC_MASTER`.
+### 4. Agente de Rotinas
+#### [MODIFY] [agentes/agente_rotina.py](file:///D:/Programacao/AssistenteCell/agentes/agente_rotina.py)
+- Melhorar a capacidade de auto-reflexão para que ele use o novo serviço de descoberta durante o ciclo `REFLEXAO_ROTINA`.
 
 ## Plano de Verificação
 
-### Teste de Sinergia
-1.  Abrir o Instagram no celular.
-2.  A Ollie deve notar (via `AgenteFoco`) e, se houver um padrão, sugerir: "Quer que eu abra o Instagram no PC pra você ver em tela cheia?".
-3.  Confirmar no chat "Sim".
-4.  **Sucesso**: O PC deve abrir a URL do Instagram.
+### Teste de Lote
+1. Chamar `GET /api/v1/capabilities/discover`.
+2. Verificar se o sistema sugere rotinas baseadas nos dados reais (ex: a associação `com.android.chrome` -> `opera.exe` encontrada na pesquisa).
 
-### Teste de Aprendizado
-1.  Abrir o Notepad 3 vezes seguidas logo após abrir o WhatsApp.
-2.  Verificar se o `AgenteInferencia` registrou a associação na memória semântica.
+### Teste de Aceitação
+1. "Aceitar" uma sugestão descoberta via interface (ou API).
+2. Confirmar que a regra foi gravada no `config/routines.json`.
 
 ## User Review Required
 > [!IMPORTANT]
-> A captura de títulos de janelas pode expor dados sensíveis (ex: nomes de arquivos ou destinatários de chat no título). Você concorda com esse nível de captura para tornar a Ollie mais inteligente?
+> Com 1165 padrões, a Ollie pode gerar muitas sugestões de uma vez. Vou implementar um filtro de **Confiança Mínima (0.8)** para mostrar apenas o que é realmente um hábito sólido. Você concorda com esse filtro inicial?
