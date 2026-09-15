@@ -44,8 +44,10 @@ class RoutineDiscoveryService:
 
     async def _scan_cross_device_associations(self, min_conf: float, existentes: set) -> List[Dict[str, Any]]:
         sugestoes = []
+        from sqlalchemy import cast, String
         async with AsyncSessionLocal() as session:
-            stmt = select(EntidadeSemanticaDB).where(EntidadeSemanticaDB.dados_json.like('%associacoes%'))
+            # 🛡️ FIX: Cast para String para compatibilidade com Postgres/SQLite no LIKE
+            stmt = select(EntidadeSemanticaDB).where(cast(EntidadeSemanticaDB.dados_json, String).like('%associacoes%'))
             result = await session.execute(stmt)
             entidades = result.scalars().all()
 
