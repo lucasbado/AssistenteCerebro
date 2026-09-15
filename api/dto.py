@@ -53,6 +53,10 @@ class SugestaoRegraContent(BaseModel):
     action_parameter: str = ""
     justificativa: Optional[str] = None
 
+class SugestaoRegraWrapper(BaseModel):
+    """Wrapper para coincidir com a expectativa do app Android (ApiCardContent)"""
+    sugestao_regra: SugestaoRegraContent
+
 class TimelineContent(BaseModel):
     """Conteúdo para o card de timeline."""
     eventos: List[TimelineItemDTO]
@@ -89,7 +93,7 @@ class StatusLLMCard(BaseModel):
 
 class SugestaoRegraCard(BaseModel):
     tipo: Literal["sugestao_regra"] = "sugestao_regra"
-    conteudo: SugestaoRegraContent
+    conteudo: SugestaoRegraWrapper
 
 # --- União Discriminada de todos os tipos de cards possíveis ---
 # O Pydantic usará o campo 'tipo' para validar qual card está sendo usado.

@@ -1,9 +1,16 @@
-# Tarefas: Ollie Automação Ativa (Auto-Geração de Rotinas)
+# Tarefas: Central de Verificação de Rotinas no App
 
-- [x] Criar o arquivo de rotinas descobertas `config/discovered_routines.json`
-- [x] Implementar o serviço `servicos/routine_generator_service.py`
-- [x] Adicionar endpoints de aprovação em `api/router_capabilities.py`
-- [x] Implementar o loop de auto-geração em `main.py`
-- [x] Integrar o gerador no `AgenteRotina` para auto-reflexão
-- [ ] Verificar a criação de rotinas no `discovered_routines.json`
-- [ ] Verificar a promoção de rotinas para o arquivo principal
+- [x] **Android: Infraestrutura de API**
+    - [x] Atualizar `CognitiveApiService.kt` com endpoints de descoberta e aprovação
+    - [x] Atualizar `CognitiveRepository.kt` para suportar as novas chamadas
+- [x] **Android: Lógica de Negócio**
+    - [x] Criar `AutomationViewModel.kt` para gerenciar a fila de rotinas
+- [x] **Android: Interface do Usuário (UI)**
+    - [x] Adicionar seção "Descobertas pela Ollie" em `CapabilitiesScreen.kt`
+    - [x] Atualizar `HomeScreen.kt` para aprovação remota via API
+- [x] **Backend: Otimização de Tokens**
+    - [x] Reordenar Prompt para Caching (Static first)
+    - [x] Implementar Injeção Seletiva no Obsidian (Busca por keyword)
+    - [x] Adicionar Rodízio de Modelos Fallback (Llama 3.3/3.1)
+    - [x] Poda agressiva de histórico (Working Memory limit 5)
+    - [x] Extração de 'retry-after' do erro 429 para Backoff inteligente

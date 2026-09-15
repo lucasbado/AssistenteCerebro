@@ -51,11 +51,13 @@ class AgenteRaciocinio:
             texto_u = str(evento.payload.get("texto", "")).lower()
             logger.info(f"🧠 [Raciocínio] Processando evento de {evento.pacote}...")
 
-            # 1. Recupera Contexto do Obsidian
+            # 1. Recupera Contexto do Obsidian (Busca Seletiva)
             conhecimento_atual = ""
             saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "tudo bem", "opa"]
-            if len(texto_u) > 8 and not any(texto_u == s for s in saudacoes):
-                try: conhecimento_atual = obsidian_service.listar_conhecimento_essencial()
+            if len(texto_u) > 6 and not any(texto_u == s for s in saudacoes):
+                try: 
+                    # 💡 INJEÇÃO SELETIVA: Passa o texto do usuário para filtrar notas
+                    conhecimento_atual = obsidian_service.listar_conhecimento_essencial(texto_u)
                 except: pass
 
             # 2. Busca de Padrões e Recorrências

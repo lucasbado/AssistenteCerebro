@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import asyncio
+import re
 from datetime import datetime
 import httpx
 from groq import AsyncGroq
@@ -27,9 +28,10 @@ class ServicoLLM:
             "openai/gpt-oss-120b",           # Quota Independente (TPM/RPM Alta)
             "openai/gpt-oss-safeguard-20b",  # Alternativa de Segurança
             "openai/gpt-oss-20b",            # Inteligência Estável
+            "llama-3.3-70b-versatile",       # Fallback de Alta Performance
+            "llama-3.1-8b-instant",          # Fallback de Velocidade (Quota Alta)
             "qwen/qwen3.6-27b",              # Versátil
-            "groq/compound-mini",            # Ultra-rápido
-            "groq/compound"                  # Agentic
+            "groq/compound-mini"             # Ultra-rápido
         ]
         self.modelo_atual = self.modelos_groq[0]
 
@@ -51,10 +53,12 @@ class ServicoLLM:
 
     async def _gerar_json(self, prompt: str, system: str) -> dict: 
         if self.api_key and self.client:
-            # Tenta rodízio de modelos em caso de Rate Limit (429)
+            # 🚀 RODÍZIO INTELIGENTE DE MODELOS
             for i, modelo in enumerate(self.modelos_groq):
                 try:
-                    logger.info(f"🤖 [LLM] Tentando modelo: {modelo} (Tentativa {i+1})")
+                    logger.info(f"🤖 [LLM] Tentando {modelo}...")
+                    
+                    # Usa o cliente correto
                     chat_completion = await self.client.chat.completions.create(
                         messages=[
                             {"role": "system", "content": system},
@@ -63,27 +67,35 @@ class ServicoLLM:
                         model=modelo,
                         response_format={"type": "json_object"},
                         temperature=0.1,
-                        timeout=35.0 # Aumentado para lidar com instabilidade da rede
+                        timeout=40.0
                     )
-                    self.modelo_atual = modelo # Salva o modelo que funcionou
-                    return json.loads(chat_completion.choices[0].message.content)
-                except Exception as e:
-                    error_msg = str(e).lower()
-                    logger.error(f"❌ [LLM] Falha no modelo {modelo}: {error_msg}")
                     
-                    if "rate_limit" in error_msg or "429" in error_msg:
-                        logger.warning(f"⚠️ [LLM] Limite atingido no modelo {modelo}. Aguardando 1.5s...")
-                        await asyncio.sleep(1.5) # Pausa estratégica para a API respirar
-                        continue
-                    elif "model_decommissioned" in error_msg or "400" in error_msg:
-                        logger.warning(f"⚠️ [LLM] Modelo {modelo} indisponível. Pulando...")
-                        continue
-                    else:
-                        logger.error(f"❌ [LLM] Erro inesperado na API Groq ({modelo}): {e}")
-                        await asyncio.sleep(1)
-                        continue 
-            
-            raise ValueError("Ollie está sem 'combustível' na nuvem hoje (Quota Esgotada).")
+                    self.modelo_atual = modelo
+                    return json.loads(chat_completion.choices[0].message.content)
+
+                except Exception as e:
+                    err_str = str(e).lower()
+                    if "429" in err_str or "rate_limit" in err_str:
+                        # 🧠 EXTRAÇÃO DE ESPERA: Tenta ler o 'retry-after' se disponível
+                        wait_time = 2.0
+                        if "try again in" in err_str:
+                            try:
+                                # Pega o tempo sugerido pela Groq (ex: 3m7s)
+                                match = re.search(r"try again in (\d+m)?([\d.]+)s", err_str)
+                                if match:
+                                    m, s = match.groups()
+                                    wait_time = (int(m[:-1]) * 60 if m else 0) + float(s)
+                                    wait_time = min(wait_time + 1, 10) # Não espera mais que 10s no loop, prefere trocar modelo
+                            except: pass
+                        
+                        logger.warning(f"⚠️ [LLM] Limite em {modelo}. Esperando {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                        continue # Tenta o próximo modelo
+                    
+                    logger.error(f"❌ [LLM] Erro em {modelo}: {e}")
+                    continue 
+
+            raise ValueError("Ollie esgotou a cota diária de tokens em todos os modelos Groq.")
             
         elif not os.getenv("RENDER"):
             # Chamada Ollama (Local)
@@ -112,140 +124,62 @@ class ServicoLLM:
             raise
 
     async def classificar_evento(self, categoria: str, pacote: str, payload: dict, historico: list[str] | None = None, timestamp_dispositivo: datetime | None = None, conhecimento: str = "", habitos: str = "") -> dict:
-        # 🕒 SINCRONIZAÇÃO DE MUNDO: Usa o tempo real do usuário
+        # 🕒 SINCRONIZAÇÃO
         agora_dt = timestamp_dispositivo or datetime.now()
         agora = agora_dt.strftime("%H:%M")
         
-        # Determina o período do dia (Lógica calibrada para o mundo real)
         hora = agora_dt.hour
-        periodo = "Dia"
-        if 0 <= hora < 6: periodo = "Madrugada"
-        elif 6 <= hora < 12: periodo = "Manhã"
-        elif 12 <= hora < 18: periodo = "Tarde"
-        else: periodo = "Noite"
+        periodo = "Madrugada" if 0<=hora<6 else "Manhã" if 6<=hora<12 else "Tarde" if 12<=hora<18 else "Noite"
         
         texto_msg = str(payload.get('texto', '')).lower()
         
-        # 💡 ECONOMIA EXTREMA: Só carrega instruções cognitivas se for papo denso
+        # 💡 ECONOMIA: Instruções apenas se necessário
         instrucoes_docs = ""
-        palavras_chave = ["como", "oque", "ajuda", "quem", "explica", "rotina", "regra"]
-        if len(texto_msg) > 12 or any(k in texto_msg for k in palavras_chave):
+        if len(texto_msg) > 15:
             instrucoes_docs = self._carregar_instrucoes_cognitivas()
-        else:
-            logger.info("📉 [LLM] Modo Econômico: Instruções cognitivas omitidas.")
 
-        # 🧠 CONSCIÊNCIA: Pega o estado atual do ambiente
         resumo_ambiente = consciencia.obter_resumo_para_llm()
 
-        # Define o formato esperado separadamente para evitar conflitos de chaves no f-string
-        exemplo_json = """
-{
-  "intencao_captada": "NOME_DA_INTENCAO",
-  "tipo_interacao": "NOTIFICAR | SUGERIR | IGNORAR",
-  "mensagem_dinamica": "texto aqui",
-  "execucao_direta": [
-    {"alvo": "PC", "comando": "abrir_app", "parametro": "excel"},
-    {"alvo": "MOBILE", "comando": "set_alarm", "parametro": "{\\"hora\\":11, \\\"minuto\\\":0}"}
-  ]
-}
+        # SYSTEM PROMPT - OTIMIZADO PARA CACHE (PREFIXO ESTÁTICO)
+        system = f"""### CORE RULES:
+Ollie: Parceira, Ácida, Prática. Gírias: brabo, bora, partiu, vish, eita.
+Priorize AÇÃO (PC/Mobile) sobre conversa. Direta (max 2 frases).
+
+### FERRAMENTAS DISPONÍVEIS:
+PC: abrir_app, abrir_url, spotify_play, ciclar_saida, volume_sistema, mutar_mic, trazer_janela_para_frente, encerrar_processo.
+MOBILE: ABRIR_NOTIFICACAO, RESPONDER_MENSAGEM (texto), OPEN_URL.
+
+### CONTEXTO DINÂMICO:
+- Período: {periodo} ({agora})
+- Ambiente: {resumo_ambiente}
+- Obsidian: {conhecimento}
+- Hábitos: {habitos}
+
+### INSTRUÇÕES EXTRAS:
+{instrucoes_docs}
+
+### RESPOSTA:
+JSON OBRIGATÓRIO:
+{{
+  "intencao_captada": "...",
+  "tipo_interacao": "NOTIFICAR|SUGERIR|IGNORAR",
+  "mensagem_dinamica": "...",
+  "execucao_direta": [ {{"alvo":"PC|MOBILE", "comando":"...", "parametro":"..."}} ]
+}}
 """
-
-        system = """Ollie: Parceira, Divertida, Atitude. Gírias: brabo, bora, partiu, vish, eita, massa.
-
-### SEU CONHECIMENTO SOBRE O USUÁRIO (OBSIDIAN):
-{CONHECIMENTO}
-
-### SEUS HÁBITOS E PADRÕES APRENDIDOS (RECORRÊNCIAS):
-{HABITOS}
-
-### PRIORIDADE DE EXECUÇÃO (EXECUTORA > CONVERSADORA):
-1. ANTECIPAÇÃO: Se os HÁBITOS APRENDIDOS mostram que o usuário costuma abrir X após Y, ou usar Z neste horário, você DEVE sugerir ou executar essa ação proativamente.
-2. AÇÃO DIRETA: Se o usuário pedir algo que exija uma ferramenta (Arquivos, Clima, Spotify), use a ferramenta imediatamente. Não diga "Vou fazer", apenas faça e confirme.
-3. CONTEXTO GEOGRÁFICO: Se ele perguntar de arquivos, use 'Mapa_Geografico_PC' no Obsidian para saber os caminhos reais.
-4. GESTÃO DE JANELAS (PC): Se o usuário pedir para "abrir" ou "colocar" algo que já está listado no 'PC MASTER' (Janela Ativa ou Processos), use alvo: "PC", comando: "trazer_janela_para_frente", parametro: "nome do app/site". NÃO abra uma nova URL se a janela já existir.
-5. SINERGIA CROSS-DEVICE: Se o usuário estiver vendo algo no celular e pedir para "continuar no PC", ou se você notar que ele abriu um app de vídeo no celular, ofereça abrir o mesmo no PC se ele estiver online.
-6. MACHINE LEARNING (HÁBITOS): Use a seção 'HÁBITOS E PADRÕES' para se antecipar. Se o horário bater com uma rotina aprendida, sugira a ação antes dele pedir.
-
-### REGRAS CRÍTICAS DE PC:
-- Use NOME SIMPLES para programas (ex: "excel", "vscode").
-- Use URL para sites (ex: "instagram.com").
-- FILMES: Se o usuário quer ver um filme, use "pesquisa_google" com o nome do filme.
-- MÚSICA: Para tocar músicas ou artistas específicos, use alvo: "PC", comando: "spotify_play", parametro: "nome da musica/artista".
-- MENSAGENS (ALVO: MOBILE): 
-    1. ABRIR: Use comando: "ABRIR_NOTIFICACAO", parametro: "VALOR_DO_CORRELACAO_ID".
-    2. RESPONDER: Use comando: "RESPONDER_MENSAGEM", parametro: "VALOR_DO_CORRELACAO_ID", texto: "conteudo da resposta".
-- HARDWARE (ALVO: PC): 
-    1. "listar_arquivos": Para ver o conteúdo de uma PASTA. Parâmetro: nome da pasta (ex: "downloads", "desktop").
-    2. "buscar_documentos": Para achar um ARQUIVO específico pelo nome. Parâmetro: termo de busca (ex: "projeto_final").
-    3. "abrir_arquivo": Para abrir um arquivo ou pasta. Parâmetro: caminho ou nome.
-    4. "estudar_pc": Dispara um scan profundo para a Ollie aprender sobre seu PC.
-    5. "ciclar_saida": Troca o som entre fone e caixa de som. (Não precisa de parâmetro).
-    6. "volume_sistema": Ajusta o volume global (0-100). Parâmetro: número (ex: 50).
-    7. "mutar_mic": Ativa/Desativa o microfone.
-    8. Outros: "bloquear_pc", "dormir_pc", "encerrar_processo" (nome).
-- ÁUDIO (ALVO: PC): Para mudar o áudio manualmente use comando: "voicemeeter", parametro: "strip[3].a1=1". 
-- AUTOMAÇÃO (ALVO: PC): Para criar rotinas automáticas, use comando: "criar_rotina", rotina: {{"nome": "NOME", "gatilho": {{"tipo": "APP_OPENED", "pacote": "PACOTE"}}, "acoes": [{{"alvo": "PC", "comando": "mutar_mic", "parametro": ""}}]}}
-- INTEGRAÇÃO (CROSS-DEVICE): 
-    1. Para abrir link no celular: alvo: "MOBILE", comando: "OPEN_URL", parametro: "http...".
-    2. Para abrir link no PC: alvo: "PC", comando: "abrir_url", parametro: "http...".
-- MENSAGENS (ALVO: MOBILE): Para abrir uma conversa específica que você acabou de resumir, use comando: "ABRIR_NOTIFICACAO", parametro: "correlacao_id_aqui".
-
-### NOTIFICAÇÕES E RESUMOS:
-- BEM-ESTAR: Se receber um evento de BEM_ESTAR, dê um conselho amigável e despojado sobre saúde digital.
-- CLIMA: Use as informações de CLIMA ATUAL para contextualizar suas respostas.
-- FOCO NO CONTEÚDO: NUNCA diga apenas "X mandou mensagem". Diga O QUE a pessoa quer.
-- INTENÇÃO: Identifique se é uma pergunta, um convite, um problema ou apenas um comentário.
-
-### ESTADO ATUAL DOS SENSORES (APENAS LEITURA):
-Período: {PERIODO} ({AGORA})
-{RESUMO_AMBIENTE}
-
-### REGRAS GERAIS: 
-1-Direta (2 frases max). 2-Sem bot-speak. 3-Campo 'mensagem_dinamica' obrigatório. 
-4-MULTI-TASK: 'execucao_direta' deve ser SEMPRE uma LISTA [].
-
-FORMATO JSON:
-{EXEMPLO_JSON}
-
-{DOCS}
-"""
-        # 🩹 Limpeza de segurança: substitui chaves manuais para evitar erro de f-string
-        system = system.replace("{CONHECIMENTO}", conhecimento)
-        system = system.replace("{HABITOS}", habitos)
-        system = system.replace("{PERIODO}", periodo)
-        system = system.replace("{AGORA}", agora)
-        system = system.replace("{RESUMO_AMBIENTE}", resumo_ambiente)
-        system = system.replace("{EXEMPLO_JSON}", exemplo_json)
-        system = system.replace("{DOCS}", instrucoes_docs)
-
-        # 💡 ECONOMIA: Reduzido histórico para 4 mensagens
-        fluxo_conversa = (historico or [])[-4:]
+        # Limita histórico drasticamente
+        fluxo = (historico or [])[-3:]
         
-        # PROMPT SIMPLIFICADO: Evita cópia da estrutura de entrada no JSON de saída
-        prompt = f"""HISTÓRICO RECENTE:
-{json.dumps(fluxo_conversa, ensure_ascii=False)}
-
-EVENTO ATUAL:
-Cat: {categoria} | App: {pacote} | Dados: {json.dumps(payload, ensure_ascii=False)}
-
-Responda no formato JSON padrão."""
+        prompt = f"HISTÓRICO: {json.dumps(fluxo, ensure_ascii=False)}\nEVENTO: {categoria} | {pacote} | {json.dumps(payload, ensure_ascii=False)}"
 
         try:
-            logger.info(f"🧠 [LLM] Pensando via {self.modelo_atual}...")
+            logger.info(f"🧠 [LLM] Contexto: {len(system) + len(prompt)} chars")
             dados = await self._gerar_json(prompt, system)
-            
-            # Normalização
             dados.setdefault("tipo_interacao", "IGNORAR")
-            dados.setdefault("execucao_direta", None)
-            
-            if categoria == "SISTEMA_COMANDO_USUARIO":
-                dados["tipo_interacao"] = "NOTIFICAR"
-                if not dados.get("mensagem_dinamica"):
-                    logger.warning(f"⚠️ [LLM] IA esqueceu a mensagem_dinamica. Resposta bruta: {dados}")
-
+            dados.setdefault("execucao_direta", [])
             return dados
         except Exception as e:
-            logger.error(f"❌ [LLM] Falha catastrófica em classificar_evento: {e}")
+            logger.error(f"❌ [LLM] Erro: {e}")
             raise
 
     async def resumir_perfil_usuario(self, fatos: str) -> dict:

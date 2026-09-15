@@ -36,16 +36,22 @@ class MemoriaDeTrabalho:
                 # Conversa existente: atualiza
                 contexto_atual = conversa.resumo_contexto if isinstance(conversa.resumo_contexto, list) else []
                 contexto_atual.extend(novas_mensagens)
-                # Mantém apenas as últimas 10 mensagens para não sobrecarregar
-                conversa.resumo_contexto = contexto_atual[-10:]
+                
+                # 📉 COMPRESSÃO AGRESSIVA: Mantém apenas 5 mensagens para economizar tokens
+                if len(contexto_atual) > 5:
+                    # Opcional: Aqui poderíamos gerar um resumo das mensagens antigas
+                    # Por enquanto, apenas mantemos as 5 mais frescas
+                    conversa.resumo_contexto = contexto_atual[-5:]
+                else:
+                    conversa.resumo_contexto = contexto_atual
                 
                 conversa.relevancia += incremento_relevancia
                 conversa.ultima_interacao = now
             else:
-                # Nova conversa: cria
+                # Nova conversa: cria (Buffer de 5)
                 conversa = MemoriaTrabalhoDB(
                     chave_conversa=chave_conversa,
-                    resumo_contexto=novas_mensagens[-10:], # Salva apenas as últimas
+                    resumo_contexto=novas_mensagens[-5:], 
                     relevancia=incremento_relevancia,
                     ultima_interacao=now
                 )

@@ -77,36 +77,63 @@ class ObsidianService:
         except Exception as e:
             logger.error(f"Erro ao registrar fato no Obsidian: {e}")
 
-    def listar_conhecimento_essencial(self) -> str:
-        """Retorna um consolidado das notas mais cruciais (limitado para economia)."""
+    def buscar_nota_relevante(self, texto_usuario: str) -> str:
+        """Busca no vault por notas que contenham palavras-chave do texto do usuário."""
+        if not self.vault_path: return ""
+        
+        # Extrai palavras-chave simples
+        palavras = [p for p in texto_usuario.lower().split() if len(p) > 3]
+        if not palavras: return ""
+
+        notas_relevantes = []
+        try:
+            # Varre apenas os títulos das notas para ser rápido
+            for root, _, files in os.walk(self.vault_path):
+                for file in files:
+                    if file.endswith(".md"):
+                        nome_nota = file.lower()
+                        if any(p in nome_nota for p in palavras):
+                            conteudo = self.ler_nota(file)
+                            if conteudo:
+                                notas_relevantes.append(f"### NOTA RELACIONADA ({file}):\n{conteudo.strip()[:500]}")
+                                if len(notas_relevantes) >= 2: break
+                if len(notas_relevantes) >= 2: break
+        except Exception as e:
+            logger.error(f"Erro na busca seletiva Obsidian: {e}")
+            
+        return "\n\n".join(notas_relevantes)
+
+    def listar_conhecimento_essencial(self, query_usuario: str = "") -> str:
+        """Retorna um consolidado das notas mais cruciais (Injeção Seletiva)."""
         if not self.vault_path: return "Conhecimento Obsidian indisponível."
         
         consolidado = []
         try:
-            # 1. Lê notas estruturais da raiz
-            notas_raiz = ["Identidade.md", "Mapa_Mestre.md", "Gostos.md"]
+            # 1. Busca Seletiva baseada na dúvida do usuário
+            if query_usuario:
+                seletiva = self.buscar_nota_relevante(query_usuario)
+                if seletiva: consolidado.append(seletiva)
+
+            # 2. Notas básicas como fallback
+            notas_raiz = ["Identidade.md", "Mapa_Mestre.md"]
             for nota in notas_raiz:
+                if nota == "Mapa_Mestre.md" and len(consolidado) > 0: continue
+                
                 c = self.ler_nota(nota)
                 if c.strip():
-                    # 📉 ECONOMIA: Reduzido de 2000 para 800 caracteres
-                    consolidado.append(f"### NOTA {nota}:\n{c.strip()[:800]}")
-                    logger.info(f"📓 [Obsidian] Carregada nota essencial: {nota}")
+                    consolidado.append(f"### {nota.upper()}: {c.strip()[:250]}")
 
-            # 2. Lê apenas os 3 fatos mais recentes da pasta Agente/ (Reduzido de 5 para 3)
+            # 3. Fato mais recente
             if os.path.exists(self.agente_dir):
                 arquivos = [f for f in os.listdir(self.agente_dir) if f.endswith(".md")]
                 arquivos.sort(key=lambda x: os.path.getmtime(os.path.join(self.agente_dir, x)), reverse=True)
-                
-                for filename in arquivos[:3]:
-                    if filename in notas_raiz: continue
-                    conteudo = self.ler_nota(filename)
+                if arquivos:
+                    conteudo = self.ler_nota(arquivos[0])
                     if conteudo.strip():
-                        # 📉 ECONOMIA: Reduzido de 1000 para 400 caracteres
-                        consolidado.append(f"### FATO RECENTE: {filename}\n{conteudo.strip()[:400]}")
-                        logger.info(f"📓 [Obsidian] Carregado fato recente: {filename}")
+                        consolidado.append(f"### ÚLTIMO APRENDIZADO: {conteudo.strip()[:300]}")
         except Exception as e:
             logger.error(f"Erro ao listar conhecimento do Obsidian: {e}")
         
-        return "\n\n".join(consolidado) if consolidado else "Ollie ainda está aprendendo sobre você."
+        return "\n\n".join(consolidado) if consolidado else "Ollie ainda está aprendendo."
 
 obsidian_service = ObsidianService()

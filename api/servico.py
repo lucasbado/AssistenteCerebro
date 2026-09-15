@@ -23,7 +23,7 @@ from .dto import (
     InsightCard, InsightContent,
     DicaCard, DicaContent,
     PiadaCard, PiadaContent,
-    SugestaoRegraCard, SugestaoRegraContent,
+    SugestaoRegraCard, SugestaoRegraContent, SugestaoRegraWrapper,
     TimelineCard, TimelineContent,
     StatusLLMCard
 )
@@ -142,13 +142,15 @@ class ServicoHome:
                             # Validação rigorosa para evitar ValidationError do Pydantic
                             campos_obrigatorios = ["skill_id", "trigger_package", "action_type", "action_parameter"]
                             if all(k in conteudo for k in campos_obrigatorios):
-                                cards.append(SugestaoRegraCard(conteudo=SugestaoRegraContent(
+                                rule_content = SugestaoRegraContent(
+                                    nome=str(conteudo.get("nome", "Nova Rotina")),
                                     skill_id=str(conteudo["skill_id"]),
                                     trigger_package=str(conteudo["trigger_package"]),
                                     action_type=str(conteudo["action_type"]),
                                     action_parameter=str(conteudo["action_parameter"]),
                                     justificativa=str(conteudo.get("justificativa", ""))
-                                )))
+                                )
+                                cards.append(SugestaoRegraCard(conteudo=SugestaoRegraWrapper(sugestao_regra=rule_content)))
                             else:
                                 logger.warning(f"Card sugestao_regra malformado (hallucination) ignorado: {conteudo}")
                     except Exception as e:
