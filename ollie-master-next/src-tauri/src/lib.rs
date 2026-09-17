@@ -53,7 +53,7 @@ async fn start_monitoring(app_handle: AppHandle) {
                 .collect::<Vec<_>>();
 
             let _ = app_cpu.emit("hardware-update", HardwareStats { cpu, ram, processes: top_procs });
-            sleep(Duration::from_secs(5)).await; // Reduzi a frequência para 5s para economizar bateria/rede
+            sleep(Duration::from_secs(15)).await; // Aumentado para 15s para reduzir carga e rede
         }
     });
 
@@ -71,7 +71,7 @@ async fn start_monitoring(app_handle: AppHandle) {
                     });
                 }
             }
-            sleep(Duration::from_secs(1)).await;
+            sleep(Duration::from_secs(3)).await; // Aumentado para 3s
         }
     });
 }

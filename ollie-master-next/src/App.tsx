@@ -177,54 +177,11 @@ export default function App() {
     let activeSocket: WebSocket | null = null;
     let isComponentMounted = true;
     let reconnectTimeout: number;
-
-    // Start Monitoring in Rust
-    invoke("start_monitoring").catch(err => {
-      addLog(`Failed to start Rust monitor: ${err}`, "text-red-400");
-    });
-
-    // Listen to Hardware Updates
-    const unlistenHardware = listen<HardwareUpdate>("hardware-update", (event) => {
-      setCpu(event.payload.cpu);
-      setRam(event.payload.ram);
-
-      // Notify Cloud about hardware status including processes
-      if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
-        activeSocket.send(JSON.stringify({
-          tipo_ws: "STATUS_PC",
-          id: "PC_MASTER",
-          stats: {
-            cpu: event.payload.cpu,
-            ram: event.payload.ram,
-            online: true,
-            processes: event.payload.processes
-          }
-        }));
-      }
-    });
-
-    // Listen to Window Updates
-    let lastLogProcess = "";
-    const unlistenWindow = listen<WindowUpdate>("window-update", (event) => {
-      setVision({ process: event.payload.process, title: event.payload.title });
-
-      // Deduplicação de logs
-      if (event.payload.process !== lastLogProcess) {
-        addLog(`Activity Detected: ${event.payload.process}`, "text-neon-cyan");
-        lastLogProcess = event.payload.process;
-      }
-
-      // Notify Cloud about activity
-      if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
-        activeSocket.send(JSON.stringify({
-          tipo_ws: "PC_ACTIVITY",
-          payload: { processo: event.payload.process, titulo: event.payload.title }
-        }));
-      }
-    });
+    let isConnecting = false;
 
     const setupWS = async () => {
-      if (!isComponentMounted) return;
+      if (!isComponentMounted || isConnecting) return;
+      isConnecting = true;
 
       try {
         const cloudUrl = await invoke<string>("get_cloud_url");
@@ -235,6 +192,7 @@ export default function App() {
         setWs(ws);
 
         ws.onopen = () => {
+          isConnecting = false;
           if (!isComponentMounted) { ws.close(); return; }
           setIsConnected(true);
           addLog("📡 Sincronização com Cloud concluída.", "text-neon-cyan");
@@ -263,19 +221,23 @@ export default function App() {
         };
 
         ws.onclose = () => {
+          isConnecting = false;
           if (!isComponentMounted) return;
           setIsConnected(false);
           addLog("❌ Falha de link: Cloud connection lost.", "text-red-400");
-          reconnectTimeout = window.setTimeout(setupWS, 5000);
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = window.setTimeout(setupWS, 10000); // Aumentado para 10s para evitar spam
         };
 
         ws.onerror = (err) => {
+          isConnecting = false;
           if (!isComponentMounted) return;
           console.error("WS Error:", err);
           addLog(`WS Error: Connection issues detected.`, "text-red-500");
         };
 
       } catch (err) {
+        isConnecting = false;
         if (isComponentMounted) addLog(`Setup Error: ${err}`, "text-red-400");
       }
     };

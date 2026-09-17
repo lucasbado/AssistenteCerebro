@@ -398,6 +398,48 @@ class PcControlService:
                 return True
         return False
 
+    def salvar_cache_apps(self, apps: list):
+        self.mobile_apps = apps
+        logger.info(f"📱 [PCControl] {len(apps)} apps do celular sincronizados.")
+
+    def mapear_estrutura_usuario(self) -> List[str]:
+        """Varre o PC em busca de diretórios importantes (Profundidade 2)."""
+        logger.info("🔍 [PCControl] Iniciando mapeamento de diretórios do usuário...")
+        user_profile = os.environ.get("USERPROFILE", os.path.expanduser("~"))
+        base_paths = [user_profile, "D:\\", "E:\\", "G:\\"]
+        pastas_relevantes = []
+        for base in base_paths:
+            if not os.path.exists(base): continue
+            try:
+                for item in os.listdir(base):
+                    full_path = os.path.join(base, item)
+                    if os.path.isdir(full_path) and not item.startswith(".") and not item.startswith("$"):
+                        pastas_relevantes.append(full_path)
+                        try:
+                            for sub in os.listdir(full_path):
+                                sub_path = os.path.join(full_path, sub)
+                                if os.path.isdir(sub_path) and not sub.startswith("."):
+                                    pastas_relevantes.append(sub_path)
+                        except: pass
+            except: pass
+        return pastas_relevantes
+
+    async def abrir_app_mobile(self, package_name):
+        from api.websocket import central_alertas
+        await central_alertas._broadcast({
+            "tipo_ws": "COMANDO_SISTEMA",
+            "acao": "OPEN_APP",
+            "parametro": package_name
+        })
+
+    async def abrir_url_mobile(self, url):
+        from api.websocket import central_alertas
+        await central_alertas._broadcast({
+            "tipo_ws": "COMANDO_SISTEMA",
+            "acao": "OPEN_URL",
+            "parametro": url
+        })
+
     def obter_estado_completo(self):
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory().percent

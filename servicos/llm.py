@@ -25,14 +25,13 @@ class ServicoLLM:
         self.api_key = os.getenv("GROQ_API_KEY")
         # 🚀 LISTA REAL DE MODELOS DISPONÍVEIS (Verificada via API)
         self.modelos_groq = [
-            "openai/gpt-oss-120b",           # Top 1: Inteligência Superior
-            "openai/gpt-oss-20b",            # Top 2: Equilíbrio Perfeito
-            "openai/gpt-oss-safeguard-20b",  # Top 3: Estabilidade / Segurança
-            "qwen/qwen3.8-27b",              # Top 4: Versatilidade (Alibaba)
-            "groq/compound",                 # Top 5: Raciocínio com Ferramentas
-            "groq/compound-mini",            # Top 6: Velocidade Máxima
-            "allam-2-7b",                    # Top 7: O "Tanque" (Cota Alta / Fallback Final)
-            "canopylabs/orpheus-v1-english"  # Preview Fallback
+            "groq/compound-mini",            # Top 1: Velocidade Máxima (Uso prioritário para evitar limites)
+            "openai/gpt-oss-120b",           # Top 2: Inteligência Superior
+            "openai/gpt-oss-20b",            # Top 3: Equilíbrio Perfeito
+            "openai/gpt-oss-safeguard-20b",  # Top 4: Estabilidade / Segurança
+            "qwen/qwen3.8-27b",              # Top 5: Versatilidade (Alibaba)
+            "groq/compound",                 # Top 6: Raciocínio com Ferramentas
+            "allam-2-7b",                    # Top 7: O "Tanque" (Fallback Final)
         ]
         self.modelo_atual = self.modelos_groq[0]
 

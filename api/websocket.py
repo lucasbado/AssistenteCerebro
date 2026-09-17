@@ -197,15 +197,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif tipo == "REGISTRO":
                     cliente_id = msg.get("id")
                     if cliente_id == "PC_MASTER":
-                        # 🛡️ ANTI-DUPLICIDADE: Só fecha se for uma conexão REALMENTE diferente
+                        # 🛡️ ANTI-DUPLICIDADE: Se for a mesma conexão, ignora. Se for nova, substitui após curto delay
                         if central_alertas.pc_master and central_alertas.pc_master != websocket:
-                            logger.warning("🔄 [WS] Novo PC_MASTER detectado. Substituindo conexão antiga.")
+                            logger.info("🔄 [WS] Tentativa de novo PC_MASTER. Verificando conexão anterior...")
+                            # Se a conexão anterior ainda parece ativa, fechamos a antiga
                             old_ws = central_alertas.pc_master
-                            if old_ws in central_alertas.conexoes_ativas:
-                                central_alertas.conexoes_ativas.remove(old_ws)
-                            try: await old_ws.close(1001)
+                            central_alertas.pc_master = websocket
+                            try: await old_ws.close(1001, "Substituído por nova conexão")
                             except: pass
-                        central_alertas.pc_master = websocket
+                        else:
+                            central_alertas.pc_master = websocket
                         logger.info("🖥️ [WS] PC Master registrado com sucesso!")
                         
                     elif cliente_id == "MOBILE":
