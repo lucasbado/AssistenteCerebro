@@ -12,18 +12,22 @@ class PcActivityProtocol(asyncio.DatagramProtocol):
     def datagram_received(self, data: bytes, addr: tuple):
         try:
             msg = json.loads(data.decode('utf-8'))
-            logger.info(f"📥 [UDP] Recebido de {addr}: {msg.get('comando')}")
+            comando = msg.get('comando')
             
-            # Converte a mensagem bruta do ClientPc em um EventoCanonico
-            # O ClientPc envia: {"categoria": "PC_ACTIVITY", "comando": "notificar_atividade", "payload": {"processo": ...}}
-            
-            asyncio.create_task(kernel.publicar(EventoCanonico(
-                categoria=CategoriaEvento.PC_ACTIVITY,
-                acao=TipoAcao.NORMAL,
-                origem=OrigemEvento.PC,
-                pacote="pc.client.monitor",
-                payload=msg.get("payload", {})
-            )))
+            # 🔇 SILÊNCIO: Loga apenas comandos reais de atividade, não polling de status
+            if comando == "notificar_atividade":
+                logger.info(f"📥 [UDP] Atividade recebida de {addr}")
+                
+                # Converte a mensagem bruta do ClientPc em um EventoCanonico
+                asyncio.create_task(kernel.publicar(EventoCanonico(
+                    categoria=CategoriaEvento.PC_ACTIVITY,
+                    acao=TipoAcao.NORMAL,
+                    origem=OrigemEvento.PC,
+                    pacote="pc.client.monitor",
+                    payload=msg.get("payload", {})
+                )))
+            else:
+                logger.debug(f"📥 [UDP] Comando silencioso de {addr}: {comando}")
         except Exception as e:
             logger.error(f"❌ [UDP] Erro ao processar datagrama: {e}")
 

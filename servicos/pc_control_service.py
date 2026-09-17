@@ -9,52 +9,92 @@ import difflib
 import re
 from typing import List
 
-# 🌍 SEGURANÇA CLOUD: Não importa bibliotecas de GUI/Hardware no Render
-if not os.getenv("RENDER"):
-    try:
-        import pyautogui
-        import pygetwindow as gw
-        import win32gui
-        import win32con
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        from comtypes import CLSCTX_ALL
-        from ctypes import cast, POINTER
-    except ImportError:
-        pyautogui = None
-        gw = None
-        win32gui = None
-        win32con = None
-        AudioUtilities = None
-    except Exception:
-        pyautogui = None
-        gw = None
-        win32gui = None
-        win32con = None
-        AudioUtilities = None
-
-    try:
-        import voicemeeterlib
-    except ImportError:
-        voicemeeterlib = None
-    except Exception:
-        voicemeeterlib = None
-        
-    try:
-        import spotipy
-        from spotipy.oauth2 import SpotifyOAuth
-    except ImportError:
-        spotipy = None
-        SpotifyOAuth = None
-    except Exception:
-        spotipy = None
-        SpotifyOAuth = None
-else:
-    pyautogui = None
-    voicemeeterlib = None
-    spotipy = None
-    SpotifyOAuth = None
-
 logger = logging.getLogger("PCControl")
+
+# 🌍 CONFIGURAÇÃO DE AMBIENTE
+# Forçamos local se não houver variável RENDER (padrão do sistema)
+is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"]
+
+# Declaramos as variáveis globais que serão preenchidas pelos imports
+pyautogui = None
+gw = None
+win32gui = None
+win32con = None
+AudioUtilities = None
+IAudioEndpointVolume = None
+CLSCTX_ALL = None
+cast = None
+POINTER = None
+voicemeeterlib = None
+spotipy = None
+SpotifyOAuth = None
+
+def carregar_bibliotecas():
+    global pyautogui, gw, win32gui, win32con, AudioUtilities, IAudioEndpointVolume, CLSCTX_ALL, cast, POINTER, voicemeeterlib, spotipy, SpotifyOAuth
+    
+    if is_render:
+        logger.info("[PCControl] Rodando em modo CLOUD (Render). Bibliotecas de hardware desativadas.")
+        return
+
+    logger.info("[PCControl] Carregando motores de hardware locais...")
+
+    # ⌨️ Teclado e Mouse
+    try:
+        import pyautogui as pg
+        pyautogui = pg
+        # Configurações de segurança
+        pyautogui.PAUSE = 0.1
+        pyautogui.FAILSAFE = False
+        logger.info("✅ PyAutoGUI: OK")
+    except Exception as e:
+        logger.error(f"❌ PyAutoGUI: Falha -> {e}")
+
+    # 🪟 Janelas
+    try:
+        import pygetwindow as _gw
+        import win32gui as _w32g
+        import win32con as _w32c
+        gw = _gw
+        win32gui = _w32g
+        win32con = _w32c
+        logger.info("✅ Win32GUI/GetWindow: OK")
+    except Exception as e:
+        logger.error(f"❌ Win32: Falha -> {e}")
+
+    # 🔊 Áudio
+    try:
+        from pycaw.pycaw import AudioUtilities as _AU, IAudioEndpointVolume as _IAEV
+        from comtypes import CLSCTX_ALL as _CLS
+        from ctypes import cast as _cast, POINTER as _PTR
+        AudioUtilities = _AU
+        IAudioEndpointVolume = _IAEV
+        CLSCTX_ALL = _CLS
+        cast = _cast
+        POINTER = _PTR
+        logger.info("✅ PyCaw (Áudio Sistema): OK")
+    except Exception as e:
+        logger.error(f"❌ PyCaw: Falha -> {e}")
+
+    # 🎙️ Voicemeeter
+    try:
+        import voicemeeterlib as _vml
+        voicemeeterlib = _vml
+        logger.info("✅ Voicemeeter Lib: OK")
+    except Exception as e:
+        logger.warning(f"⚠️ Voicemeeter Lib: Não disponível ({e})")
+        
+    # 🎵 Spotify
+    try:
+        import spotipy as _spot
+        from spotipy.oauth2 import SpotifyOAuth as _SOAuth
+        spotipy = _spot
+        SpotifyOAuth = _SOAuth
+        logger.info("✅ Spotify API: OK")
+    except Exception as e:
+        logger.warning(f"⚠️ Spotify API: Não disponível ({e})")
+
+# Executa a carga imediata
+carregar_bibliotecas()
 
 class PcControlService:
     def __init__(self):
@@ -62,9 +102,9 @@ class PcControlService:
         self.sp = None
         self.fator_vol = 0.72
         self.mobile_apps = [] 
-        self.indexed_apps = {} # Cache de descoberta em 2º plano
+        self.indexed_apps = {}
         
-        # Mapeamentos Base (Fixos)
+        # Mapeamentos Base
         self.app_paths = {
             "vscode": "code",
             "spotify": "C:\\Users\\lucba\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Spotify.lnk",
@@ -84,6 +124,9 @@ class PcControlService:
             "task_mgr": ["ctrl", "shift", "esc"],
             "alt_f4": ["alt", "f4"],
             "win_tab": ["win", "tab"],
+            "media_play_pause": ["playpause"],
+            "media_next": ["nexttrack"],
+            "media_prev": ["prevtrack"],
         }
 
     def _carregar_config(self):
@@ -97,12 +140,9 @@ class PcControlService:
                 self.spot_secret = config.get("spotify", {}).get("client_secret")
                 self.spot_uri = config.get("spotify", {}).get("redirect_uri", "http://127.0.0.1:8888/callback")
                 
-                # Carrega mapeamentos dinâmicos
                 apps_extras = config.get("apps_mapeados", {})
                 for k, v in apps_extras.items():
                     self.app_paths[k.lower()] = v
-                if apps_extras:
-                    logger.info(f"[PCControl] {len(apps_extras)} apps extras carregados do config.toml")
             else:
                 self.spot_id = None
         except Exception as e:
@@ -112,255 +152,122 @@ class PcControlService:
         try:
             config_path = "D:/Programacao/AssistenteCell/config.toml"
             if not os.path.exists(config_path): config_path = "config.toml"
-            
-            config = {}
-            if os.path.exists(config_path):
-                config = toml.load(config_path)
-            
-            if "apps_mapeados" not in config:
-                config["apps_mapeados"] = {}
-                
+            config = toml.load(config_path) if os.path.exists(config_path) else {}
+            if "apps_mapeados" not in config: config["apps_mapeados"] = {}
             config["apps_mapeados"][nome.lower()] = path_alvo
-            
             with open(config_path, "w", encoding="utf-8") as f:
                 toml.dump(config, f)
-            logger.info(f"[PCControl] Mapeamento salvo no config.toml: {nome}")
+            logger.info(f"[PCControl] Mapeamento salvo: {nome}")
         except Exception as e:
             logger.error(f"Erro ao salvar mapeamento: {e}")
 
     def mapear_todos_apps(self):
-        """
-        Varre o PC em busca de todos os atalhos e programas instalados.
-        Roda em segundo plano para não travar a interface.
-        """
-        logger.info("[PCControl] 🔍 Iniciando mapeamento neural de aplicativos em 2º plano...")
+        logger.info("[PCControl] 🔍 Neural App Scan iniciado...")
         search_paths = [
             os.path.join(os.environ.get('APPDATA', ''), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
             os.path.join(os.environ.get('PROGRAMDATA', ''), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
             os.path.join(os.path.expanduser('~'), 'Desktop'),
             'C:\\Users\\Public\\Desktop'
         ]
-        
-        # Bibliotecas de jogos conhecidas
-        game_libs = ["D:\\games", "D:\\SteamLibrary\\steamapps\\common", "C:\\Program Files (x86)\\Steam\\steamapps\\common", "G:\\Jogos"]
-        for p in game_libs:
-            if os.path.exists(p): search_paths.append(p)
-
         novos_apps = {}
         for base_path in search_paths:
             if not os.path.exists(base_path): continue
             try:
-                # Limite de profundidade adaptativo
-                max_depth = 2 if any(x in base_path.lower() for x in ['games', 'steamapps', 'common']) else 5
-                
-                for root, dirs, files in os.walk(base_path):
-                    depth = root[len(base_path):].count(os.sep)
-                    if depth > max_depth:
-                        del dirs[:]
-                        continue
-
+                for root, _, files in os.walk(base_path):
                     for file in files:
                         ext = file.lower()
                         if ext.endswith(('.lnk', '.exe', '.url')):
                             name = file.rsplit('.', 1)[0].lower()
-                            
-                            # Filtro de ruído (evita launchers de sistema/crash reporters)
-                            if any(x in name for x in ['uninstall', 'unins000', 'crashreporter', 'setup', 'helper', 'dxwebsetup']):
-                                continue
-                                
+                            if any(x in name for x in ['uninstall', 'setup', 'helper']): continue
                             path = os.path.join(root, file)
-                            
-                            # Tratamento especial para Steam (.url)
-                            if ext.endswith('.url'):
-                                try:
-                                    with open(path, 'r', errors='ignore') as f:
-                                        content = f.read()
-                                        if 'steam://rungameid/' in content:
-                                            novos_apps[name] = path
-                                except: pass
-                            else:
-                                # Prioriza atalhos reais (.lnk) sobre executáveis soltos
-                                if name not in novos_apps or ext.endswith('.lnk'):
-                                    novos_apps[name] = path
-            except Exception as e:
-                logger.error(f"Erro ao varrer {base_path}: {e}")
-        
+                            if name not in novos_apps or ext.endswith('.lnk'):
+                                novos_apps[name] = path
+            except: pass
         self.indexed_apps.update(novos_apps)
-        logger.info(f"✅ [PCControl] Mapeamento concluído: {len(self.indexed_apps)} programas prontos.")
+        logger.info(f"✅ [PCControl] Scan concluído: {len(self.indexed_apps)} apps prontos.")
 
     def match_inteligente(self, termo: str, candidatos: List[str]) -> str:
-        """
-        Scoring semântico para encontrar o melhor app com rigor de palavras-chave.
-        """
         if not candidatos: return None
-        
-        # 🧹 NORMALIZAÇÃO: Remove underlines e hífens para comparação limpa
         termo = termo.lower().replace("_", " ").replace("-", " ").strip()
         palavras_termo = set(re.findall(r'[a-zA-Z0-9]+', termo))
-        # Palavras primárias = não numéricas e com mais de 1 letra
         palavras_primarias = {p for p in palavras_termo if not p.isdigit() and len(p) > 1}
-        
-        melhor_match = None
-        highest_score = -1
-        
-        logger.info(f"🧠 [PCControl] Raciocinando sobre match para '{termo}'...")
-        
-        # Ajuste de Rigor: Se for uma palavra só (ex: excel), somos mais flexíveis
+        melhor_match, highest_score = None, -1
         min_rigor = 0.4 if len(palavras_primarias) <= 1 else 0.6
-        
         for cand in candidatos:
-            # Normaliza o candidato também para a comparação de palavras
             cand_norm = cand.lower().replace("_", " ").replace("-", " ")
             palavras_cand = set(re.findall(r'[a-zA-Z0-9]+', cand_norm))
-            
-            # 1. Base Score: Difflib Sequence Match (Typos)
             seq_match = difflib.SequenceMatcher(None, termo, cand_norm).ratio()
-            
-            # 2. Keyword Match
             overlap = len(palavras_termo.intersection(palavras_cand))
             keyword_score = overlap / len(palavras_termo) if palavras_termo else 0
-            
-            # 3. RIGOR: Se o termo tem palavras principais e nenhuma bate, score cai drasticamente
-            overlap_primario = len(palavras_primarias.intersection(palavras_cand))
             if palavras_primarias:
-                rigor_overlap = overlap_primario / len(palavras_primarias)
-                if rigor_overlap < min_rigor:
+                overlap_primario = len(palavras_primarias.intersection(palavras_cand))
+                if (overlap_primario / len(palavras_primarias)) < min_rigor:
                     keyword_score *= 0.1
-            
             final_score = (keyword_score * 0.8) + (seq_match * 0.2)
-            
             if final_score > highest_score:
                 highest_score = final_score
                 melhor_match = cand
-                
-        if highest_score < 0.60: # Score levemente reduzido para ser mais tolerante
-            logger.info(f"⚠️ [PCControl] Nenhum candidato qualificado para '{termo}'. Melhor: '{melhor_match}' ({highest_score:.2f})")
-            return None
-            
-        logger.info(f"✅ [PCControl] Match vitorioso: '{melhor_match}' (Score: {highest_score:.2f})")
-        return melhor_match
+        return melhor_match if highest_score >= 0.60 else None
 
     def deep_search_disk(self, nome: str) -> str:
-        """
-        Busca física em todos os drives por pastas que combinem com o nome.
-        """
-        logger.info(f"🕵️ [DeepSearch] Iniciando crawler em discos locais para: {nome}")
-        # Ordem de busca: Prioridade para o que é mais provável ser um jogo/app instalado
         drives = ['D:', 'G:', 'C:', 'E:', 'F:']
         termo = nome.lower().strip()
-        
-        # 1. TENTA PRIMEIRO NO MENU INICIAR (Mais rápido e preciso para apps como Excel)
-        search_paths = [
-            os.path.join(os.environ.get('APPDATA', ''), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
-            os.path.join(os.environ.get('PROGRAMDATA', ''), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
-        ]
-        for base_path in search_paths:
-            if not os.path.exists(base_path): continue
-            for root, _, files in os.walk(base_path):
-                for file in files:
-                    if file.lower().endswith(('.lnk', '.exe')):
-                        name = file.rsplit('.', 1)[0].lower()
-                        if termo in name or name in termo:
-                             logger.info(f"📍 [DeepSearch] App encontrado no Menu Iniciar: {file}")
-                             return os.path.join(root, file)
-
-        # 2. SE NÃO ACHOU, VAI PARA OS DISCOS (Crawler de Pastas)
         for drive in drives:
             drive_path = drive + "\\"
             if not os.path.exists(drive_path): continue
-            
-            logger.info(f"🔎 [DeepSearch] Vasculhando Drive {drive}...")
-            
             bibliotecas = ['games', 'Jogos', 'SteamLibrary\\steamapps\\common', 'Program Files (x86)', 'Program Files', 'Epic Games', 'Riot Games']
             for lib in bibliotecas:
                 base_lib = os.path.join(drive_path, lib)
                 if not os.path.exists(base_lib): continue
-                
                 try:
                     pastas = [d for d in os.listdir(base_lib) if os.path.isdir(os.path.join(base_lib, d))]
                     match_pasta = self.match_inteligente(termo, pastas)
-                    
                     if match_pasta:
                         pasta_alvo = os.path.join(base_lib, match_pasta)
-                        logger.info(f"📍 [DeepSearch] Pasta encontrada: {pasta_alvo}")
                         melhor_exe = self._encontrar_executavel_principal(pasta_alvo, termo)
                         if melhor_exe: return melhor_exe
                 except: continue
         return None
 
     def _encontrar_executavel_principal(self, pasta: str, termo: str) -> str:
-        """Analisa a pasta e escolhe o .exe mais relevante."""
         candidatos = []
-        logger.info(f"📁 [Scoring] Analisando executáveis em: {pasta}")
-        
-        for root, dirs, files in os.walk(pasta):
-            # Ignora subpastas irrelevantes
-            if any(x in root.lower() for x in ['engine', 'redist', 'anticheat', 'tools', 'crash', 'logs', 'binaries']):
-                continue
-                
+        for root, _, files in os.walk(pasta):
+            if any(x in root.lower() for x in ['engine', 'redist', 'anticheat', 'tools', 'crash']): continue
             for file in files:
                 if file.lower().endswith('.exe'):
                     name = file.rsplit('.', 1)[0].lower()
-                    if any(x in name for x in ['unins', 'crash', 'setup', 'helper', 'dxwebsetup', 'report', 'unity', 'launcher_']):
-                        continue
+                    if any(x in name for x in ['unins', 'crash', 'setup', 'helper', 'dxwebsetup']): continue
                     candidatos.append(os.path.join(root, file))
-
         if not candidatos: return None
-        
-        # Scoring de Relevância
-        best_path = None
-        highest_score = -1
+        best_path, highest_score = None, -1
         nome_pasta_pai = os.path.basename(pasta).lower()
-        
         for path in candidatos:
             name = os.path.basename(path).lower().rsplit('.', 1)[0]
             score = 0
-            
-            # Bônus se o nome do EXE for igual ao da PASTA (Muito comum em jogos)
             if name == nome_pasta_pai: score += 30
             elif name in nome_pasta_pai or nome_pasta_pai in name: score += 15
-            
-            # Bônus se bater com o termo de busca do usuário
             if termo in name: score += 10
-            
-            # Penaliza nomes genéricos
-            if name in ['launcher', 'game', 'play', 'start', 'shipping', 'client']: score -= 5
-            
-            logger.debug(f"   ⚖️  EXE: {name} | Score: {score}")
-            
+            if name in ['launcher', 'game', 'play', 'start', 'client']: score -= 5
             if score > highest_score:
                 highest_score = score
                 best_path = path
-        
-        if best_path:
-            logger.info(f"🎯 [Scoring] Vencedor: {os.path.basename(best_path)} (Score: {highest_score})")
         return best_path
 
     def inicializar(self):
         try:
             if voicemeeterlib:
-                try:
-                    self.vm = voicemeeterlib.api('banana')
-                    self.vm.login()
-                    logger.info("[PCControl] Voicemeeter conectado.")
-                except Exception as e:
-                    logger.warning(f"[PCControl] Falha ao logar no Voicemeeter: {e}")
-
+                if self.vm:
+                    try: self.vm.logout()
+                    except: pass
+                self.vm = voicemeeterlib.api('banana')
+                self.vm.login()
+                logger.info("[PCControl] Voicemeeter conectado.")
             self._init_spotify()
-            
-            if pyautogui:
-                try:
-                    pyautogui.PAUSE = 0
-                    pyautogui.FAILSAFE = False
-                except: pass
-            
-            # Inicia mapeamento neural em background
-            if not os.getenv("RENDER"):
+            if not is_render:
                 threading.Thread(target=self.mapear_todos_apps, daemon=True).start()
-                
             return True
         except Exception as e:
-            logger.error(f"[PCControl] Erro na inicialização: {e}")
+            logger.error(f"[PCControl] Erro inicialização: {e}")
             return False
 
     def _init_spotify(self):
@@ -371,502 +278,125 @@ class PcControlService:
             self.sp = spotipy.Spotify(auth_manager=auth)
             logger.info("[PCControl] Spotify conectado.")
         except Exception as e:
-            logger.warning(f"[PCControl] Falha ao conectar Spotify: {e}")
+            logger.warning(f"[PCControl] Spotify offline: {e}")
 
     def spotify_next(self):
-        if self.sp:
-            try: self.sp.next_track()
-            except Exception as e: logger.error(f"Erro Spotify Next: {e}")
+        if self.sp: self.sp.next_track()
 
     def spotify_prev(self):
-        if self.sp:
-            try: self.sp.previous_track()
-            except Exception as e: logger.error(f"Erro Spotify Prev: {e}")
+        if self.sp: self.sp.previous_track()
 
     def spotify_pause(self):
         if self.sp:
-            try:
-                current = self.sp.current_playback()
-                if current and current.get('is_playing'): self.sp.pause_playback()
-                else: self.sp.start_playback()
-            except Exception as e: logger.error(f"Erro Spotify Pause/Play: {e}")
+            current = self.sp.current_playback()
+            if current and current.get('is_playing'): self.sp.pause_playback()
+            else: self.sp.start_playback()
 
     def tocar_spotify(self, query: str):
-        if not self.sp:
-            logger.warning("Spotify não inicializado.")
-            return
-        try:
-            logger.info(f"🎵 [Spotify] Buscando: {query}")
-            
-            # Tenta encontrar um dispositivo ativo para evitar erro 404
-            devices = self.sp.devices()
-            device_id = None
-            if devices and devices.get('devices'):
-                # Prioriza o computador local ou o primeiro ativo
-                active_device = next((d for d in devices['devices'] if d['is_active']), devices['devices'][0])
-                device_id = active_device['id']
-                logger.info(f"📱 [Spotify] Usando dispositivo: {active_device['name']}")
-
-            results = self.sp.search(q=query, limit=1, type='track,playlist,artist')
-            
+        if self.sp:
+            results = self.sp.search(q=query, limit=1)
             if results['tracks']['items']:
-                uri = results['tracks']['items'][0]['uri']
-                self.sp.start_playback(device_id=device_id, uris=[uri])
-                logger.info(f"✅ [Spotify] Tocando música: {results['tracks']['items'][0]['name']}")
-            elif results['playlists']['items']:
-                uri = results['playlists']['items'][0]['uri']
-                self.sp.start_playback(device_id=device_id, context_uri=uri)
-                logger.info(f"✅ [Spotify] Tocando playlist: {results['playlists']['items'][0]['name']}")
-            elif results['artists']['items']:
-                uri = results['artists']['items'][0]['uri']
-                self.sp.start_playback(device_id=device_id, context_uri=uri)
-                logger.info(f"✅ [Spotify] Tocando artista: {results['artists']['items'][0]['name']}")
-            else:
-                logger.warning(f"Nenhum resultado para: {query}")
-        except Exception as e:
-            logger.error(f"Erro ao tocar Spotify: {e}")
+                self.sp.start_playback(uris=[results['tracks']['items'][0]['uri']])
 
     def spotify_like(self):
         if self.sp:
-            try:
-                current = self.sp.current_playback()
-                if current and current.get('item'):
-                    track_id = current['item']['id']
-                    self.sp.current_user_saved_tracks_add(tracks=[track_id])
-                    logger.info("❤️ Música curtida no Spotify!")
-            except Exception as e: logger.error(f"Erro Spotify Like: {e}")
+            current = self.sp.current_playback()
+            if current and current.get('item'):
+                self.sp.current_user_saved_tracks_add(tracks=[current['item']['id']])
 
-    def encerrar(self):
-        if self.vm:
-            try: self.vm.logout()
-            except: pass
-
-    # --- AÇÕES DE HARDWARE ---
-    def set_vm_param(self, param_path: str, valor):
-        """Define um parâmetro no Voicemeeter com fallback de sintaxe."""
-        if not self.vm:
-            logger.warning("Voicemeeter não inicializado.")
-            return False
-
-        # 🌟 SUPORTE A MÚLTIPLOS PARÂMETROS (EXCLUSIVIDADE)
-        try:
-            str_param = str(param_path).strip()
-            str_valor = str(valor).strip() if valor is not None else ""
-            
-            # Reconstrói o comando completo para análise de lote
-            full_command = f"{str_param}={str_valor}" if str_valor else str_param
-            
-            if "," in full_command:
-                comandos = full_command.split(",")
-                sucesso = True
-                for cmd in comandos:
-                    cmd = cmd.strip()
-                    if "=" in cmd:
-                        try:
-                            # 🛡️ FIX: Garante que o split nunca resulte em desempacotamento inválido
-                            parts = cmd.split("=", 1)
-                            if len(parts) == 2:
-                                if not self._set_single_vm_param(parts[0].strip(), parts[1].strip()): 
-                                    sucesso = False
-                        except Exception as e:
-                            logger.error(f"Erro ao processar sub-comando VM '{cmd}': {e}")
-                            sucesso = False
-                return sucesso
-
-            return self._set_single_vm_param(str_param, str_valor if str_valor else valor)
-        except Exception as e:
-            logger.error(f"Erro crítico em set_vm_param: {e}")
-            return False
-
-    def _set_single_vm_param(self, param_path: str, valor):
-        """Lógica interna para um único parâmetro."""
-        try:
-            v = int(valor) if str(valor).strip() in ["0", "1"] else valor
-            
-            # Tenta 1: Sintaxe original
-            try:
-                self.vm.set(param_path, v)
-                logger.info(f"🔊 [Voicemeeter] Sucesso (A1): {param_path}={v}")
-                return True
-            except: pass
-            
-            # Tenta 2: Sintaxe minúscula
-            try:
-                path_lower = param_path.lower()
-                self.vm.set(path_lower, v)
-                logger.info(f"🔊 [Voicemeeter] Sucesso (A2): {path_lower}={v}")
-                return True
-            except: pass
-
-            # Tenta 3: Atribuição direta
-            if "strip" in param_path.lower():
-                import re
-                m = re.search(r'\[(\d+)\]\.(\w+)', param_path)
-                if m:
-                    idx, attr = int(m.group(1)), m.group(2)
-                    setattr(self.vm.strip[idx], attr, v)
-                    logger.info(f"🔊 [Voicemeeter] Sucesso (A3): strip[{idx}].{attr}={v}")
-                    return True
-        except: pass
-        return False
+    def set_vm_param(self, param, valor):
+        if self.vm: self.vm.set(param, valor)
 
     def set_gain(self, canal, valor_porcentagem):
         if self.vm:
             db = -60.0 + (valor_porcentagem * self.fator_vol)
             self.vm.set(f"Strip[{canal}].Gain", db)
 
-    def ciclar_saida(self, canal=3):
-        if not self.vm: return False
-        try:
-            a1 = int(self.vm.get(f'Strip[{canal}].A1'))
-            a2 = int(self.vm.get(f'Strip[{canal}].A2'))
-            if a1 == 1:
-                self.toggle_rota(canal, "A1", False)
-                self.toggle_rota(canal, "A2", True)
-            else: 
-                self.toggle_rota(canal, "A2", False)
-                self.toggle_rota(canal, "A1", True)
-            return True
-        except: return False
-
     def toggle_rota(self, canal, saida, estado):
-        if self.vm:
-            self.vm.set(f"Strip[{canal}].{saida.upper()}", 1 if estado else 0)
+        if self.vm: self.vm.set(f"Strip[{canal}].{saida.upper()}", 1 if estado else 0)
 
     def mutar_mic(self):
         if self.vm:
             curr = int(self.vm.get('Strip[0].Mute'))
             self.vm.set('Strip[0].Mute', 0 if curr == 1 else 1)
 
-    # --- AÇÕES DE SISTEMA ---
     def abrir_app(self, app_key):
-        chave = app_key.lower().strip()
-        logger.info(f"🚀 [Launch] Iniciando sequência para abrir: '{chave}'")
-        
-        # 🧠 INTEGRAÇÃO TOTAL: Verifica se o app já está rodando e foca a janela
-        if self.trazer_janela_para_frente(chave):
-            logger.info(f"✅ [Launch] App '{chave}' já estava rodando. Foco alterado.")
-            return True
-
-        # 1. Tenta o mapeamento conhecido
+        if not app_key: return False
+        chave = str(app_key).lower().strip()
+        if self.trazer_janela_para_frente(chave): return True
         path = self.app_paths.get(chave)
+        if not path:
+            match = self.match_inteligente(chave, list(self.indexed_apps.keys()))
+            if match: path = self.indexed_apps[match]
+        if not path: path = self.deep_search_disk(app_key)
         if path:
-            logger.info(f"✅ [Launch] App mapeado encontrado: {path}")
             self.executar_comando_direto(path)
-            return
-
-        # 2. Busca no índice neural (Fuzzy + Keyword)
-        candidatos = list(self.indexed_apps.keys())
-        match = self.match_inteligente(chave, candidatos)
-        
-        if match:
-            path_encontrado = self.indexed_apps[match]
-            logger.info(f"✅ [Launch] Match encontrado no índice: {match}")
-            self.salvar_mapeamento(chave, path_encontrado)
-            self.app_paths[chave] = path_encontrado
-            self.executar_comando_direto(path_encontrado)
-            return
-
-        # 3. Deep Search
-        path_deep = self.deep_search_disk(app_key)
-        if path_deep:
-            logger.info(f"✅ [Launch] Deep Crawler recuperou o alvo: {path_deep}")
-            self.salvar_mapeamento(chave, path_deep)
-            self.app_paths[chave] = path_deep
-            self.executar_comando_direto(path_deep)
-        else:
-            logger.warning(f"❌ [Launch] App '{chave}' não localizado. Tentando execução direta.")
-            self.executar_comando_direto(app_key)
+            self.app_paths[chave] = path
+            return True
+        self.executar_comando_direto(app_key)
+        return False
 
     def executar_comando_direto(self, alvo):
         try:
-            logger.info(f"[PCControl] Executando alvo: {alvo}")
-            
-            # Tratamento de URI (Steam/Web)
-            if "://" in alvo:
+            if "://" in alvo or alvo.lower().startswith("http"):
                 webbrowser.open(alvo)
-                return
-
-            # Tratamento de atalho Steam (.url)
-            if alvo.lower().endswith(".url"):
-                try:
-                    with open(alvo, 'r', errors='ignore') as f:
-                        for line in f:
-                            if line.startswith('URL=') and 'steam://' in line:
-                                webbrowser.open(line.split('=', 1)[1].strip())
-                                return
-                except: pass
-
-            # Execução de Arquivo Local com Contexto
-            if os.path.exists(alvo):
-                wdir = os.path.dirname(alvo)
-                try:
-                    os.startfile(alvo)
-                except:
-                    # Fallback via Shell 'start' (Crucial para alguns jogos)
-                    subprocess.Popen(f'start "" "{alvo}"', shell=True, cwd=wdir)
+            elif os.path.exists(alvo):
+                os.startfile(alvo)
             else:
-                # Fallback final como comando de terminal
                 subprocess.Popen(alvo, shell=True)
-                
         except Exception as e:
-            logger.error(f"[PCControl] Erro na execução de {alvo}: {e}")
-
-    def abrir_url(self, url):
-        url_limpa = url.lower().strip()
-        
-        # 🧠 INTEGRAÇÃO TOTAL: Verifica se o site já está aberto em alguma aba
-        # Extrai o nome provável (ex: youtube, google, instagram)
-        nome_site = url_limpa.replace("https://", "").replace("http://", "").replace("www.", "").split(".")[0]
-        if len(nome_site) > 2:
-            if self.trazer_janela_para_frente(nome_site):
-                logger.info(f"✅ [PCControl] URL '{url}' já estava aberta. Foco alterado.")
-                return True
-
-        if "." not in url_limpa: url_limpa += ".com"
-        if not url_limpa.startswith("http"): url_limpa = "https://" + url_limpa
-        try:
-            if not webbrowser.open(url_limpa):
-                os.system(f'start "" "{url_limpa}"')
-            return False # Retorna False pois abriu uma NOVA janela
-        except: 
-            self.executar_comando_direto(url_limpa)
-            return False
+            logger.error(f"Erro executar {alvo}: {e}")
 
     def trazer_janela_para_frente(self, termo: str) -> bool:
-        """Busca janelas ativas que contenham o termo e traz para o topo."""
         if not gw or not win32gui: return False
-        
         try:
-            termo = termo.lower().strip()
-            janelas = gw.getAllWindows()
-            
-            # 1. TENTA MATCH EXATO OU QUASE EXATO NO TÍTULO
-            for j in janelas:
-                titulo_l = j.title.lower()
-                if not titulo_l: continue
-                
-                # Se o termo está no título (ex: "youtube" em "Video - YouTube - Opera")
-                if termo in titulo_l:
-                    # 💡 Restaura se estiver minimizada
-                    if j.isMinimized:
-                        j.restore()
-                    
-                    # 🚀 Força o foco usando Win32
-                    try:
-                        win32gui.ShowWindow(j._hWnd, win32con.SW_RESTORE)
-                        win32gui.SetForegroundWindow(j._hWnd)
-                        logger.info(f"✅ [PCControl] Janela focada: {j.title}")
-                        return True
-                    except Exception as e:
-                        logger.warning(f"Falha ao focar janela '{j.title}': {e}")
-                        j.activate()
-                        return True
+            for j in gw.getAllWindows():
+                if termo in j.title.lower():
+                    if j.isMinimized: j.restore()
+                    win32gui.ShowWindow(j._hWnd, win32con.SW_RESTORE)
+                    win32gui.SetForegroundWindow(j._hWnd)
+                    return True
             return False
-        except Exception as e:
-            logger.error(f"Erro ao gerenciar janelas para '{termo}': {e}")
-            return False
+        except: return False
 
-    def pesquisa_google(self, query):
-        url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
-        self.executar_comando_direto(url)
-
-    def bloquear_pc(self):
-        os.system("rundll32.exe user32.dll,LockWorkStation")
-
-    def dormir_pc(self):
-        # Suspender (Sleep)
-        os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
-
-    def hibernar_pc(self):
-        # Hibernar (Hibernate) - Salva estado no disco
-        os.system("shutdown /h")
-
-    def janela_fullscreen(self, termo):
-        if not gw: return
-        for j in gw.getWindowsWithTitle(termo):
-            j.activate()
-            pyautogui.press('f11')
-            return
-
-    def janela_maximizar(self, termo):
-        if not gw: return
-        for j in gw.getWindowsWithTitle(termo):
-            j.maximize()
-            return
-
-    def janela_minimizar(self, termo):
-        if not gw: return
-        for j in gw.getWindowsWithTitle(termo):
-            j.minimize()
-            return
+    def bloquear_pc(self): os.system("rundll32.exe user32.dll,LockWorkStation")
+    def dormir_pc(self): os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
+    def desligar_pc(self): os.system("shutdown /s /t 60")
+    def reiniciar_pc(self): os.system("shutdown /r /t 60")
 
     def executar_macro(self, macro_key):
         keys = self.macros.get(macro_key)
-        if keys and pyautogui: pyautogui.hotkey(*keys)
-
-    def set_modo_imersao(self, ativo: bool):
-        if not self.vm: return
-        if ativo:
-            self.vm.set('Strip[0].Mute', 1)
-            if pyautogui: pyautogui.hotkey('win', 'd')
-            self.set_gain(4, 30)
-        else:
-            self.vm.set('Strip[0].Mute', 0)
-            self.set_gain(4, 70)
-
-    # --- NOVAS AÇÕES DE CONTROLE TOTAL ---
-    def listar_diretorio(self, path: str = None) -> List[str]:
-        """Lista arquivos e pastas de um diretório."""
-        target = path or os.path.expanduser("~")
-        if not os.path.exists(target): return [f"Erro: Caminho '{target}' não existe."]
+        if not keys or not pyautogui:
+            logger.error(f"❌ Macro '{macro_key}' indisponível. PyAutoGUI: {pyautogui is not None}")
+            return
         try:
-            items = os.listdir(target)
-            return sorted(items)
+            logger.info(f"⌨️ [Hardware] Executando: {keys}")
+            if macro_key in ["alt_tab", "win_tab"]:
+                main_key = "alt" if "alt" in macro_key else "win"
+                pyautogui.keyDown(main_key)
+                pyautogui.press('tab')
+                pyautogui.keyUp(main_key)
+            else:
+                pyautogui.hotkey(*keys)
         except Exception as e:
-            return [f"Erro ao acessar: {e}"]
-
-    def abrir_arquivo(self, path: str):
-        """Abre um arquivo ou pasta específica."""
-        if not os.path.exists(path):
-            # Tenta busca fuzzy se não for caminho absoluto
-            path_fuzzy = self.deep_search_disk(path)
-            if path_fuzzy: path = path_fuzzy
-            else: return False
-            
-        try:
-            os.startfile(path)
-            return True
-        except:
-            return False
+            logger.error(f"❌ Erro macro: {e}")
 
     def set_system_volume(self, percent: int):
-        """Define o volume global do Windows (0-100)."""
         if not AudioUtilities: return False
         try:
             devices = AudioUtilities.GetSpeakers()
             interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
             volume = cast(interface, POINTER(IAudioEndpointVolume))
-            # Converte 0-100 para range de decibéis (ou scalar)
             volume.SetMasterVolumeLevelScalar(percent / 100.0, None)
-            logger.info(f"🔊 [System] Volume definido para {percent}%")
             return True
-        except Exception as e:
-            logger.error(f"Erro ao ajustar volume do sistema: {e}")
-            return False
+        except: return False
 
-    def encerrar_processo(self, nome_ou_id):
-        """Finaliza um processo por nome ou PID."""
-        try:
-            for proc in psutil.process_iter(['pid', 'name']):
-                if str(nome_ou_id).lower() in proc.info['name'].lower() or str(nome_ou_id) == str(proc.info['pid']):
-                    proc.kill()
-                    logger.info(f"💀 Processo {proc.info['name']} ({proc.info['pid']}) encerrado.")
-                    return True
-            return False
-        except Exception as e:
-            logger.error(f"Erro ao encerrar processo: {e}")
-            return False
-
-    def obter_status_hardware(self):
-        """Retorna dados detalhados de hardware."""
-        bateria = psutil.sensors_battery()
-        return {
-            "bateria": {
-                "percent": bateria.percent if bateria else "N/A",
-                "plugged": bateria.power_plugged if bateria else "N/A"
-            },
-            "rede": {
-                "sent": psutil.net_io_counters().bytes_sent,
-                "recv": psutil.net_io_counters().bytes_recv
-            }
-        }
-
-    def buscar_arquivos(self, termo: str) -> List[str]:
-        """Busca arquivos que contenham o termo no nome (limitado a pastas de usuário)."""
-        if not termo or len(str(termo).strip()) < 2:
-            return ["Erro: Termo de busca muito curto ou vazio."]
-            
-        logger.info(f"🔎 [Search] Buscando arquivos por: {termo}")
-        resultados = []
-        caminhos_base = [
-            os.path.expanduser("~/Downloads"), # Prioridade para Downloads
-            os.path.expanduser("~/Documents"),
-            os.path.expanduser("~/Desktop")
-        ]
-        
-        termo = str(termo).lower()
-        for base in caminhos_base:
-            if not os.path.exists(base): continue
-            for root, _, files in os.walk(base):
-                for f in files:
-                    if termo in f.lower():
-                        resultados.append(os.path.join(root, f))
-                        if len(resultados) >= 10: return resultados
-        return resultados
-
-    def listar_diretorio(self, path: str = None) -> List[str]:
-        """Lista arquivos e pastas de um diretório. Resolve nomes amigáveis."""
-        target = path or os.path.expanduser("~")
-        
-        # Resolução de nomes amigáveis para facilitar a vida da IA
-        p_lower = str(path).lower()
-        user_profile = os.environ.get("USERPROFILE", os.path.expanduser("~"))
-
-        if "download" in p_lower: target = os.path.join(user_profile, "Downloads")
-        elif "documento" in p_lower: target = os.path.join(user_profile, "Documents")
-        elif "desktop" in p_lower or "área de trabalho" in p_lower: target = os.path.join(user_profile, "Desktop")
-        elif "vídeo" in p_lower: target = os.path.join(user_profile, "Videos")
-        elif "música" in p_lower: target = os.path.join(user_profile, "Music")
-        elif "imagem" in p_lower or "foto" in p_lower: target = os.path.join(user_profile, "Pictures")
-        elif "jogo" in p_lower: target = "D:\\games"
-
-        if not os.path.exists(target): return [f"Erro: Caminho '{target}' não existe."]
-        try:
-            items = os.listdir(target)
-            # Filtra arquivos ocultos e limita a 20 itens
-            visiveis = [i for i in items if not i.startswith(".")]
-            return sorted(visiveis)[:20]
-        except Exception as e:
-            return [f"Erro ao acessar: {e}"]
-
-    def salvar_cache_apps(self, apps: list):
-        """Salva a lista de apps vindos do celular ou do PC Client."""
-        self.mobile_apps = apps
-        logger.info(f"📱 [PCControl] {len(apps)} apps do celular sincronizados.")
-
-    def mapear_estrutura_usuario(self) -> List[str]:
-        """Varre o PC em busca de diretórios importantes (Profundidade 2)."""
-        logger.info("🔍 [PCControl] Iniciando mapeamento de diretórios do usuário...")
-        
-        user_profile = os.environ.get("USERPROFILE", os.path.expanduser("~"))
-        base_paths = [
-            user_profile,
-            "D:\\", "E:\\", "G:\\" # Drives comuns no seu PC
-        ]
-        
-        pastas_relevantes = []
-        
-        for base in base_paths:
-            if not os.path.exists(base): continue
-            try:
-                # Lista apenas pastas do primeiro e segundo nível
-                for item in os.listdir(base):
-                    full_path = os.path.join(base, item)
-                    if os.path.isdir(full_path) and not item.startswith(".") and not item.startswith("$"):
-                        pastas_relevantes.append(full_path)
-                        
-                        # Nível 2
-                        try:
-                            for sub in os.listdir(full_path):
-                                sub_path = os.path.join(full_path, sub)
-                                if os.path.isdir(sub_path) and not sub.startswith("."):
-                                    pastas_relevantes.append(sub_path)
-                        except: pass
-            except: pass
-            
-        logger.info(f"✅ [PCControl] Mapeamento geográfico concluído. {len(pastas_relevantes)} locais encontrados.")
-        return pastas_relevantes
+    def encerrar_processo(self, alvo):
+        for proc in psutil.process_iter(['name', 'pid']):
+            if str(alvo).lower() in proc.info['name'].lower():
+                proc.kill()
+                return True
+        return False
 
     def obter_estado_completo(self):
         cpu = psutil.cpu_percent()
@@ -874,7 +404,12 @@ class PcControlService:
         disco = 0
         try: disco = psutil.disk_usage('C:').percent
         except: pass
-        
+        running_procs = []
+        try:
+            for proc in sorted(psutil.process_iter(['name', 'cpu_percent']), key=lambda p: p.info['cpu_percent'], reverse=True)[:5]:
+                if proc.info['cpu_percent'] > 0.1:
+                    running_procs.append({"n": proc.info['name'], "c": f"{proc.info['cpu_percent']:.1f}"})
+        except: pass
         v3, v4, m_mute = 50, 50, 0
         if self.vm:
             try:
@@ -882,10 +417,6 @@ class PcControlService:
                 v4 = max(0, min(100, int((self.vm.get('Strip[4].Gain') + 60) / self.fator_vol)))
                 m_mute = int(self.vm.get('Strip[0].Mute'))
             except: pass
-            
-        # 🧠 CONTEXTO ADICIONAL: Resumo de Apps Indexados (Top 20 para economia)
-        top_apps = list(self.indexed_apps.keys())[:30]
-
         return {
             "audio_state": {
                 "3": { "volume": v3, "a1": int(self.vm.get('Strip[3].A1')) if self.vm else 0, "a2": int(self.vm.get('Strip[3].A2')) if self.vm else 0, "a3": int(self.vm.get('Strip[3].A3')) if self.vm else 0 },
@@ -893,7 +424,8 @@ class PcControlService:
             },
             "cpu": cpu, "ram": ram, "disco": disco, "online": True, "mic_mute": m_mute,
             "sistema": {"cpu": cpu, "ram": ram, "disco": disco},
-            "apps_disponiveis": top_apps
+            "apps_disponiveis": list(self.indexed_apps.keys())[:30],
+            "processes": running_procs
         }
 
 pc_control_service = PcControlService()

@@ -4,15 +4,38 @@ __pycache__/
 *$py.class
 venv/
 .venv/
+.venvs/
+venvs/
 .env
+
+# Configurações e Segredos
+config.toml
+config.example.toml
+*.local
+
+# Estado e Inteligência
+config/discovered_routines.json
+config/routines.json.bak
+.artifacts/
+scratch/
 
 # Banco de Dados Local
 *.db
 *.sqlite3
 
+# Logs
+logs/
+server_log.txt
+server_error.txt
+*.log
+
 # IDEs
 .idea/
 .vscode/
+.aider.*
 
-# Ollie Master (App Local)
+# Ollie Master (Builds e Binários)
 ollie_master_gui.py
+cloudflared-windows-amd64.exe
+ollie-master-next/dist/
+ollie-master-next/src-tauri/target/

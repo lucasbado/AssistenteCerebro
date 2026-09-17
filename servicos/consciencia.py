@@ -31,7 +31,7 @@ class ConscienciaSituacional:
             self._snapshot["clima"].update(data["clima"])
             
         self._snapshot["timestamp"] = data.get("timestamp")
-        logger.info("🧠 [Consciência] Estado situacional atualizado.")
+        logger.debug("🧠 [Consciência] Estado situacional atualizado.")
 
     def obter_resumo_para_llm(self) -> str:
         """Gera uma string amigável para o prompt da IA."""

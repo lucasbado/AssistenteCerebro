@@ -181,14 +181,16 @@ async def lifespan(app: FastAPI):
     ]
     
     # 🖥️ LOCAL ONLY: Inicia listener UDP apenas se não estiver no Render
-    if not os.getenv("RENDER"):
+    is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"]
+    
+    if not is_render:
         tasks.append(asyncio.create_task(pc_listener_service.iniciar()))
 
     logger.info("🚀 AI Brain & PC Master Control online!")
     yield
     # --- SHUTDOWN ---
     for t in tasks: t.cancel()
-    if not os.getenv("RENDER"):
+    if not is_render:
         pc_listener_service.parar()
     pc_control_service.encerrar()
     await async_engine.dispose()

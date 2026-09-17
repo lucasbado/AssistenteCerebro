@@ -1,5 +1,6 @@
 import logging
 import os
+import asyncio
 from core.evento import EventoCanonico
 from core.tipos import EstadoEvento, TipoAcao
 from servicos.pc_control_service import pc_control_service
@@ -15,7 +16,8 @@ class AgentePcExecutor:
     
     async def processar(self, evento: EventoCanonico):
         # ☁️ ROTEAMENTO CLOUD: Se estivermos no Render, o comando deve ir via WebSocket para o PC Master
-        if os.getenv("RENDER"):
+        is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"]
+        if is_render:
             comando = evento.payload.get("comando")
             if comando:
                 logger.info(f"☁️ [Agente PC] Rodando em nuvem. Comando '{comando}' sendo roteado via WebSocket para PC Master.")
@@ -48,11 +50,34 @@ class AgentePcExecutor:
         if not comando: return
         
         # 🚀 NORMALIZAÇÃO DE PAYLOAD: Garante que os parâmetros cheguem aos serviços
-        param = evento.payload.get("parametro") or evento.payload.get("valor") or evento.payload.get("app") or evento.payload.get("url") or evento.payload.get("query")
+        # Priorizamos campos específicos para evitar que o nome do comando vaze como parâmetro
+        payload = evento.payload
+        param = payload.get("app") or \
+                payload.get("url") or \
+                payload.get("parametro") or \
+                payload.get("valor") or \
+                payload.get("query") or \
+                payload.get("macro")
         
-        logger.info(f"🛠️ [Agente PC] Executando comando: {comando}")
+        # 🛡️ PROTEÇÃO: Se o param for None ou o próprio nome do comando (loop), limpa ele
+        if param == comando:
+            param = None
+
+        logger.info(f"🛠️ [Agente PC] Executando: {comando} | Param: {param}")
         
         try:
+            # --- COMANDOS DE MANUTENÇÃO / INTERFACE ---
+            if comando == "estudar_pc":
+                logger.info("🧠 [Agente PC] Iniciando mapeamento geográfico do PC...")
+                pastas = await asyncio.to_thread(pc_control_service.mapear_estrutura_usuario)
+                from api.websocket import central_alertas
+                await central_alertas._broadcast({"tipo_ws": "PC_STRUCTURE", "pastas": pastas, "id": "PC_MASTER"})
+                return
+
+            elif comando == "inicializar_hardware":
+                await asyncio.to_thread(pc_control_service.inicializar)
+                return
+
             # --- COMANDOS VOICEMEETER ---
             if comando == "voicemeeter":
                 if isinstance(param, str) and "=" in param:
@@ -93,7 +118,17 @@ class AgentePcExecutor:
             elif comando == "mouse_scroll":
                 pc_control_service.mouse_scroll(evento.payload.get("quantidade", 0))
             elif comando == "executar_macro":
-                pc_control_service.executar_macro(evento.payload.get("macro") or param)
+                macro_alvo = evento.payload.get("macro") or param
+                logger.info(f"⚡ [Agente PC] Disparando Macro: {macro_alvo}")
+                pc_control_service.executar_macro(macro_alvo)
+
+            # --- COMANDOS MÍDIA (DIRETO) ---
+            elif comando == "media_play_pause":
+                pc_control_service.executar_macro("media_play_pause")
+            elif comando == "media_next":
+                pc_control_service.executar_macro("media_next")
+            elif comando == "media_prev":
+                pc_control_service.executar_macro("media_prev")
 
             # --- COMANDOS SISTEMA ---
             elif comando == "abrir_app" or comando == "abrir_programa":
@@ -172,6 +207,10 @@ class AgentePcExecutor:
                 pc_control_service.dormir_pc()
             elif comando == "hibernar_pc":
                 pc_control_service.hibernar_pc()
+            elif comando == "desligar_pc":
+                pc_control_service.desligar_pc()
+            elif comando == "reiniciar_pc":
+                pc_control_service.reiniciar_pc()
             elif comando == "modo_imersao":
                 # Se não passar estado, assume True para ligar
                 estado = evento.payload.get("estado", True)

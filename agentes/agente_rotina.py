@@ -82,7 +82,7 @@ class AgenteRotina:
         if tipo == "PC_ACTIVITY" and evento.categoria == CategoriaEvento.PC_ACTIVITY:
             processo_gatilho = str(gatilho.get("processo")).lower()
             processo_evento = str(evento.payload.get("processo")).lower()
-            logger.info(f"🧪 [AgenteRotina] Comparando Gatilho '{processo_gatilho}' com Evento '{processo_evento}'")
+            logger.debug(f"🧪 [AgenteRotina] Comparando Gatilho '{processo_gatilho}' com Evento '{processo_evento}'")
             return processo_gatilho in processo_evento
             
         # Gatilho: Evento de Sistema (ex: PC_LOGIN)
