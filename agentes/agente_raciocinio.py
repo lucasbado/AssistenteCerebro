@@ -129,24 +129,28 @@ class AgenteRaciocinio:
                 param = str(exec_direta.get("parametro") or exec_direta.get("param") or exec_direta.get("value") or "").strip()
 
                 if not comando: continue
-                logger.info(f"⚡ [Raciocínio] Executando: {alvo} -> {comando}({param})")
+                
+                # 🚀 SUPORTE A MÚLTIPLOS ALVOS (Ex: "PC|MOBILE")
+                alvos = [a.strip() for a in alvo.split("|")]
+                
+                logger.info(f"⚡ [Raciocínio] Executando em {alvos}: {comando}({param})")
 
-                if alvo == "PC":
-                    # Encaminha comando para o executor do PC
-                    await kernel.publicar(EventoCanonico(
-                        categoria=CategoriaEvento.SISTEMA_COMANDO_PC, 
-                        acao=TipoAcao.NORMAL, 
-                        origem=OrigemEvento.IA,
-                        pacote="pc.master",
-                        payload={"comando": comando, "parametro": param}
-                    ))
-                elif alvo == "MOBILE":
-                    from api.websocket import central_alertas
-                    await central_alertas._broadcast({
-                        "tipo_ws": "COMANDO_SISTEMA", 
-                        "acao": comando.upper(), 
-                        "parametro": param
-                    })
+                for a in alvos:
+                    if a == "PC":
+                        await kernel.publicar(EventoCanonico(
+                            categoria=CategoriaEvento.SISTEMA_COMANDO_PC, 
+                            acao=TipoAcao.NORMAL, 
+                            origem=OrigemEvento.IA,
+                            pacote="pc.master",
+                            payload={"comando": comando, "parametro": param}
+                        ))
+                    elif a == "MOBILE":
+                        from api.websocket import central_alertas
+                        await central_alertas._broadcast({
+                            "tipo_ws": "COMANDO_SISTEMA", 
+                            "acao": comando.upper(), 
+                            "parametro": param
+                        })
 
             # 7. MEMÓRIA PERMANENTE (Obsidian)
             mem_obs = resultado.get("memoria_obsidian")

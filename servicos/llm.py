@@ -23,6 +23,9 @@ class ServicoLLM:
     def __init__(self):
         # Configuração para Groq (Cloud)
         self.api_key = os.getenv("GROQ_API_KEY")
+        # 🔒 SEMÁFORO: Evita que muitas requisições paralelas bombardeiem a API
+        self._limite_concorrencia = asyncio.Semaphore(2)
+        
         # 🚀 LISTA REAL DE MODELOS DISPONÍVEIS (Verificada via API)
         self.modelos_groq = [
             "groq/compound-mini",            # Top 1: Velocidade Máxima (Uso prioritário para evitar limites)
@@ -51,43 +54,44 @@ class ServicoLLM:
 
     async def _gerar_json(self, prompt: str, system: str) -> dict: 
         if self.api_key and self.client:
-            # 🚀 RODÍZIO INTELIGENTE DE MODELOS EM CASO DE RATE LIMIT
-            for i, modelo in enumerate(self.modelos_groq):
-                try:
-                    logger.info(f"🤖 [LLM] Tentando {modelo}...")
-                    chat_completion = await self.client.chat.completions.create(
-                        messages=[
-                            {"role": "system", "content": system},
-                            {"role": "user", "content": prompt},
-                        ],
-                        model=modelo,
-                        response_format={"type": "json_object"},
-                        temperature=0.1,
-                        timeout=40.0
-                    )
-                    self.modelo_atual = modelo
-                    return json.loads(chat_completion.choices[0].message.content)
-                except Exception as e:
-                    err_str = str(e).lower()
-                    if "429" in err_str or "rate_limit" in err_str:
-                        # 🧠 BACKOFF INTELIGENTE: Tenta extrair o tempo de espera da API
-                        wait_time = 2.0
-                        match = re.search(r"try again in (\d+m)?([\d.]+)s", err_str)
-                        if match:
-                            try:
-                                m, s = match.groups()
-                                m_val = int(m[:-1]) if m else 0
-                                s_val = float(s)
-                                wait_time = (m_val * 60) + s_val
-                                wait_time = min(wait_time + 0.5, 8.0) # Não trava o app, prefere trocar de modelo
-                            except: pass
-                        
-                        logger.warning(f"⚠️ [LLM] Limite em {modelo}. Aguardando {wait_time}s antes de trocar...")
-                        await asyncio.sleep(wait_time)
-                        continue
-                    else:
-                        logger.error(f"❌ [LLM] Falha no modelo {modelo}: {e}")
-                        continue 
+            async with self._limite_concorrencia:
+                # 🚀 RODÍZIO INTELIGENTE DE MODELOS EM CASO DE RATE LIMIT
+                for i, modelo in enumerate(self.modelos_groq):
+                    try:
+                        logger.info(f"🤖 [LLM] Tentando {modelo}...")
+                        chat_completion = await self.client.chat.completions.create(
+                            messages=[
+                                {"role": "system", "content": system},
+                                {"role": "user", "content": prompt},
+                            ],
+                            model=modelo,
+                            response_format={"type": "json_object"},
+                            temperature=0.1,
+                            timeout=40.0
+                        )
+                        self.modelo_atual = modelo
+                        return json.loads(chat_completion.choices[0].message.content)
+                    except Exception as e:
+                        err_str = str(e).lower()
+                        if "429" in err_str or "rate_limit" in err_str:
+                            # 🧠 BACKOFF INTELIGENTE: Tenta extrair o tempo de espera da API
+                            wait_time = 2.0
+                            match = re.search(r"try again in (\d+m)?([\d.]+)s", err_str)
+                            if match:
+                                try:
+                                    m, s = match.groups()
+                                    m_val = int(m[:-1]) if m else 0
+                                    s_val = float(s)
+                                    wait_time = (m_val * 60) + s_val
+                                    wait_time = min(wait_time + 0.5, 8.0) # Não trava o app, prefere trocar de modelo
+                                except: pass
+                            
+                            logger.warning(f"⚠️ [LLM] Limite em {modelo}. Aguardando {wait_time}s antes de trocar...")
+                            await asyncio.sleep(wait_time)
+                            continue
+                        else:
+                            logger.error(f"❌ [LLM] Falha no modelo {modelo}: {e}")
+                            continue 
             
             raise ValueError("Ollie esgotou todas as cotas diárias em todos os modelos.")
             
@@ -98,7 +102,7 @@ class ServicoLLM:
         else:
             raise ValueError("IA Indisponível.")
 
-    async def classificar_evento(self, categoria: str, pacote: str, payload: dict, historico: list[str] | None = None, timestamp_dispositivo: datetime | None = None, conhecimento: str = "", habitos: str = "") -> dict:
+    async def classificar_evento(self, categoria: str, pacote: str, payload: dict, historico: list[str] | None = None, timestamp_dispositivo: datetime | None = None, knowledge: str = "", habits: str = "") -> dict:
         agora_dt = timestamp_dispositivo or datetime.now()
         agora = agora_dt.strftime("%H:%M")
         hora = agora_dt.hour
@@ -118,8 +122,8 @@ FOCO: AÇÃO DIRETA. Max 2 frases.
 ### CONTEXTO:
 - Período: {periodo} ({agora})
 - Ambiente: {resumo_ambiente}
-- Obsidian: {conhecimento}
-- Hábitos: {habitos}
+- Obsidian: {knowledge}
+- Hábitos: {habits}
 {instrucoes_docs}
 
 ### RESPOSTA (JSON):

@@ -364,6 +364,15 @@ class PcControlService:
     def desligar_pc(self): os.system("shutdown /s /t 60")
     def reiniciar_pc(self): os.system("shutdown /r /t 60")
 
+    def encerrar(self):
+        """Finaliza conexões de hardware."""
+        if self.vm:
+            try:
+                self.vm.logout()
+                logger.info("[PCControl] Voicemeeter desconectado.")
+            except: pass
+        self.vm = None
+
     def executar_macro(self, macro_key):
         keys = self.macros.get(macro_key)
         if not keys or not pyautogui:
