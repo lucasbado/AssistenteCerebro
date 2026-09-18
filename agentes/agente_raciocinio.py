@@ -152,11 +152,14 @@ class AgenteRaciocinio:
                             "parametro": param
                         })
 
-            # 7. MEMÓRIA PERMANENTE (Obsidian)
+            # 7. MEMÓRIA PERMANENTE (Obsidian - Scavenger Protocol)
             mem_obs = resultado.get("memoria_obsidian")
             if mem_obs and isinstance(mem_obs, dict):
-                titulo, fato = mem_obs.get("titulo"), mem_obs.get("fato")
-                if titulo and fato: obsidian_service.registrar_fato(titulo, fato)
+                titulo = str(mem_obs.get("titulo", "Aprendizado")).strip()
+                fato = str(mem_obs.get("fato", "")).strip()
+                if titulo and fato:
+                    logger.info(f"🧠 [Aprendizado] Registrando novo fato no Obsidian [{titulo}]: {fato[:50]}...")
+                    obsidian_service.registrar_fato(titulo, fato)
 
         except Exception as e:
             logger.error(f"💥 Erro no Raciocínio: {e}")

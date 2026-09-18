@@ -1,24 +1,32 @@
-# Walkthrough: Correção de Erros de Comunicação e Validação
+# Walkthrough: O Nascimento da Consciência Adaptativa
 
-Corrigi os erros críticos que estavam impedindo a Ollie de "pensar" corretamente e que causavam falhas na geração da tela inicial do aplicativo.
+Liberei a Ollie de suas amarras de "chatbot programado" e a transformei em uma inteligência que aprende quem você é através da convivência, com um tom de voz muito mais natural e humano.
 
 ## Alterações Realizadas
 
-### 1. API: Sincronização de Estrutura (Bento Home)
-Corrigi um erro de validação no [servico.py](file:///D:/Programacao/AssistenteCell/api/servico.py).
-- **O problema**: As sugestões de rotina estavam sendo enviadas sem o "embrulho" (wrapper) necessário, o que fazia o servidor rejeitar os dados.
-- **A solução**: Agora os cards de sugestão são criados usando o `SugestaoRegraWrapper`, garantindo que o aplicativo Android receba os dados no formato exato que ele espera.
+### 1. Protocolo "Fact Scavenger" (Cérebro)
+Atualizei as instruções mestre no [llm.py](file:///D:/Programacao/AssistenteCell/servicos/llm.py).
+- **Missão de Aprendizado**: A Ollie agora tem o dever de identificar informações pessoais, profissionais e de preferência durante a conversa.
+- **Memória Permanente**: Ela foi instruída a retornar esses fatos em um campo específico do seu pensamento (`memoria_obsidian`).
+- **Personalidade Natural**: Removi a obrigatoriedade de usar gírias em todas as frases. Agora ela usa gírias como uma pessoa normal: apenas quando o momento pede.
 
-### 2. Agentes: Correção na Chamada da IA
-Resolvi o erro de parâmetro no [agente_raciocinio.py](file:///D:/Programacao/AssistenteCell/agentes/agente_raciocinio.py).
-- **O problema**: O agente tentava passar informações de `conhecimento` e `habitos` para a IA, mas o motor da Ollie só reconhecia esses campos em inglês (`knowledge` e `habits`).
-- **A solução**: Renomeei os argumentos da função para alinhar com o serviço de LLM, restaurando a capacidade de raciocínio da Ollie sobre o seu contexto.
+### 2. Orquestração de Memória (Agentes)
+Refinei o [agente_raciocinio.py](file:///D:/Programacao/AssistenteCell/agentes/agente_raciocinio.py) para materializar os aprendizados.
+- **Categorização Automática**: Quando a Ollie "pesca" um fato, o agente agora consegue salvá-lo nas categorias certas dentro do seu Obsidian (Identidade, Gostos ou Rotinas), mantendo seu banco de conhecimento organizado sem você precisar mover um dedo.
+
+### 3. Reset de Identidade Digital
+Limpei as definições rígidas na nota [Identidade.md](file:///D:/Programacao/AssistenteCell/Ollie/Identidade.md).
+- **Tábula Rasa**: Removi o "personagem" pré-configurado. A nota agora serve como um diário de bordo onde a Ollie vai escrever o que descobrir sobre você.
 
 ## Como Validar
 
-1.  **Suba as alterações para o GitHub** para disparar o deploy no Render.
-2.  **Abra o Aplicativo**: Verifique se os cards de sugestão voltaram a aparecer na Home.
-3.  **Mande uma mensagem**: Confirme que a Ollie responde normalmente no chat, sem gerar erros de "unexpected keyword argument" no log do servidor.
+1.  **Reinicie o `main.py`** para carregar o novo protocolo.
+2.  **Conte algo novo**: Diga algo como "Ollie, meu nome é Lucas, eu sou desenvolvedor e odeio quando o servidor cai."
+3.  **Verifique o Obsidian**: Abra a nota `Identidade.md` ou olhe na pasta `Agente/`. Você deve ver a Ollie registrando esses fatos.
+4.  **Observe a Fala**: Note que ela parou de começar as frases com "Vish" ou "Bora" de forma robótica. O tom agora será muito mais parceiro.
+
+> [!TIP]
+> Quanto mais você conversar naturalmente, mais rápido a Ollie vai "se moldar" ao seu estilo e entender suas necessidades.
 
 > [!IMPORTANT]
-> Essas mudanças removem os principais bloqueios de estabilidade do servidor cloud observados nos logs recentes.
+> A Ollie agora tem iniciativa. Se você contar um plano ou projeto, ela pode sugerir rotinas baseadas nisso nos próximos dias.
