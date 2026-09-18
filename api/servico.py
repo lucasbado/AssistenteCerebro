@@ -90,14 +90,15 @@ class ServicoHome:
                     try:
                         conteudo = sug["conteudo"]
                         if sug["tipo"] == "sugestao_regra":
-                            cards.append(SugestaoRegraCard(conteudo=SugestaoRegraContent(
+                            rule_content = SugestaoRegraContent(
                                 nome=str(conteudo.get("nome", "Nova Rotina")),
                                 skill_id=str(conteudo["skill_id"]),
                                 trigger_package=str(conteudo["trigger_package"]),
                                 action_type=str(conteudo["action_type"]),
                                 action_parameter=str(conteudo["action_parameter"]),
                                 justificativa=str(conteudo.get("justificativa", ""))
-                            )))
+                            )
+                            cards.append(SugestaoRegraCard(conteudo=SugestaoRegraWrapper(sugestao_regra=rule_content)))
                         elif sug["tipo"] == "insight":
                              cards.append(InsightCard(conteudo=InsightContent(
                                  title=str(conteudo.get("title", "Destaque")),

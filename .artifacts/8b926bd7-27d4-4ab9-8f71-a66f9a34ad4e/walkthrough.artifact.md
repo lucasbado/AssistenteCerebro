@@ -1,32 +1,24 @@
-# Walkthrough: Sistema Otimizado e Estável
+# Walkthrough: Correção de Erros de Comunicação e Validação
 
-Implementei uma série de otimizações em todo o ecossistema (PC, Celular e Nuvem) para garantir que a Ollie funcione de forma rápida, estável e sem sobrecarregar as APIs de Inteligência Artificial.
+Corrigi os erros críticos que estavam impedindo a Ollie de "pensar" corretamente e que causavam falhas na geração da tela inicial do aplicativo.
 
-## Melhorias Implementadas
+## Alterações Realizadas
 
-### 1. Estabilidade de Conexão no PC
-Refinei como o computador se comunica com a nuvem para evitar quedas constantes:
-- **Redução de "Spam"**: O PC agora envia o status de hardware a cada **15 segundos** (era 5s) e checa a janela ativa a cada **3 segundos** (era 1s). Isso reduz drasticamente o tráfego de rede e o estresse na CPU.
-- **Reconexão Inteligente**: Melhorei a lógica do WebSocket no Tauri para evitar tentativas de conexões duplicadas. O tempo de espera em caso de queda agora é de **10 segundos**, dando tempo para a rede estabilizar.
+### 1. API: Sincronização de Estrutura (Bento Home)
+Corrigi um erro de validação no [servico.py](file:///D:/Programacao/AssistenteCell/api/servico.py).
+- **O problema**: As sugestões de rotina estavam sendo enviadas sem o "embrulho" (wrapper) necessário, o que fazia o servidor rejeitar os dados.
+- **A solução**: Agora os cards de sugestão são criados usando o `SugestaoRegraWrapper`, garantindo que o aplicativo Android receba os dados no formato exato que ele espera.
 
-### 2. Filtro de Dados no Celular (Android)
-O aplicativo mobile agora é muito mais consciente:
-- **Snapshot Inteligente**: A Ollie só envia uma "foto" do contexto do seu PC para o cérebro se houver uma mudança real (ex: CPU saltar mais de 10%) ou após **60 segundos**. Isso evita gastar tokens da IA com informações repetidas.
-- **Polling Local Suave**: A busca local por áudio (Voicemeeter via UDP) agora acontece a cada **10 segundos**, economizando bateria.
-
-### 3. Cérebro de Alta Velocidade (Python Server)
-Otimizei como a Ollie escolhe qual modelo de IA usar:
-- **Prioridade para Modelos Velozes**: Coloquei o `groq/compound-mini` como primeira opção em caso de sobrecarga. Ele é extremamente rápido e tem limites de requisição muito altos, o que resolve os erros de `429 Too Many Requests`.
-- **Gestão de Link Master**: O servidor agora lida melhor com pequenas oscilações do PC Master, evitando derrubar o link desnecessariamente.
+### 2. Agentes: Correção na Chamada da IA
+Resolvi o erro de parâmetro no [agente_raciocinio.py](file:///D:/Programacao/AssistenteCell/agentes/agente_raciocinio.py).
+- **O problema**: O agente tentava passar informações de `conhecimento` e `habitos` para a IA, mas o motor da Ollie só reconhecia esses campos em inglês (`knowledge` e `habits`).
+- **A solução**: Renomeei os argumentos da função para alinhar com o serviço de LLM, restaurando a capacidade de raciocínio da Ollie sobre o seu contexto.
 
 ## Como Validar
 
-1.  **Monitoramento**: Observe os logs do terminal. As mensagens de status do PC devem aparecer com menos frequência agora.
-2.  **Velocidade de Resposta**: Peça algo para a Ollie. A resposta deve ser mais rápida, pois o cérebro não está sendo bombardeado por atualizações de hardware constantes.
-3.  **Deploy no Render**: Verifique o painel do Render. As quedas e erros de limite de cota devem desaparecer.
-
-> [!TIP]
-> Com essas mudanças, o sistema deve consumir menos energia tanto no seu PC quanto no seu celular, mantendo a inteligência sempre pronta.
+1.  **Suba as alterações para o GitHub** para disparar o deploy no Render.
+2.  **Abra o Aplicativo**: Verifique se os cards de sugestão voltaram a aparecer na Home.
+3.  **Mande uma mensagem**: Confirme que a Ollie responde normalmente no chat, sem gerar erros de "unexpected keyword argument" no log do servidor.
 
 > [!IMPORTANT]
-> Lembre-se de reiniciar o `main.py` e o aplicativo do PC (`npm run tauri dev`) para carregar os novos intervalos de atualização.
+> Essas mudanças removem os principais bloqueios de estabilidade do servidor cloud observados nos logs recentes.

@@ -78,8 +78,8 @@ class AgenteRaciocinio:
                 payload=evento.payload,
                 historico=historico,
                 timestamp_dispositivo=evento.timestamp,
-                conhecimento=conhecimento_atual,
-                habitos=habitos_str
+                knowledge=conhecimento_atual,
+                habits=habitos_str
             )
 
             # 🚀 EXTRAÇÃO ROBUSTA (SCAVENGER)

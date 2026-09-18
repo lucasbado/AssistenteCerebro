@@ -1,39 +1,28 @@
-# Plano de Implementação: Otimização de Latência e Correção de Repetição (Ollie Assist)
+# Plano de Implementação: Correção de Erros de Validação e Chamada de IA
 
-Este plano visa reduzir drasticamente a latência das respostas por voz, corrigir o problema de comandos ignorados via botão de assistência e eliminar a repetição de fala/notificações.
+Este plano visa corrigir dois erros críticos detectados nos logs do Render após o último deploy: um erro de validação de dados (Pydantic) ao gerar a tela inicial e um erro de tipagem na chamada do serviço de Inteligência Artificial.
 
 ## User Review Required
 
 > [!IMPORTANT]
-> Mudaremos a comunicação da sessão de voz de **HTTP** para **WebSocket**. Isso eliminará o tempo de abertura de conexão em cada frase. Também sincronizaremos o estado da sessão para que o serviço de background não "atropele" a fala da tela ativa.
+> As correções são puramente de lógica interna e não alteram o comportamento esperado do sistema, apenas restauram a funcionalidade que estava quebrada por incompatibilidade de nomes de parâmetros e estruturas de dados.
 
 ## Proposed Changes
 
-### 1. Estado de Sessão (Android)
-#### [MODIFY] [ChatBridge.kt](file:///D:/Programacao/Projetos/AssistenteCell/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt)
-- Adicionar um `MutableStateFlow` chamado `isAssistantSessionActive` para que o App saiba quando a interface de voz está aberta.
+### 1. Correção de Validação na Home (API)
+#### [MODIFY] [servico.py](file:///D:/Programacao/AssistenteCell/api/servico.py)
+- No loop de `sugestoes_descubertas`, garantir que o conteúdo do card de regra seja envolvido pelo `SugestaoRegraWrapper`, conforme exigido pelo DTO `SugestaoRegraCard`. Isso resolve o `ValidationError`.
 
-### 2. Redução de Latência e Fix de Comandos (Android)
-#### [MODIFY] [OllieSession.kt](file:///D:/Programacao/Projetos/AssistenteCell/app/src/main/java/com/example/assistentecell/assistant/OllieSession.kt)
-- Alterar `sendToBrain` para usar `ListenerDeNotificacoes.enviarMensagemWebSocket` em vez de OkHttp.
-- Enviar com o tipo `CHAT_MESSAGE`, garantindo que o servidor processe como comando de voz.
-- Atualizar `isAssistantSessionActive` no `onShow` e `onHide`.
-
-### 3. Fim da Repetição (Android)
-#### [MODIFY] [ListenerDeNotificacoes.kt](file:///D:/Programacao/Projetos/AssistenteCell/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt)
-- Antes de executar `voiceManager?.speak`, verificar se `ChatBridge.isAssistantSessionActive` é falso.
-- Se a sessão estiver ativa, o serviço de background apenas posta a mensagem no bridge (para aparecer na tela), mas **não fala e não cria notificação**, deixando essa tarefa para a `OllieSession`.
-
-### 4. Refinamento de Comandos (Backend)
-#### [MODIFY] [agente_pc_executor.py](file:///D:/Programacao/AssistenteCell/agentes/agente_pc_executor.py)
-- Garantir que a origem `ANDROID_VOICE_ASSIST` (e agora `ANDROID` via WS) seja aceita para todos os comandos de sistema e hardware.
+### 2. Sincronização de Parâmetros da IA (Agentes)
+#### [MODIFY] [agente_raciocinio.py](file:///D:/Programacao/AssistenteCell/agentes/agente_raciocinio.py)
+- Ajustar os nomes dos argumentos na chamada `self.llm.classificar_evento`:
+  - `conhecimento` -> `knowledge`
+  - `habitos` -> `habits`
+- Isso resolve o erro `TypeError: got an unexpected keyword argument 'conhecimento'`.
 
 ## Verification Plan
 
-### Testes de Latência
-1. Acionar a Ollie por voz e verificar se o log do servidor mostra o recebimento instantâneo (via WS).
-2. Medir o tempo de resposta percebido.
-
-### Testes de Fluxo
-1. Confirmar que a Ollie fala apenas UMA vez quando a tela está aberta.
-2. Confirmar que comandos como "abrir vscode" funcionam via botão de assistência.
+### Testes de Estabilidade
+1. Monitorar o log do Render após o novo deploy.
+2. Confirmar que as mensagens de `ERROR:api.servico` e `ERROR:AgenteRaciocinio` pararam de aparecer.
+3. Verificar no aplicativo se os cards de "Sugestão de Rotina" voltaram a aparecer na Home.
