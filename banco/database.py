@@ -5,8 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+is_render = os.getenv("RENDER", "False").lower() == "true" or os.name != "nt"
+default_sqlite = "sqlite+aiosqlite:///agente_local.db" if is_render else "sqlite+aiosqlite:///D:/Programacao/AssistenteCell/agente_local.db"
+
 # Prioriza a URL da nuvem (Neon.tech/Postgres), senão usa SQLite local
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///D:/Programacao/AssistenteCell/agente_local.db")
+DATABASE_URL = os.getenv("DATABASE_URL", default_sqlite)
 
 def _criar_motor(url: str):
     connect_args = {}
@@ -59,10 +62,10 @@ async def inicializar_banco():
         print(f"\n[AVISO CRÍTICO] Falha ao conectar ao banco remoto PostgreSQL ({e}).")
         print("[AVISO CRÍTICO] O projeto excedeu a cota ou está sem conexão. Realizando fallback automático para SQLite local...\n")
         
-        fallback_url = "sqlite+aiosqlite:///D:/Programacao/AssistenteCell/agente_local.db"
+        fallback_url = default_sqlite
         async_engine = _criar_motor(fallback_url)
         AsyncSessionLocal.configure(bind=async_engine)
         
         async with async_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        print("[SUCESSO] Fallback para SQLite local (`agente_local.db`) ativado com sucesso!\n")
+        print("[SUCESSO] Fallback para SQLite local ativado com sucesso!\n")
