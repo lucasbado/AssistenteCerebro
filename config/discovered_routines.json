@@ -6945,5 +6945,101 @@
             }
         ],
         "ativa": true
+    },
+    {
+        "nome": "Desenho Instant\u00e2neo",
+        "justificativa": "Ao abrir o Google Assistente, o usu\u00e1rio costuma iniciar rapidamente o Sketchbook para rabiscar ideias; a rotina automatiza essa transi\u00e7\u00e3o, economizando tempo e mantendo o fluxo criativo",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.googlequicksearchbox"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.adsk.sketchbook"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "AfterNuToInsta",
+        "justificativa": "Abre o Instagram logo ap\u00f3s usar o Nu Production, facilitando acesso r\u00e1pido ao conte\u00fado visual relacionado",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.nu.production"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Chrome\u2192Opera",
+        "justificativa": "Abre o Opera logo ap\u00f3s o Chrome para facilitar a troca de navegadores",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "PC",
+                "comando": "EXECUTE",
+                "parametro": "opera.exe"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Sketch ap\u00f3s Assistente",
+        "justificativa": "Abre o Sketchbook automaticamente ao encerrar a intera\u00e7\u00e3o com o Google Assistente, facilitando a transi\u00e7\u00e3o para a criatividade.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.googlequicksearchbox"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "launch_app",
+                "parametro": "com.adsk.sketchbook"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Nu2Insta",
+        "justificativa": "Detecta a abertura do Nu Production e, como o usu\u00e1rio costuma abrir o Instagram logo em seguida, lan\u00e7a o app para facilitar o compartilhamento imediato",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.nu.production"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Chrome\u2192Opera",
+        "justificativa": "Abre o Opera automaticamente logo ap\u00f3s o Chrome, facilitando a transi\u00e7\u00e3o entre navegadores para quem costuma usar ambos em sequ\u00eancia",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "PC",
+                "comando": "EXECUTE",
+                "parametro": "opera.exe"
+            }
+        ],
+        "ativa": false
     }
 ]

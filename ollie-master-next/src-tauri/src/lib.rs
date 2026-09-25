@@ -88,9 +88,9 @@ async fn minimize_window(app_handle: AppHandle) {
 
 #[tauri::command]
 fn get_cloud_url() -> String {
-    // Tenta ler do .env na raiz do ecossistema (2 níveis acima do src-tauri)
-    dotenvy::from_path("../../.env").ok();
-    std::env::var("OLLIE_CLOUD_URL").unwrap_or_else(|_| "ws://localhost:8000/api/v1/ws/alertas".to_string())
+    // Tenta ler do .env na raiz do ecossistema (3 níveis acima: src-tauri/src -> src-tauri -> ollie-master-next -> raiz)
+    dotenvy::from_path("../../../.env").ok();
+    std::env::var("OLLIE_CLOUD_URL").unwrap_or_else(|_| "wss://assistentecellfront.onrender.com/api/v1/ws/alertas".to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
