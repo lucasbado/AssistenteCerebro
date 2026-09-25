@@ -16,16 +16,7 @@ from servicos.routine_discovery_service import routine_discovery_service
 from .dto import (
     HomeDTO,
     ApiWeather,
-    AnyCard,
-    ApiRecommendation,
-    BoasVindasCard, BoasVindasContent,
-    ResumoCognitivoCard, ResumoCognitivoContent,
-    InsightCard, InsightContent,
-    DicaCard, DicaContent,
-    PiadaCard, PiadaContent,
-    SugestaoRegraCard, SugestaoRegraContent, SugestaoRegraWrapper,
-    TimelineCard, TimelineContent,
-    StatusLLMCard
+    AnyCard
 )
 
 class ServicoHome:
@@ -81,8 +72,8 @@ class ServicoHome:
                 safe_task(routine_discovery_service.discover_suggestions(min_confidence=0.85), "discovery")
             )
 
-            # 2. Monta a lista de cards dinamicamente
-            cards: list[AnyCard] = []
+            # 2. Monta a lista de cards dinamicamente (Usando dicionários para resiliência do Pydantic)
+            cards: list[dict] = []
 
             # Adiciona sugestões descobertas automaticamente se houver
             if sugestoes_descubertas:
@@ -90,20 +81,27 @@ class ServicoHome:
                     try:
                         conteudo = sug["conteudo"]
                         if sug["tipo"] == "sugestao_regra":
-                            rule_content = SugestaoRegraContent(
-                                nome=str(conteudo.get("nome", "Nova Rotina")),
-                                skill_id=str(conteudo["skill_id"]),
-                                trigger_package=str(conteudo["trigger_package"]),
-                                action_type=str(conteudo["action_type"]),
-                                action_parameter=str(conteudo["action_parameter"]),
-                                justificativa=str(conteudo.get("justificativa", ""))
-                            )
-                            cards.append(SugestaoRegraCard(conteudo=SugestaoRegraWrapper(sugestao_regra=rule_content)))
+                            cards.append({
+                                "tipo": "sugestao_regra",
+                                "conteudo": {
+                                    "sugestao_regra": {
+                                        "nome": str(conteudo.get("nome", "Nova Rotina")),
+                                        "skill_id": str(conteudo["skill_id"]),
+                                        "trigger_package": str(conteudo["trigger_package"]),
+                                        "action_type": str(conteudo["action_type"]),
+                                        "action_parameter": str(conteudo["action_parameter"]),
+                                        "justificativa": str(conteudo.get("justificativa", ""))
+                                    }
+                                }
+                            })
                         elif sug["tipo"] == "insight":
-                             cards.append(InsightCard(conteudo=InsightContent(
-                                 title=str(conteudo.get("title", "Destaque")),
-                                 text=str(conteudo.get("text", ""))
-                             )))
+                             cards.append({
+                                 "tipo": "insight",
+                                 "conteudo": {
+                                     "title": str(conteudo.get("title", "Destaque")),
+                                     "text": str(conteudo.get("text", ""))
+                                 }
+                             })
                     except Exception as e:
                         logger.error(f"Erro ao converter sugestão descoberta: {e}")
 
@@ -115,85 +113,95 @@ class ServicoHome:
                         raw_conteudo = card_data.get("conteudo")
                         if not raw_conteudo or not isinstance(raw_conteudo, dict): continue
                         
-                        # Suporte a campos alternativos ou aninhamento excessivo vindo da LLM
                         conteudo = raw_conteudo.get("conteudo", raw_conteudo) if isinstance(raw_conteudo.get("conteudo"), dict) else raw_conteudo
 
                         if tipo == "insight":
                             text = conteudo.get("text") or conteudo.get("texto")
                             if text:
-                                cards.append(InsightCard(conteudo=InsightContent(
-                                    title=str(conteudo.get("title") or conteudo.get("titulo") or "Insight"),
-                                    text=str(text)
-                                )))
+                                cards.append({
+                                    "tipo": "insight",
+                                    "conteudo": {
+                                        "title": str(conteudo.get("title") or conteudo.get("titulo") or "Insight"),
+                                        "text": str(text)
+                                    }
+                                })
                         elif tipo == "dica":
                             text = conteudo.get("text") or conteudo.get("texto")
                             if text:
-                                cards.append(DicaCard(conteudo=DicaContent(
-                                    title=str(conteudo.get("title") or conteudo.get("titulo") or "Dica do Dia"),
-                                    text=str(text)
-                                )))
+                                cards.append({
+                                    "tipo": "dica",
+                                    "conteudo": {
+                                        "title": str(conteudo.get("title") or conteudo.get("titulo") or "Dica do Dia"),
+                                        "text": str(text)
+                                    }
+                                })
                         elif tipo == "piada":
                             text = conteudo.get("text") or conteudo.get("texto")
                             if text:
-                                cards.append(PiadaCard(conteudo=PiadaContent(
-                                    title=str(conteudo.get("title") or conteudo.get("titulo") or "Humor"),
-                                    text=str(text)
-                                )))
+                                cards.append({
+                                    "tipo": "piada",
+                                    "conteudo": {
+                                        "title": str(conteudo.get("title") or conteudo.get("titulo") or "Humor"),
+                                        "text": str(text)
+                                    }
+                                })
                         elif tipo == "sugestao_regra":
-                            # Validação rigorosa para evitar ValidationError do Pydantic
                             campos_obrigatorios = ["skill_id", "trigger_package", "action_type", "action_parameter"]
                             if all(k in conteudo for k in campos_obrigatorios):
-                                rule_content = SugestaoRegraContent(
-                                    nome=str(conteudo.get("nome", "Nova Rotina")),
-                                    skill_id=str(conteudo["skill_id"]),
-                                    trigger_package=str(conteudo["trigger_package"]),
-                                    action_type=str(conteudo["action_type"]),
-                                    action_parameter=str(conteudo["action_parameter"]),
-                                    justificativa=str(conteudo.get("justificativa", ""))
-                                )
-                                cards.append(SugestaoRegraCard(conteudo=SugestaoRegraWrapper(sugestao_regra=rule_content)))
-                            else:
-                                logger.warning(f"Card sugestao_regra malformado (hallucination) ignorado: {conteudo}")
+                                cards.append({
+                                    "tipo": "sugestao_regra",
+                                    "conteudo": {
+                                        "sugestao_regra": {
+                                            "nome": str(conteudo.get("nome", "Nova Rotina")),
+                                            "skill_id": str(conteudo["skill_id"]),
+                                            "trigger_package": str(conteudo["trigger_package"]),
+                                            "action_type": str(conteudo["action_type"]),
+                                            "action_parameter": str(conteudo["action_parameter"]),
+                                            "justificativa": str(conteudo.get("justificativa", ""))
+                                        }
+                                    }
+                                })
                     except Exception as e:
                         logger.error(f"Erro ao processar card dinâmico {card_data.get('tipo')}: {e}")
             
-            # Fallback para o resumo comportamental antigo se não houver cards novos
+            # Fallback para o resumo comportamental antigo
             if not cards and perfil_cognitivo and hasattr(perfil_cognitivo, "resumo_comportamental") and perfil_cognitivo.resumo_comportamental != "N/A":
-                cards.append(
-                    InsightCard(
-                        conteudo=InsightContent(
-                            title="Resumo",
-                            text=str(perfil_cognitivo.resumo_comportamental)
-                        )
-                    )
-                )
+                cards.append({
+                    "tipo": "insight",
+                    "conteudo": {
+                        "title": "Resumo",
+                        "text": str(perfil_cognitivo.resumo_comportamental)
+                    }
+                })
 
             # Card de Timeline
             if timeline and hasattr(timeline, "eventos") and timeline.eventos:
                 try:
-                    cards.append(TimelineCard(conteudo=TimelineContent(eventos=timeline.eventos[:3])))
+                    cards.append({
+                        "tipo": "timeline",
+                        "conteudo": { "eventos": timeline.eventos[:3] }
+                    })
                 except Exception as e:
                     logger.error(f"Erro ao adicionar card de timeline: {e}")
 
-            # 2.2. Card de Status do Sistema
+            # Card de Status do Sistema
             if status_sistema and hasattr(status_sistema, "llm") and status_sistema.llm:
                 try:
-                    cards.append(StatusLLMCard(conteudo=status_sistema.llm))
+                    cards.append({
+                        "tipo": "status_llm",
+                        "conteudo": status_sistema.llm
+                    })
                 except Exception as e:
                     logger.error(f"Erro ao adicionar card de status LLM: {e}")
 
-            # 2.1. Lógica de "Boas-Vindas" para novos usuários
+            # Lógica de Boas-Vindas
             if not cards:
-                cards.append(
-                    BoasVindasCard(
-                        conteudo=BoasVindasContent(
-                            titulo="Bem-vindo ao Ollie!",
-                            texto="Comece a usar seu celular e em breve terei sugestões para você."
-                        )
-                    )
-                )
+                cards.append({
+                    "tipo": "boas_vindas",
+                    "conteudo": { "titulo": "Bem-vindo ao Ollie!", "texto": "Comece a usar seu celular e em breve terei sugestões para você." }
+                })
 
-            # 3. Monta o DTO final da Home
+            # 3. Monta o DTO final da Home (O Pydantic validará a lista de dicts contra o AnyCard)
             return HomeDTO(
                 saudacao=self._gerar_saudacao(),
                 clima=weather_dto,
@@ -204,7 +212,7 @@ class ServicoHome:
             return HomeDTO(
                 saudacao="Olá (Modo de Segurança)",
                 clima=None,
-                cards=[BoasVindasCard(conteudo=BoasVindasContent(titulo="Erro no Servidor", texto="Ocorreu um erro ao carregar os dados. Verifique a conexão."))]
+                cards=[{ "tipo": "boas_vindas", "conteudo": { "titulo": "Erro no Servidor", "texto": "Ocorreu um erro ao carregar os dados." } }]
             )
 
 servico_home = ServicoHome()

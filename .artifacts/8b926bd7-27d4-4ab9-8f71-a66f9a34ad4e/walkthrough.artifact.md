@@ -1,32 +1,27 @@
-# Walkthrough: O Nascimento da Consciência Adaptativa
+# Walkthrough: Correção de Estabilidade e Validação
 
-Liberei a Ollie de suas amarras de "chatbot programado" e a transformei em uma inteligência que aprende quem você é através da convivência, com um tom de voz muito mais natural e humano.
+Corrigi os bugs críticos detectados no aplicativo de PC (Tauri/React) e no servidor (API Python), garantindo que o sistema funcione de forma estável e as informações da Home carreguem sem erros.
 
-## Alterações Realizadas
+## Correções Realizadas
 
-### 1. Protocolo "Fact Scavenger" (Cérebro)
-Atualizei as instruções mestre no [llm.py](file:///D:/Programacao/AssistenteCell/servicos/llm.py).
-- **Missão de Aprendizado**: A Ollie agora tem o dever de identificar informações pessoais, profissionais e de preferência durante a conversa.
-- **Memória Permanente**: Ela foi instruída a retornar esses fatos em um campo específico do seu pensamento (`memoria_obsidian`).
-- **Personalidade Natural**: Removi a obrigatoriedade de usar gírias em todas as frases. Agora ela usa gírias como uma pessoa normal: apenas quando o momento pede.
+### 1. Interface do PC (React/Tauri)
+Resolvi o erro `Uncaught ReferenceError: unlistenHardware is not defined` que causava o travamento do aplicativo.
+- **Gerenciamento de Escopo**: Movi os listeners de eventos do Rust para o topo do `useEffect` e usei a declaração `let`. Isso garante que a função de limpeza (cleanup) do React sempre consiga acessar as referências para desinscrever os eventos ao fechar o app, evitando vazamentos de memória e erros de execução.
+- **Confirmação de Registro**: Adicionei um novo tipo de mensagem `REGISTRO_OK`. Agora, quando o PC se conecta à nuvem, ele recebe uma confirmação visual: `✅ Autenticação confirmada pelo cérebro`.
 
-### 2. Orquestração de Memória (Agentes)
-Refinei o [agente_raciocinio.py](file:///D:/Programacao/AssistenteCell/agentes/agente_raciocinio.py) para materializar os aprendizados.
-- **Categorização Automática**: Quando a Ollie "pesca" um fato, o agente agora consegue salvá-lo nas categorias certas dentro do seu Obsidian (Identidade, Gostos ou Rotinas), mantendo seu banco de conhecimento organizado sem você precisar mover um dedo.
-
-### 3. Reset de Identidade Digital
-Limpei as definições rígidas na nota [Identidade.md](file:///D:/Programacao/AssistenteCell/Ollie/Identidade.md).
-- **Tábula Rasa**: Removi o "personagem" pré-configurado. A nota agora serve como um diário de bordo onde a Ollie vai escrever o que descobrir sobre você.
+### 2. Estabilidade da API (Python/Pydantic)
+Corrigi os erros de validação (`ValidationError`) que impediam a Home de mostrar as sugestões da Ollie.
+- **Dicionários Resilientes**: Em vez de instanciar classes complexas manualmente dentro de loops, agora passamos dicionários puros para a lista de cards. O Pydantic realiza a conversão automática para os modelos corretos ao gerar a resposta final. Isso resolveu o erro onde a IA tentava colocar um "conteúdo" dentro de outro indevidamente.
+- **Roteamento de WebSocket**: Melhorei o gerenciamento de conexões duplicadas. O servidor agora finaliza sessões antigas de forma graciosa antes de aceitar uma nova, eliminando as mensagens de erro constantes no log do Render.
 
 ## Como Validar
 
-1.  **Reinicie o `main.py`** para carregar o novo protocolo.
-2.  **Conte algo novo**: Diga algo como "Ollie, meu nome é Lucas, eu sou desenvolvedor e odeio quando o servidor cai."
-3.  **Verifique o Obsidian**: Abra a nota `Identidade.md` ou olhe na pasta `Agente/`. Você deve ver a Ollie registrando esses fatos.
-4.  **Observe a Fala**: Note que ela parou de começar as frases com "Vish" ou "Bora" de forma robótica. O tom agora será muito mais parceiro.
+1.  **Reinicie o `main.py`** e faça o deploy no Render (via Git Push).
+2.  **Abra o App do PC**: Verifique se o log mostra a mensagem de sucesso na conexão e se os medidores de CPU/RAM estão pulsando.
+3.  **Abra o Android**: Verifique se os cards de "Sugestão de Rotina" e "Insights" voltaram a aparecer na tela inicial sem erros.
 
 > [!TIP]
-> Quanto mais você conversar naturalmente, mais rápido a Ollie vai "se moldar" ao seu estilo e entender suas necessidades.
+> A latência de reconexão do PC Master foi aumentada para 10 segundos, o que torna o link muito mais estável em redes oscilantes.
 
 > [!IMPORTANT]
-> A Ollie agora tem iniciativa. Se você contar um plano ou projeto, ela pode sugerir rotinas baseadas nisso nos próximos dias.
+> Se você ver `Waiting for application startup`, aguarde a conclusão do Scan Neural (que agora loga o número exato de apps encontrados) antes de enviar comandos.

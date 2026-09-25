@@ -1,32 +1,34 @@
-# Plano de Implementação: Aprendizado de Identidade e Naturalidade
+# Plano de Implementação: Correção de Bugs de Interface e Validação
 
-Este plano visa transformar a Ollie em uma assistente que evolui sua percepção sobre o usuário (**Lucas**) organicamente através do uso, além de tornar sua fala mais humana e estratégica, eliminando vícios de linguagem.
+Este plano visa corrigir o erro de referência na interface do PC (`App.tsx`) e os erros de validação de cards na API (`servico.py`), garantindo que o ecossistema funcione de forma síncrona e estável.
 
 ## User Review Required
 
 > [!IMPORTANT]
-> A Ollie passará a atuar como um "Scavenger de Fatos". Toda conversa será analisada para extrair preferências, profissão e detalhes pessoais que serão salvos no Obsidian automaticamente. A fala será ajustada para ser informal e parceira, sem o uso forçado de gírias.
+> Realizaremos uma pequena refatoração na gestão de eventos do Tauri para garantir que os listeners sejam limpos corretamente no unmount, evitando erros de variável indefinida. Também simplificaremos a criação de cards na API para usar dicionários, o que é mais resiliente a mudanças nos modelos do Pydantic.
 
 ## Proposed Changes
 
-### 1. Refinamento do Motor de Pensamento (Backend)
-#### [MODIFY] [llm.py](file:///D:/Programacao/AssistenteCell/servicos/llm.py)
-- **Personalidade**: Redefinir o tom para "Parceira estratégica, informal e inteligente". Instruir explicitamente a evitar o vício de iniciar frases com "Vish" ou "Bora".
-- **Protocolo de Aprendizado**: Adicionar instruções para que a IA identifique fatos sobre o usuário (nome, gostos, trabalho, família) e os retorne no campo `memoria_obsidian`.
-- **Esquema de Resposta**: Incluir `memoria_obsidian` no exemplo do prompt de sistema para que a LLM saiba que pode registrar fatos permanentemente.
+### 1. Estabilidade da Interface PC (React)
+#### [MODIFY] [App.tsx](file:///D:/Programacao/AssistenteCell/ollie-master-next/src/App.tsx)
+- Mover a declaração dos `unlistenHardware` e `unlistenWindow` para o topo do `useEffect` usando `let`, garantindo que o escopo seja respeitado na função de limpeza (cleanup).
+- Adicionar verificações de nulidade antes de tentar desinscrever os eventos.
+- Corrigir a lógica de reconexão do WebSocket para usar referências estáveis.
 
-### 2. Orquestração de Memória (Agentes)
-#### [MODIFY] [agente_raciocinio.py](file:///D:/Programacao/AssistenteCell/agentes/agente_raciocinio.py)
-- Refinar a lógica de registro no Obsidian: se o fato captado for sobre a identidade do usuário, garantir que ele seja rotulado para ser salvo em notas relevantes.
+### 2. Correção de Validação de Cards (Python)
+#### [MODIFY] [servico.py](file:///D:/Programacao/AssistenteCell/api/servico.py)
+- Alterar a forma como os cards são adicionados à lista: em vez de instanciar classes manualmente para a lista do `HomeDTO`, passaremos dicionários estruturados. O Pydantic converterá esses dicionários nos modelos corretos automaticamente ao instanciar o `HomeDTO`, o que resolve os erros de `model_type` e `SugestaoRegraWrapper`.
 
-### 3. Base de Conhecimento Inicial
-#### [MODIFY] [Identidade.md](file:///D:/Programacao/AssistenteCell/Ollie/Identidade.md)
-- Limpar as diretrizes rígidas de "falar com gírias" para permitir que a Ollie defina o tom ideal conforme aprende com o Lucas.
+### 3. Sincronização de Status (PC Master)
+#### [MODIFY] [websocket.py](file:///D:/Programacao/AssistenteCell/api/websocket.py)
+- Refinar a resposta ao registro do `PC_MASTER` para garantir que o cliente saiba que foi autenticado com sucesso e pare de tentar reconectar agressivamente.
 
 ## Verification Plan
 
-### Testes de Conversa e Aprendizado
-1. Dizer: "Ollie, eu trabalho como programador e gosto muito de café forte."
-2. Verificar se ela responde naturalmente (sem gírias forçadas).
-3. Abrir o Obsidian e verificar se um novo fato foi registrado na pasta `Agente/` ou na nota de `Gostos.md` / `Identidade.md`.
-4. Perguntar logo em seguida: "O que você sabe sobre meu trabalho?" para validar se ela já usa o conhecimento recém-adquirido.
+### Testes de Interface
+1. Abrir o app de PC e verificar se os logs de hardware e janelas aparecem corretamente.
+2. Fechar e abrir o app rapidamente para testar a limpeza (cleanup) dos listeners sem gerar erros no console.
+
+### Testes de API
+1. Acessar o endpoint `/home` via navegador ou Postman e verificar se o JSON retornado contém todos os cards (Discovery, Insights, etc) sem erros no log do servidor.
+2. Confirmar no Android se a Home carrega perfeitamente.

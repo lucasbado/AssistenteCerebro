@@ -2686,5 +2686,4264 @@
             }
         ],
         "ativa": false
+    },
+    {
+        "nome": "Modo Social Sonoro",
+        "justificativa": "Detecta o in\u00edcio da sess\u00e3o de m\u00fasica no Spotify e prepara o WhatsApp para intera\u00e7\u00f5es sociais, antecipando a necessidade de comunica\u00e7\u00e3o enquanto a m\u00fasica toca.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.spotify.music"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "P\u00f3s-Pedido WhatsApp",
+        "justificativa": "Automatiza a abertura do WhatsApp imediatamente ap\u00f3s o fechamento de um pedido no Sankuai, facilitando a comunica\u00e7\u00e3o r\u00e1pida com o entregador ou a confirma\u00e7\u00e3o do status sem necessidade de busca manual.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sankuai.sailor.afooddelivery"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Mensagem R\u00e1pida P\u00f3s-Foto",
+        "justificativa": "Facilita o envio imediato de fotos ou mensagens no WhatsApp ap\u00f3s a captura ou visualiza\u00e7\u00e3o de imagens, aproveitando o fluxo natural de uso.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.apps.photos"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Atalho de Configura\u00e7\u00f5es Inteligente",
+        "justificativa": "Esta rotina automatiza o acesso direto \u00e0s configura\u00e7\u00f5es principais do sistema, eliminando a necessidade de navegar manualmente ap\u00f3s interagir com os recursos de intelig\u00eancia do dispositivo. Isso agiliza o fluxo de trabalho para usu\u00e1rios que frequentemente ajustam configura\u00e7\u00f5es ap\u00f3s usar fun\u00e7\u00f5es de IA.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings.intelligence"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Fluxo GoodLock",
+        "justificativa": "Automatiza a abertura do Galaxy Registry imediatamente ap\u00f3s o GoodLock, eliminando o clique manual e otimizando o fluxo de personaliza\u00e7\u00e3o do dispositivo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.goodlock"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.samsung.android.app.galaxyregistry"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Social P\u00f3s-Compras",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o Instagram ap\u00f3s o uso do Shopee, aproveitando o fluxo natural de navega\u00e7\u00e3o do usu\u00e1rio para facilitar o acesso \u00e0s redes sociais imediatamente ap\u00f3s as compras.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.shopee.br"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a galeria ap\u00f3s o uso do Smart Capture, eliminando o clique manual e acelerando o fluxo de visualiza\u00e7\u00e3o de capturas de tela.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.smartcapture"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ajuste R\u00e1pido",
+        "justificativa": "Automatiza o acesso \u00e0s configura\u00e7\u00f5es do sistema imediatamente ap\u00f3s a abertura do rel\u00f3gio, otimizando o fluxo de trabalho para quem costuma verificar a hora e ajustar prefer\u00eancias em sequ\u00eancia.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.clockpackage"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza o fluxo de navega\u00e7\u00e3o para abrir a galeria de fotos imediatamente ap\u00f3s o acesso ao gerenciador de arquivos, eliminando o clique manual e acelerando o acesso \u00e0s m\u00eddias.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.myfiles"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Pague e Toque",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o do pagamento para o entretenimento, eliminando o clique manual e garantindo que a m\u00fasica comece imediatamente ap\u00f3s a conclus\u00e3o da transa\u00e7\u00e3o no Samsung Pay.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.spay"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.spotify.music"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte Lingu\u00edstica",
+        "justificativa": "Esta rotina aproveita o impulso imediato ap\u00f3s a pr\u00e1tica de idiomas para facilitar a comunica\u00e7\u00e3o real, reduzindo a fric\u00e7\u00e3o de abrir o WhatsApp manualmente e mantendo o fluxo de aprendizado e aplica\u00e7\u00e3o social.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.duolingo"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Captura Instant\u00e2nea",
+        "justificativa": "Permite capturar fotos rapidamente ap\u00f3s visualizar imagens na galeria, agilizando o fluxo de cria\u00e7\u00e3o de conte\u00fado.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.gallery3d"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "com.sec.android.app.camera",
+                "parametro": ""
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Settings to Surf",
+        "justificativa": "Ao concluir ajustes de configura\u00e7\u00f5es, abre o Chrome automaticamente para continuar a navega\u00e7\u00e3o sem interven\u00e7\u00e3o manual.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte Social Instant\u00e2nea",
+        "justificativa": "Esta rotina otimiza o fluxo de comunica\u00e7\u00e3o social. Ao detectar que o usu\u00e1rio acabou de interagir com o Instagram, ela prepara o WhatsApp para uso imediato, reduzindo o atrito de navega\u00e7\u00e3o e antecipando a necessidade de responder a mensagens ou iniciar conversas relacionadas ao conte\u00fado visualmente consumido.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.instagram.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Busca Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a busca do Google ap\u00f3s o uso do SoundCorset, eliminando o clique manual e acelerando o fluxo de pesquisa imediata.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.soundcorset.client.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Cifra & Conex\u00e3o",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o do estudo musical para a comunica\u00e7\u00e3o social, eliminando o atrito de abrir o WhatsApp manualmente ap\u00f3s a sess\u00e3o de Cifra Club.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.studiosol.cifraclub"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Fluxo Fotogr\u00e1fico Instant\u00e2neo",
+        "justificativa": "Esta rotina elimina o atrito entre a captura e a visualiza\u00e7\u00e3o. Ao detectar que o app de c\u00e2mera bruta (Galaxy Raw) foi aberto, ela prepara o ambiente para a revis\u00e3o imediata das fotos, abrindo automaticamente o Gallery3d. Isso cria uma experi\u00eancia de 'captura e revis\u00e3o' cont\u00ednua, ideal para quem edita ou organiza fotos imediatamente ap\u00f3s o clique.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.galaxyraw"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "LinguaBoost",
+        "justificativa": "Incentiva o aprendizado de idiomas imediatamente ap\u00f3s o uso do Facebook, aproveitando o momento de engajamento do usu\u00e1rio.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.facebook.katana"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "open_app",
+                "parametro": "com.duolingo"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o navegador web logo ap\u00f3s a desbloqueio do dispositivo, eliminando o tempo de espera e o toque manual para abrir o Chrome, otimizando o fluxo de acesso \u00e0 internet.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.lool"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Busca Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o do navegador para a busca r\u00e1pida, eliminando o clique manual e acelerando o fluxo de pesquisa do usu\u00e1rio.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo T\u00e1xi & Chat",
+        "justificativa": "Antecipa a necessidade de comunica\u00e7\u00e3o durante o deslocamento, abrindo o WhatsApp automaticamente ap\u00f3s a abertura do Uber para agilizar a intera\u00e7\u00e3o com o motorista ou contatos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.ubercab"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte de Comunica\u00e7\u00e3o",
+        "justificativa": "Antecipa a necessidade de comunica\u00e7\u00e3o ao detectar a inten\u00e7\u00e3o de busca, reduzindo o atrito de navega\u00e7\u00e3o e conectando diretamente ao canal de mensagens mais utilizado.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.googlequicksearchbox"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Pausa para Conectar",
+        "justificativa": "Detecta o momento de transi\u00e7\u00e3o do entretenimento (YouTube) para a comunica\u00e7\u00e3o social, antecipando a necessidade de abrir o WhatsApp para responder mensagens ou iniciar conversas.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.youtube"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Mem\u00f3rias do WhatsApp",
+        "justificativa": "Automatiza o acesso \u00e0s fotos compartilhadas ou recentes ap\u00f3s a intera\u00e7\u00e3o com o WhatsApp, facilitando a visualiza\u00e7\u00e3o imediata de m\u00eddias recebidas.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.whatsapp"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.apps.photos"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Spotify2Whats",
+        "justificativa": "Detectado padr\u00e3o de uso onde o usu\u00e1rio abre o WhatsApp imediatamente ap\u00f3s iniciar o Spotify; a rotina automatiza essa transi\u00e7\u00e3o, agilizando a comunica\u00e7\u00e3o enquanto a m\u00fasica toca.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.spotify.music"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Entrega&Chat",
+        "justificativa": "Ao receber uma entrega, o usu\u00e1rio costuma abrir o WhatsApp para confirmar ou conversar sobre o pedido, automatizando essa sequ\u00eancia economiza tempo",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sankuai.sailor.afooddelivery"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "FotoChat",
+        "justificativa": "Ao visualizar fotos, costuma abrir o WhatsApp para compartilhar ou conversar, automatizando a transi\u00e7\u00e3o para agilizar a comunica\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.apps.photos"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "AbrirConfigura\u00e7\u00f5es",
+        "justificativa": "Ao abrir a intelig\u00eancia de configura\u00e7\u00f5es, o usu\u00e1rio costuma acessar as configura\u00e7\u00f5es gerais logo em seguida; automatiza essa sequ\u00eancia para economizar tempo",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings.intelligence"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Tranca e Registra",
+        "justificativa": "Ao desbloquear o telefone com Good Lock, o usu\u00e1rio costuma abrir o Galaxy Registry para gerenciar temas; a rotina automatiza essa sequ\u00eancia.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.goodlock"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.samsung.android.app.galaxyregistry"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "ShopeeToInsta",
+        "justificativa": "Ao detectar a abertura do Shopee, a rotina abre o Instagram para que o usu\u00e1rio possa compartilhar suas compras ou conferir promo\u00e7\u00f5es em tempo real.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.shopee.br"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Ao capturar uma foto, a galeria abre automaticamente para visualiza\u00e7\u00e3o r\u00e1pida.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.smartcapture"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Clock Settings Switch",
+        "justificativa": "Abre rapidamente as configura\u00e7\u00f5es ap\u00f3s abrir o rel\u00f3gio",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.clockpackage"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Acelera o acesso r\u00e1pido \u00e0 galeria ap\u00f3s abrir o gerenciador de arquivos, melhorando a experi\u00eancia de visualiza\u00e7\u00e3o de fotos",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.myfiles"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Melodia P\u00f3s-Pay",
+        "justificativa": "Inicia a m\u00fasica automaticamente ap\u00f3s o pagamento para criar uma experi\u00eancia mais agrad\u00e1vel e relaxante.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.spay"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.spotify.music"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria para C\u00e2mera",
+        "justificativa": "Ao visualizar fotos, costuma querer capturar novas imagens imediatamente, automatizando a abertura da c\u00e2mera ap\u00f3s a galeria.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.gallery3d"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.sec.android.app.camera"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Abrir Chrome Autom\u00e1tico",
+        "justificativa": "Facilita o acesso r\u00e1pido ao navegador ap\u00f3s ajustes de sistema",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "InstaToWhats",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o entre Instagram e WhatsApp para facilitar a comunica\u00e7\u00e3o imediata ap\u00f3s visualizar conte\u00fado.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.instagram.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Quick Search Sync",
+        "justificativa": "Ao abrir o Soundcorset, inicia automaticamente o Google Quick Search para facilitar buscas r\u00e1pidas relacionadas ao conte\u00fado do app.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.soundcorset.client.android"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "com.google.android.googlequicksearchbox",
+                "parametro": null
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Cifraclub to Whats",
+        "justificativa": "Ao abrir o Cifraclub, o usu\u00e1rio costuma querer compartilhar algo rapidamente; esta rotina abre o WhatsApp automaticamente para facilitar a comunica\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.studiosol.cifraclub"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza a abertura da galeria principal logo ap\u00f3s capturar fotos com o aplicativo Galaxy RAW, economizando tempo e facilitando a visualiza\u00e7\u00e3o imediata das imagens.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.galaxyraw"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "com.sec.android.gallery3d",
+                "parametro": ""
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "LearningBreak",
+        "justificativa": "Incentiva o aprendizado de idiomas logo ap\u00f3s o uso de redes sociais, aproveitando o momento de pausa mental.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.facebook.katana"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.duolingo"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "LooL to Chrome",
+        "justificativa": "Abre o Chrome automaticamente ap\u00f3s usar o LooL para facilitar a navega\u00e7\u00e3o",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.lool"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Chrome to Quick Search",
+        "justificativa": "Automatiza a abertura do Google Quick Search Box logo ap\u00f3s abrir o Chrome, facilitando pesquisas r\u00e1pidas sem precisar tocar manualmente no \u00edcone.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "UberChat",
+        "justificativa": "Abre o WhatsApp automaticamente ap\u00f3s abrir o Uber, permitindo que o usu\u00e1rio envie mensagens r\u00e1pidas para o motorista ou amigos sem precisar trocar de app.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.ubercab"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "WhatsApp Quick Start",
+        "justificativa": "Ao detectar que o usu\u00e1rio abriu o Google Search, a rotina abre automaticamente o WhatsApp para facilitar o acesso a mensagens recentes, economizando tempo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.googlequicksearchbox"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "YouTube to WhatsApp Switch",
+        "justificativa": "Abre o WhatsApp automaticamente ap\u00f3s iniciar o YouTube, permitindo que o usu\u00e1rio compartilhe rapidamente o v\u00eddeo ou converse sem precisar trocar de app.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.youtube"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte Lingu\u00edstica",
+        "justificativa": "Aproveita o impulso de aprendizado do Duolingo para facilitar a pr\u00e1tica imediata de conversa\u00e7\u00e3o ou comunica\u00e7\u00e3o via WhatsApp, criando uma transi\u00e7\u00e3o suave entre estudo e aplica\u00e7\u00e3o social.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.duolingo"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Mem\u00f3rias do Chat",
+        "justificativa": "Automatiza o acesso \u00e0s fotos imediatamente ap\u00f3s o uso do WhatsApp, facilitando a visualiza\u00e7\u00e3o r\u00e1pida de m\u00eddias recebidas ou o envio de fotos sem a necessidade de navega\u00e7\u00e3o manual.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.whatsapp"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.apps.photos"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Spotify2Whats",
+        "justificativa": "Detectado padr\u00e3o de abrir WhatsApp logo ap\u00f3s usar Spotify, automatiza para facilitar a transi\u00e7\u00e3o entre m\u00fasica e mensagens.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.spotify.music"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Entrega e Bate\u2011Papo",
+        "justificativa": "Ao abrir o app de entrega de comida, o usu\u00e1rio costuma iniciar uma conversa no WhatsApp para confirmar pedidos ou compartilhar o card\u00e1pio, ent\u00e3o a rotina automatiza essa sequ\u00eancia.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sankuai.sailor.afooddelivery"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "FotoPraWhats",
+        "justificativa": "Ao visualizar fotos, costuma compartilhar rapidamente via WhatsApp, automatizando a transi\u00e7\u00e3o entre os apps.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.apps.photos"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "ConfigQuick",
+        "justificativa": "Automatiza a abertura r\u00e1pida das configura\u00e7\u00f5es quando o usu\u00e1rio j\u00e1 iniciou o assistente de configura\u00e7\u00f5es inteligente, economizando tempo e passos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings.intelligence"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "GoodLock to Registry",
+        "justificativa": "Automatiza a abertura do Galaxy Registry logo ap\u00f3s desbloquear o dispositivo, economizando tempo e garantindo que as configura\u00e7\u00f5es estejam sempre atualizadas.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.goodlock"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "com.samsung.android.app.galaxyregistry",
+                "parametro": ""
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Shopee2Insta",
+        "justificativa": "Ao abrir a Shopee, o usu\u00e1rio costuma conferir o Instagram para ver novidades e promo\u00e7\u00f5es; a rotina automatiza a transi\u00e7\u00e3o, economizando tempo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.shopee.br"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Captura e Galeria Instant\u00e2nea",
+        "justificativa": "Abre automaticamente a galeria ao terminar a captura de tela, facilitando a visualiza\u00e7\u00e3o e edi\u00e7\u00e3o imediata das fotos",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.smartcapture"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Clock Settings Quick Switch",
+        "justificativa": "Permite que o usu\u00e1rio acesse rapidamente as configura\u00e7\u00f5es do sistema logo ap\u00f3s usar o rel\u00f3gio, otimizando a experi\u00eancia de ajuste de hor\u00e1rio e alarmes.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.clockpackage"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Ao abrir o gerenciador de arquivos, o usu\u00e1rio costuma querer visualizar rapidamente as imagens encontradas. Esta rotina abre a galeria automaticamente, economizando tempo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.myfiles"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "SpayToSpotify",
+        "justificativa": "Quando o pagamento via Samsung Pay \u00e9 iniciado, a m\u00fasica costuma ser aberta automaticamente, ent\u00e3o automatizamos para garantir que a experi\u00eancia musical comece sem interven\u00e7\u00e3o manual.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.spay"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.spotify.music"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Instant Capture",
+        "justificativa": "Ao detectar a abertura da galeria, a rotina ativa a c\u00e2mera automaticamente, permitindo capturar fotos instant\u00e2neas sem precisar alternar manualmente entre aplicativos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.gallery3d"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.app.camera"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Abrir Chrome P\u00f3s Configura\u00e7\u00f5es",
+        "justificativa": "Facilita o acesso r\u00e1pido ao navegador ap\u00f3s ajustes de sistema, economizando tempo e passos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Conex\u00e3o Insta-Whats",
+        "justificativa": "Facilita a comunica\u00e7\u00e3o imediata ap\u00f3s visualizar conte\u00fado no Instagram, permitindo responder rapidamente via WhatsApp.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.instagram.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "com.whatsapp",
+                "parametro": ""
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Busca Instant\u00e2nea",
+        "justificativa": "Permite iniciar pesquisas r\u00e1pidas imediatamente ap\u00f3s usar o Soundcorset, economizando tempo e facilitando o acesso a informa\u00e7\u00f5es relevantes.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.soundcorset.client.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "CifraChat",
+        "justificativa": "Ao abrir o CifraClub, o usu\u00e1rio costuma querer compartilhar ou discutir a m\u00fasica. Esta rotina abre o WhatsApp automaticamente, facilitando a comunica\u00e7\u00e3o sem precisar trocar de app.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.studiosol.cifraclub"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "RawToGallery",
+        "justificativa": "Ao capturar fotos em RAW, a rotina abre automaticamente o Gallery para facilitar a visualiza\u00e7\u00e3o e edi\u00e7\u00e3o imediata.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.galaxyraw"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Duolingo Boost",
+        "justificativa": "Incentiva o aprendizado de idiomas ao aproveitar o tempo de navega\u00e7\u00e3o no Facebook, iniciando automaticamente uma sess\u00e3o de Duolingo para maximizar a produtividade.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.facebook.katana"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.duolingo"
+            },
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_LESSON",
+                "parametro": "language=es"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "LooL \u2192 Chrome",
+        "justificativa": "Ao abrir o app de anota\u00e7\u00f5es da Samsung, costuma-se buscar informa\u00e7\u00f5es no Chrome; automatiza a transi\u00e7\u00e3o para agilizar a pesquisa.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.lool"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Busca Instant\u00e2nea",
+        "justificativa": "Ao abrir o Chrome, a rotina ativa o Google Quick Search Box para que voc\u00ea possa iniciar pesquisas r\u00e1pidas sem precisar tocar no \u00edcone manualmente, economizando tempo e mantendo o fluxo de navega\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Modo Chegada",
+        "justificativa": "Ao detectar a abertura do Uber, assume-se que o usu\u00e1rio est\u00e1 em tr\u00e2nsito ou acabando de chegar. A rotina prepara o WhatsApp para uso imediato, otimizando o fluxo de comunica\u00e7\u00e3o p\u00f3s-viagem.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.ubercab"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ativar WhatsApp logo ap\u00f3s pesquisa r\u00e1pida",
+        "justificativa": "Essa rotaina foi criada para facilitar acesso r\u00e1pido ao WhatsApp ap\u00f3s uma pesquisa r\u00e1pida atrav\u00e9s do Google Assistant. Como muitas vezes voc\u00ea j\u00e1 est\u00e1 na \u00e1rea de pesquisa e precisa comunicar-se com algu\u00e9m imediatamente, essa rotaina nos ajuda a economizar tempo e esfor\u00e7o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.apps.maps"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "android.intent.action.MAIN",
+                "parametro": "android.intent.category.LAUNCHER"
+            }
+        ],
+        "ativa": true
+    },
+    {
+        "nome": "YouTube\u2192WhatsApp",
+        "justificativa": "Detecta a tend\u00eancia de abrir o WhatsApp logo ap\u00f3s assistir v\u00eddeos no YouTube, facilitando a continua\u00e7\u00e3o da conversa sem precisar procurar o \u00edcone.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.youtube"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "launch_app",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "WhatsApp QuickStart",
+        "justificativa": "Automatiza a abertura do WhatsApp imediatamente ap\u00f3s terminar o Duolingo, economizando cliques e tempo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.duolingo"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "open_app",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "WhatsApp\u2192Fotos",
+        "justificativa": "Abre o Photos automaticamente ap\u00f3s usar o WhatsApp, facilitando o compartilhamento r\u00e1pido de imagens",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.whatsapp"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.apps.photos"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "M\u00fasica+Chat",
+        "justificativa": "Quando voc\u00ea inicia a m\u00fasica, a rotina abre o WhatsApp automaticamente para que voc\u00ea possa responder mensagens sem interromper a experi\u00eancia musical.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.spotify.music"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Delivery Chat",
+        "justificativa": "Esta rotina foi criada para facilitar o contato com o servi\u00e7o de entrega de comida depois de realizar uma pedida no aplicativo 'com.sankuai.sailor.afooddelivery'.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sankuai.sailor.afooddelivery"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "intent",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria para Chat",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o frequente entre a visualiza\u00e7\u00e3o de fotos e a comunica\u00e7\u00e3o, reduzindo o tempo de carregamento e facilitando o compartilhamento ou a conversa imediata ap\u00f3s ver uma imagem.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.apps.photos"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Intelliscreen",
+        "justificativa": "A Intelliscreen \u00e9 uma rotina criativa e \u00fatil para facilitar acesso a configura\u00e7\u00f5es no nosso dispositivo. Ele \u00e9 desencadeado quando o aplicativo de intelig\u00eancia \u00e9 aberto, e abre automaticamente o aplicativo de configura\u00e7\u00f5es ap\u00f3s essa a\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings.intelligence"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "android.intent.action.MAIN",
+                "parametro": "android.intent.category.LAUNCHER"
+            },
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "android.intent.action.MAIN",
+                "parametro": "android.intent.category.LAUNCHER"
+            }
+        ],
+        "ativa": true
+    },
+    {
+        "nome": "GalaxyRegistry Auto-Launch",
+        "justificativa": "Quando o GoodLock \u00e9 aberto, o usu\u00e1rio costuma querer registrar o dispositivo no Galaxy Registry para sincroniza\u00e7\u00e3o de dados e seguran\u00e7a. Automatizar a abertura do Galaxy Registry economiza tempo e mant\u00e9m o fluxo de trabalho consistente.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.goodlock"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.samsung.android.app.galaxyregistry"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Shopee & Instagram Clone",
+        "justificativa": "Essa rotaina \u00e9 criada para ajudar voc\u00ea a se conectar rapidamente aos seus aplicativos favoritos, no caso, Shopee e Instagram, ap\u00f3s abrir o aplicativo Shopee no seu dispositivo m\u00f3vel.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.shopee.br"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "intent",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a galeria ap\u00f3s o uso do Smart Capture, eliminando o clique manual e acelerando o fluxo de visualiza\u00e7\u00e3o de fotos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.smartcapture"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ajuste R\u00e1pido",
+        "justificativa": "Detecta o padr\u00e3o de abrir o rel\u00f3gio seguido imediatamente pelas configura\u00e7\u00f5es, sugerindo uma necessidade frequente de ajustar hor\u00e1rios, fuso hor\u00e1rio ou notifica\u00e7\u00f5es do despertador. Esta rotina antecipa a a\u00e7\u00e3o, abrindo as configura\u00e7\u00f5es automaticamente para economizar tempo e cliques.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.clockpackage"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Gallery3D Assistente",
+        "justificativa": "Essa rotina foi criada para facilitar acesso ao aplicativo Gallery3D depois de abrir o MyFiles. Al\u00e9m disso, pode ajudar a manter o espa\u00e7o de trabalho organizado e centralizando as a\u00e7\u00f5es frequentes.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.myfiles"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "android.intent.action.MAIN",
+                "parametro": "com.sec.android.app.myfiles"
+            },
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "android.intent.action.MAIN",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": true
+    },
+    {
+        "nome": "Play Music After Payment",
+        "justificativa": "Esta rotaina foi criada para automatizar a abertura do aplicativo Spotify Music ap\u00f3s o pagamento realizado pelo Samsung Pay. Isso facilita a experi\u00eancia de escuta de m\u00fasica sem precisar interagir manualmente com os aplicativos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.spay"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "intent",
+                "parametro": "com.spotify.music"
+            }
+        ],
+        "ativa": true
+    },
+    {
+        "nome": "Foto Instant\u00e2nea",
+        "justificativa": "Essa rotaina faz com que o aplicativo Camera seja aberto automaticamente ap\u00f3s voc\u00ea abrir o aplicativo de galeria, facilitando o processo de capturar fotos r\u00e1pidamente.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.gallery3d"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "intent",
+                "parametro": "com.sec.android.app.camera"
+            }
+        ],
+        "ativa": true
+    },
+    {
+        "nome": "Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o frequente das configura\u00e7\u00f5es para o navegador, eliminando o toque manual e acelerando o acesso \u00e0 web ap\u00f3s ajustes no sistema.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte Social Instant\u00e2nea",
+        "justificativa": "Esta rotina otimiza o fluxo de comunica\u00e7\u00e3o ao antecipar a necessidade de responder a mensagens. Ao detectar que o usu\u00e1rio acabou de sair do Instagram, ela prepara o WhatsApp para uso imediato, reduzindo o tempo de lat\u00eancia entre a descoberta de uma novidade e a intera\u00e7\u00e3o social subsequente.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.instagram.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Busca Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a busca do Google imediatamente ap\u00f3s o uso do SoundCorset, eliminando o tempo de carregamento e facilitando a pesquisa r\u00e1pida de informa\u00e7\u00f5es relacionadas ao \u00e1udio ou conte\u00fado em reprodu\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.soundcorset.client.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Cifra & Conex\u00e3o",
+        "justificativa": "Esta rotina otimiza o fluxo de trabalho ao antecipar a necessidade de comunica\u00e7\u00e3o. Ao detectar que voc\u00ea abriu o app de cifras, ela prepara o WhatsApp para uso imediato, eliminando o tempo de carregamento e facilitando a troca de informa\u00e7\u00f5es ou a partilha de m\u00fasicas com amigos ou colegas de banda.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.studiosol.cifraclub"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Ao detectar a abertura do Galaxy RAW, a rotina abre automaticamente a Gallery3D para que o usu\u00e1rio possa visualizar e organizar rapidamente as fotos capturadas, economizando tempo e passos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.galaxyraw"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Estudo P\u00f3s-Social",
+        "justificativa": "Aproveita o impulso de abrir o Facebook para redirecionar a aten\u00e7\u00e3o para o aprendizado, facilitando a transi\u00e7\u00e3o para o Duolingo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.facebook.katana"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.duolingo"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o navegador Chrome assim que o app de rel\u00f3gio (Loon) \u00e9 aberto, otimizando o fluxo de acesso \u00e0 internet para quem costuma verificar a hora e navegar em sequ\u00eancia.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.lool"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Busca Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a caixa de busca do Google assim que o Chrome \u00e9 aberto, eliminando o clique manual e acelerando o fluxo de pesquisa.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Chegada",
+        "justificativa": "Ao detectar a abertura do Uber, assume-se que o usu\u00e1rio est\u00e1 em tr\u00e2nsito ou acabando de chegar. A rotina prepara o WhatsApp para receber mensagens de contato ou status, otimizando a transi\u00e7\u00e3o do deslocamento para a intera\u00e7\u00e3o social.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.ubercab"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte de Comunica\u00e7\u00e3o",
+        "justificativa": "Antecipa a necessidade de comunica\u00e7\u00e3o ao detectar a inten\u00e7\u00e3o de busca, reduzindo o atrito de navega\u00e7\u00e3o para quem usa o WhatsApp como canal prim\u00e1rio de intera\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.googlequicksearchbox"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "YouTube2WhatsApp",
+        "justificativa": "Detecta a abertura do YouTube e, antecipando o h\u00e1bito de compartilhar ou conversar sobre o conte\u00fado, abre automaticamente o WhatsApp para facilitar a intera\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.youtube"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "LinguaChat",
+        "justificativa": "Automatiza a abertura do WhatsApp logo ap\u00f3s o Duolingo para que voc\u00ea possa compartilhar rapidamente suas conquistas ou d\u00favidas com amigos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.duolingo"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            },
+            {
+                "alvo": "PC",
+                "comando": "OPEN_URL",
+                "parametro": "https://web.whatsapp.com"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Mem\u00f3rias do Chat",
+        "justificativa": "Automatiza o acesso \u00e0s fotos imediatamente ap\u00f3s o uso do WhatsApp, facilitando a visualiza\u00e7\u00e3o de m\u00eddias recebidas ou o envio de fotos recentes sem a necessidade de navega\u00e7\u00e3o manual.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.whatsapp"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.apps.photos"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Play and Chat",
+        "justificativa": "Essa rotina foi criada para facilitar a intera\u00e7\u00e3o entre o Spotify e o WhatsApp, permitindo que voc\u00ea abra as aplica\u00e7\u00f5es e comece a tocar m\u00fasica no Spotify logo seguido de abrir o WhatsApp para conversar com seus amigos ou familiares.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.spotify.music"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "intent",
+                "parametro": "com.whatsapp"
+            },
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "intent",
+                "parametro": "com.spotify.android.play"
+            }
+        ],
+        "ativa": true
+    },
+    {
+        "nome": "P\u00f3s-Pedido Social",
+        "justificativa": "Automatiza a abertura do WhatsApp imediatamente ap\u00f3s o fechamento de um pedido no Sankuai, facilitando a comunica\u00e7\u00e3o r\u00e1pida com amigos ou familiares sobre a entrega ou compartilhando a experi\u00eancia.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sankuai.sailor.afooddelivery"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "FotoChat Sync",
+        "justificativa": "Quando voc\u00ea abre o Google Fotos, a rotina abre automaticamente o WhatsApp para que voc\u00ea possa compartilhar fotos instantaneamente, economizando tempo e passos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.apps.photos"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "open_app",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Atalho de Configura\u00e7\u00f5es Inteligente",
+        "justificativa": "Esta rotina otimiza o fluxo de navega\u00e7\u00e3o ao detectar que o usu\u00e1rio frequentemente acessa as configura\u00e7\u00f5es gerais logo ap\u00f3s interagir com os recursos de intelig\u00eancia do sistema. Ao automatizar a abertura do menu principal de configura\u00e7\u00f5es, reduz-se o tempo de espera e a necessidade de toques manuais repetitivos, proporcionando uma experi\u00eancia mais fluida e eficiente.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings.intelligence"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Registro Instant\u00e2neo",
+        "justificativa": "Automatiza a abertura do Galaxy Registry imediatamente ap\u00f3s o Good Lock, eliminando o clique manual e garantindo que o registro do dispositivo seja atualizado ou verificado sempre que o usu\u00e1rio acessa as ferramentas de personaliza\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.goodlock"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.samsung.android.app.galaxyregistry"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Social P\u00f3s-Compras",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o Instagram ap\u00f3s o uso do Shopee, aproveitando o fluxo natural de navega\u00e7\u00e3o do usu\u00e1rio para facilitar o acesso \u00e0s redes sociais sem esfor\u00e7o adicional.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.shopee.br"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "GallerySnap Sync",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o entre captura de fotos e visualiza\u00e7\u00e3o, economizando tempo e evitando cliques desnecess\u00e1rios.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.smartcapture"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ajuste R\u00e1pido",
+        "justificativa": "Detecta a abertura do rel\u00f3gio e abre automaticamente as configura\u00e7\u00f5es, facilitando o acesso r\u00e1pido a ajustes de sistema ou notifica\u00e7\u00f5es que costumam ser verificados em sequ\u00eancia.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.clockpackage"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o frequente do gerenciador de arquivos para a galeria, eliminando o clique manual e acelerando o acesso \u00e0s fotos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.myfiles"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Foco Musical",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o Spotify ap\u00f3s o uso do Samsung Pay, assumindo que o usu\u00e1rio deseja ouvir m\u00fasica imediatamente ap\u00f3s concluir uma transa\u00e7\u00e3o ou abrir o app de pagamentos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.spay"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.spotify.music"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Fot\u00f3grafo Instant\u00e2neo",
+        "justificativa": "Esta rotina elimina a fric\u00e7\u00e3o de navega\u00e7\u00e3o ao detectar que voc\u00ea frequentemente alterna da galeria para a c\u00e2mera. Ao abrir a galeria, o sistema prepara a c\u00e2mera para disparo imediato, otimizando o fluxo de trabalho para quem revisa fotos e tira novas rapidamente.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.gallery3d"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.app.camera"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o frequente das configura\u00e7\u00f5es para o navegador, eliminando o clique manual e acelerando o acesso \u00e0 web ap\u00f3s ajustes no sistema.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "InstaChat",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o entre Instagram e WhatsApp para facilitar a comunica\u00e7\u00e3o r\u00e1pida com contatos ap\u00f3s ver postagens.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.instagram.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Modo Busca Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a busca do Google ap\u00f3s a abertura do aplicativo SoundCorset, eliminando o clique manual e acelerando o fluxo de pesquisa.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.soundcorset.client.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Cifra & Conex\u00e3o",
+        "justificativa": "Esta rotina otimiza o fluxo de trabalho ao preparar o WhatsApp imediatamente ap\u00f3s a abertura do Cifra Club, facilitando a comunica\u00e7\u00e3o r\u00e1pida ou o compartilhamento de conte\u00fado musical com amigos ou grupos, reduzindo o tempo de transi\u00e7\u00e3o entre as aplica\u00e7\u00f5es.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.studiosol.cifraclub"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Fluxo Fotogr\u00e1fico Instant\u00e2neo",
+        "justificativa": "Esta rotina elimina o atrito entre a captura da imagem e a visualiza\u00e7\u00e3o. Ao detectar a abertura do app de c\u00e2mera RAW, ela prepara o ambiente para que a galeria esteja pronta para receber e exibir as novas fotos imediatamente, otimizando o fluxo de trabalho do usu\u00e1rio.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.galaxyraw"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Duolingo P\u00f3s-Facebook",
+        "justificativa": "Ao abrir o Facebook, costuma\u2011se buscar aprendizado de idiomas; abrir o Duolingo imediatamente aproveita o momento de engajamento.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.facebook.katana"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "launch_app",
+                "parametro": "com.duolingo"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o navegador web logo ap\u00f3s a desbloqueio do dispositivo, eliminando o tempo de espera e o toque manual para abrir o Chrome, otimizando o fluxo de acesso \u00e0 internet.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.lool"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Busca Imediata",
+        "justificativa": "O usu\u00e1rio demonstra um padr\u00e3o consistente de abrir o navegador e, em seguida, acessar a caixa de busca do Google. Esta rotina automatiza essa transi\u00e7\u00e3o, eliminando o clique manual e acelerando o fluxo de pesquisa.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo T\u00e1xi & Chat",
+        "justificativa": "Antecipa a necessidade de comunica\u00e7\u00e3o durante o deslocamento, abrindo o WhatsApp automaticamente ap\u00f3s o Uber para facilitar a coordena\u00e7\u00e3o da corrida ou a comunica\u00e7\u00e3o com o destino.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.ubercab"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Foco Social",
+        "justificativa": "Detecta a inten\u00e7\u00e3o de comunica\u00e7\u00e3o imediata ap\u00f3s uma busca ou intera\u00e7\u00e3o inicial, eliminando o atrito de navega\u00e7\u00e3o e abrindo o WhatsApp automaticamente para agilizar a troca de mensagens.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.googlequicksearchbox"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Pausa Social",
+        "justificativa": "Detecta o padr\u00e3o de alternar do YouTube para o WhatsApp, sugerindo que o usu\u00e1rio deseja pausar o consumo de v\u00eddeo para interagir socialmente. A rotina prepara o ambiente para essa transi\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.youtube"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "DuolingoChat",
+        "justificativa": "Ao terminar o Duolingo, a rotina abre o WhatsApp para que o usu\u00e1rio possa compartilhar conquistas ou conversar rapidamente, mantendo a fluidez entre aprendizado e comunica\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.duolingo"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Mem\u00f3rias do WhatsApp",
+        "justificativa": "Automatiza o acesso \u00e0s fotos recentes compartilhadas ou recebidas no WhatsApp, eliminando a necessidade de abrir manualmente o app de fotos ap\u00f3s cada conversa.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.whatsapp"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.apps.photos"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "SpotifyToWhats",
+        "justificativa": "Automatiza a abertura do WhatsApp logo ap\u00f3s iniciar o Spotify, facilitando a comunica\u00e7\u00e3o de playlists ou compartilhamento de m\u00fasicas.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.spotify.music"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "P\u00f3s-Pedido Social",
+        "justificativa": "Automatiza a abertura do WhatsApp imediatamente ap\u00f3s o uso do app de delivery, facilitando a comunica\u00e7\u00e3o com amigos ou familiares sobre o pedido ou a chegada da comida.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sankuai.sailor.afooddelivery"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Mensagem R\u00e1pida P\u00f3s-Foto",
+        "justificativa": "Facilita o envio imediato de fotos ou mensagens no WhatsApp ap\u00f3s a captura ou visualiza\u00e7\u00e3o de imagens, eliminando a necessidade de alternar manualmente entre os aplicativos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.apps.photos"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "IntelliSettings Auto-Launch",
+        "justificativa": "Automatiza a abertura do aplicativo Settings logo ap\u00f3s o com.android.settings.intelligence, economizando tempo e passos repetitivos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings.intelligence"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "GalaxyRegistry After GoodLock",
+        "justificativa": "Esta rotina foi criada para automatizar a abertura do Galaxy Registry logo ap\u00f3s a abertura do Good Lock, facilitando acesso aos recursos e configura\u00e7\u00f5es relacionados.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.goodlock"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "adb shell am start",
+                "parametro": "-a android.intent.action.MAIN -n com.samsung.android.app.galaxyregistry/.GalaxyRegistry"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Shopee para Instagram",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o Instagram ap\u00f3s a abertura do Shopee, otimizando o fluxo de navega\u00e7\u00e3o entre as duas plataformas.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.shopee.br"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza o fluxo de visualiza\u00e7\u00e3o de fotos rec\u00e9m-capturadas, eliminando a necessidade de abrir manualmente a galeria ap\u00f3s o uso da c\u00e2mera inteligente.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.smartcapture"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Abrir Configura\u00e7\u00f5es P\u00f3s Rel\u00f3gio",
+        "justificativa": "Automatiza a abertura de configura\u00e7\u00f5es sempre que o usu\u00e1rio abre o rel\u00f3gio, facilitando ajustes r\u00e1pidos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.clockpackage"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza o fluxo de navega\u00e7\u00e3o para abrir a galeria de fotos imediatamente ap\u00f3s o acesso ao gerenciador de arquivos, eliminando o clique manual e acelerando o acesso \u00e0s m\u00eddias.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.myfiles"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Paga e Toca",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o do pagamento para o entretenimento, eliminando o clique manual para abrir o Spotify ap\u00f3s concluir uma transa\u00e7\u00e3o no Samsung Pay.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.spay"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.spotify.music"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Fot\u00f3grafo Instant\u00e2neo",
+        "justificativa": "Detecta a inten\u00e7\u00e3o de capturar momentos ao abrir a galeria, eliminando o tempo de carregamento da c\u00e2mera para uma transi\u00e7\u00e3o fluida entre revis\u00e3o e captura.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.gallery3d"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.app.camera"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o frequente das configura\u00e7\u00f5es para o navegador, eliminando o clique manual e acelerando o acesso \u00e0 web ap\u00f3s ajustes no sistema.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte Social Instant\u00e2nea",
+        "justificativa": "Esta rotina otimiza o fluxo de comunica\u00e7\u00e3o ao antecipar a necessidade de responder a mensagens. Ao detectar que o usu\u00e1rio acabou de interagir com o Instagram (frequentemente usado para ver stories ou notifica\u00e7\u00f5es de amigos), ela prepara o WhatsApp, reduzindo o tempo de lat\u00eancia para iniciar uma conversa direta.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.instagram.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Busca Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a busca do Google ap\u00f3s o uso do SoundCorset, eliminando o clique manual e acelerando o fluxo de pesquisa.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.soundcorset.client.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Cifra & Conex\u00e3o",
+        "justificativa": "Esta rotina otimiza o fluxo de trabalho ao preparar o WhatsApp imediatamente ap\u00f3s a abertura do app de cifras, facilitando a comunica\u00e7\u00e3o r\u00e1pida com a banda ou colegas de m\u00fasica sem a necessidade de navega\u00e7\u00e3o manual.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.studiosol.cifraclub"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Fluxo Fotogr\u00e1fico Instant\u00e2neo",
+        "justificativa": "Esta rotina elimina a fric\u00e7\u00e3o entre a captura de imagens e a visualiza\u00e7\u00e3o. Ao detectar a abertura do app de c\u00e2mera RAW, ela prepara ou abre imediatamente a galeria, permitindo que o usu\u00e1rio revise suas fotos assim que a sess\u00e3o de captura termina, otimizando o fluxo de trabalho criativo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.galaxyraw"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Foco Lingu\u00edstico",
+        "justificativa": "Transi\u00e7\u00e3o suave do social para o aprendizado, eliminando a fric\u00e7\u00e3o de abrir o app manualmente ap\u00f3s o Facebook.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.facebook.katana"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.duolingo"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o navegador web logo ap\u00f3s o desbloqueio do dispositivo, eliminando o tempo de espera e o toque manual para abrir o Chrome, otimizando o fluxo de acesso \u00e0 internet.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.lool"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Busca Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a busca do Google assim que o Chrome \u00e9 aberto, eliminando o clique manual e acelerando o fluxo de pesquisa.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Uber+Chat",
+        "justificativa": "Ao abrir o Uber, o usu\u00e1rio costuma precisar conversar com o motorista ou amigos; a rotina abre o WhatsApp automaticamente para facilitar a comunica\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.ubercab"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte de Comunica\u00e7\u00e3o",
+        "justificativa": "Antecipa a necessidade de comunica\u00e7\u00e3o ao detectar a inten\u00e7\u00e3o de busca, reduzindo o atrito de navega\u00e7\u00e3o e conectando diretamente ao canal de mensagens mais utilizado.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.googlequicksearchbox"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Pausa Social",
+        "justificativa": "Detecta o padr\u00e3o de alternar para o WhatsApp imediatamente ap\u00f3s abrir o YouTube, sugerindo uma necessidade de conex\u00e3o social ou resposta r\u00e1pida durante o consumo de m\u00eddia. Esta rotina prepara o ambiente para essa intera\u00e7\u00e3o, garantindo que o WhatsApp esteja pronto para uso sem atrito.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.youtube"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "P\u00f3s-Duolingo Social",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o WhatsApp ap\u00f3s a conclus\u00e3o ou abertura do Duolingo, aproveitando o h\u00e1bito natural de verificar mensagens ap\u00f3s uma tarefa de aprendizado.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.duolingo"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "ChatToSnap",
+        "justificativa": "Abrir a galeria automaticamente ap\u00f3s o WhatsApp facilita o acesso r\u00e1pido a fotos para compartilhar ou visualizar, economizando tempo e passos do usu\u00e1rio.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.whatsapp"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "open_app",
+                "parametro": "com.google.android.apps.photos"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "M\u00fasica+Mensagens",
+        "justificativa": "Quando o usu\u00e1rio inicia a m\u00fasica no Spotify, a rotina abre automaticamente o WhatsApp para que ele possa responder mensagens sem interromper a experi\u00eancia musical.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.spotify.music"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "P\u00f3s-Pedido Social",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o WhatsApp ap\u00f3s o uso do app de delivery, facilitando a comunica\u00e7\u00e3o imediata com amigos ou familiares sobre o pedido realizado.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sankuai.sailor.afooddelivery"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Fotos para Conversa",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o do fluxo de visualiza\u00e7\u00e3o de fotos para o WhatsApp, reduzindo o tempo de carregamento e facilitando o compartilhamento imediato de imagens com contatos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.apps.photos"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Atalho de Configura\u00e7\u00f5es",
+        "justificativa": "Automatiza o acesso direto \u00e0s configura\u00e7\u00f5es principais do sistema, eliminando a necessidade de navegar manualmente ap\u00f3s interagir com os recursos de intelig\u00eancia do dispositivo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings.intelligence"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "GoodLock Registry Sync",
+        "justificativa": "Automatiza a abertura do Galaxy Registry imediatamente ap\u00f3s o GoodLock, eliminando a necessidade de navega\u00e7\u00e3o manual para sincronizar ou verificar o status do dispositivo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.goodlock"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.samsung.android.app.galaxyregistry"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "ShoeToInsta",
+        "justificativa": "Aproveita o momento p\u00f3s\u2011Shopee para abrir o Instagram, mantendo o fluxo de m\u00eddia social sem interrup\u00e7\u00f5es.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.shopee.br"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "open_app",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a galeria ap\u00f3s o uso da captura inteligente, eliminando o clique manual e acelerando o fluxo de visualiza\u00e7\u00e3o de fotos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.smartcapture"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "ClockToSettings",
+        "justificativa": "Automatiza a abertura do Settings sempre que o usu\u00e1rio abre o Clock, facilitando ajustes r\u00e1pidos de configura\u00e7\u00f5es relacionadas ao rel\u00f3gio.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.clockpackage"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a visualiza\u00e7\u00e3o de fotos, eliminando o clique manual ap\u00f3s a navega\u00e7\u00e3o no gerenciador de arquivos, otimizando o fluxo de trabalho para quem busca m\u00eddia rapidamente.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.myfiles"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Pague e Toque",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o do pagamento para o entretenimento, eliminando o clique manual para abrir o Spotify ap\u00f3s concluir uma transa\u00e7\u00e3o no Samsung Pay.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.spay"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.spotify.music"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Fot\u00f3grafo Instant\u00e2neo",
+        "justificativa": "Esta rotina elimina a fric\u00e7\u00e3o de navega\u00e7\u00e3o ao detectar que voc\u00ea frequentemente alterna da galeria para a c\u00e2mera. Ao abrir a galeria, o sistema prepara a c\u00e2mera para disparo imediato, otimizando o fluxo de trabalho para quem revisa fotos e tira novas rapidamente.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.gallery3d"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.app.camera"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o navegador ap\u00f3s a configura\u00e7\u00e3o do dispositivo, eliminando o clique manual e acelerando o acesso \u00e0 internet para quem costuma ajustar configura\u00e7\u00f5es antes de navegar.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte Social",
+        "justificativa": "Facilita a transi\u00e7\u00e3o fluida entre o consumo de conte\u00fado visual no Instagram e a comunica\u00e7\u00e3o direta no WhatsApp, reduzindo o atrito de navega\u00e7\u00e3o entre apps.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.instagram.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Busca Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a busca do Google ap\u00f3s a abertura do aplicativo SoundCorset, eliminando o clique manual e acelerando o fluxo de pesquisa.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.soundcorset.client.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "CifraChat",
+        "justificativa": "Permite iniciar rapidamente uma conversa no WhatsApp logo ap\u00f3s abrir o clube de cifras, agilizando a comunica\u00e7\u00e3o entre membros.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.studiosol.cifraclub"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "com.whatsapp",
+                "parametro": null
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Fluxo Fotogr\u00e1fico Instant\u00e2neo",
+        "justificativa": "Esta rotina elimina o atrito entre a captura de imagens e a visualiza\u00e7\u00e3o. Ao detectar que o aplicativo de c\u00e2mera bruta (Galaxy Raw) foi aberto, ela prepara o ambiente para uma transi\u00e7\u00e3o suave para a galeria, antecipando a necessidade do usu\u00e1rio de revisar ou editar as fotos rec\u00e9m-capturadas.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.galaxyraw"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Foco Lingu\u00edstico",
+        "justificativa": "Transiciona suavemente do consumo de redes sociais para o aprendizado ativo, aproveitando o impulso de abrir o Facebook para redirecionar a aten\u00e7\u00e3o para o Duolingo, mantendo o fluxo de aprendizado consistente.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.facebook.katana"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.duolingo"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o navegador web logo ap\u00f3s a desbloqueio do dispositivo, eliminando o tempo de espera e o toque manual para abrir o Chrome, otimizando o fluxo de acesso \u00e0 internet.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.lool"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Search Sprint",
+        "justificativa": "Facilita acesso r\u00e1pido ao Google Search logo ap\u00f3s abrir o Chrome, economizando tempo e passos para o usu\u00e1rio.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Chegada",
+        "justificativa": "Ao detectar a abertura do Uber, assume-se que o usu\u00e1rio est\u00e1 em tr\u00e2nsito ou acabou de chegar. A rotina prepara o WhatsApp para receber mensagens de contato ou status, otimizando a transi\u00e7\u00e3o do deslocamento para a intera\u00e7\u00e3o social.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.ubercab"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte de Comunica\u00e7\u00e3o",
+        "justificativa": "Facilita a transi\u00e7\u00e3o imediata para a comunica\u00e7\u00e3o, reconhecendo o h\u00e1bito de buscar informa\u00e7\u00f5es ou contatos via Google e seguir para o WhatsApp.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.googlequicksearchbox"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "YouTube to WhatsApp",
+        "justificativa": "Quando o usu\u00e1rio abre o YouTube, a rotina abre o WhatsApp automaticamente para que ele possa compartilhar o v\u00eddeo ou conversar com amigos sem precisar trocar de aplicativo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.youtube"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Ponte Lingu\u00edstica",
+        "justificativa": "Esta rotina aproveita o impulso imediato ap\u00f3s a conclus\u00e3o de uma li\u00e7\u00e3o no Duolingo para facilitar a transi\u00e7\u00e3o para a pr\u00e1tica real da l\u00edngua. Ao abrir o WhatsApp automaticamente, ela elimina a fric\u00e7\u00e3o de navega\u00e7\u00e3o, incentivando o usu\u00e1rio a usar o novo vocabul\u00e1rio ou gram\u00e1tica aprendida em conversas reais, transformando o estudo passivo em aplica\u00e7\u00e3o ativa.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.duolingo"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Mem\u00f3rias do WhatsApp",
+        "justificativa": "Automatiza o acesso r\u00e1pido \u00e0s fotos compartilhadas ou recentes ap\u00f3s uma conversa no WhatsApp, facilitando a organiza\u00e7\u00e3o e visualiza\u00e7\u00e3o imediata de m\u00eddias recebidas.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.whatsapp"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.apps.photos"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Play and Chat",
+        "justificativa": "Essa rotaina criativa ajuda voc\u00ea a manter sua experi\u00eancia de m\u00fasica e comunica\u00e7\u00e3o juntas, sem perder o que est\u00e1 escutando no Spotify. Quando voc\u00ea abre o aplicativo Spotify, automaticamente o WhatsApp ser\u00e1 aberto para que voc\u00ea possa come\u00e7ar a conversar com seus amigos ou familiares sobre a m\u00fasica que est\u00e1 escutando.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.spotify.music"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "intent",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Delivery Chat",
+        "justificativa": "Essa rotina foi criada para facilitar o contato com o servi\u00e7o de entrega de comida depois de realizar uma pedida no aplicativo 'com.sankuai.sailor.afooddelivery'. Ao abrir este aplicativo e encontrar o Whatsapp logo ap\u00f3s, a rotina ser\u00e1 acionada para abrir o Whatsapp automaticamente para facilitar a comunica\u00e7\u00e3o com o servi\u00e7o de entrega.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sankuai.sailor.afooddelivery"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "android.intent.action.MAIN",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Instant WhatsApp",
+        "justificativa": "Essa rotaina foi criada para facilitar a comunica\u00e7\u00e3o atrav\u00e9s do WhatsApp, j\u00e1 que voc\u00ea sempre abre o aplicativo de fotos logo ap\u00f3s o WhatsApp. Ao ser acionada, ela abre o WhatsApp para que voc\u00ea possa mensagem com facilidade.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.apps.photos"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "intent",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Atalho de Configura\u00e7\u00f5es Inteligente",
+        "justificativa": "Automatiza o acesso direto \u00e0s configura\u00e7\u00f5es principais do sistema, eliminando a necessidade de navegar manualmente ap\u00f3s a intera\u00e7\u00e3o com os recursos de intelig\u00eancia do Android.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings.intelligence"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Painel de Controle Instant\u00e2neo",
+        "justificativa": "Esta rotina elimina o atrito de navega\u00e7\u00e3o ao abrir automaticamente o Galaxy Registry logo ap\u00f3s o Good Lock, assumindo que o usu\u00e1rio est\u00e1 em modo de configura\u00e7\u00e3o avan\u00e7ada e precisa de acesso r\u00e1pido aos registros do sistema.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.goodlock"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.samsung.android.app.galaxyregistry"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Social P\u00f3s-Compras",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o Instagram ap\u00f3s o uso do Shopee, aproveitando o fluxo natural de navega\u00e7\u00e3o social ap\u00f3s atividades de compra.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.shopee.br"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a galeria ap\u00f3s o uso do Smart Capture, eliminando o clique manual e acelerando o fluxo de visualiza\u00e7\u00e3o de fotos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.smartcapture"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ajuste R\u00e1pido",
+        "justificativa": "Detecta o padr\u00e3o de abrir o rel\u00f3gio seguido imediatamente pelas configura\u00e7\u00f5es, sugerindo uma necessidade frequente de ajustar alarmes ou prefer\u00eancias do sistema. Esta rotina otimiza o fluxo, abrindo as configura\u00e7\u00f5es automaticamente ap\u00f3s o rel\u00f3gio para reduzir toques desnecess\u00e1rios.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.clockpackage"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza o fluxo de navega\u00e7\u00e3o para abrir a galeria de fotos imediatamente ap\u00f3s o acesso ao gerenciador de arquivos, eliminando o passo manual de sele\u00e7\u00e3o do app e acelerando o acesso \u00e0s m\u00eddias.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.myfiles"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "PlayAfterPay",
+        "justificativa": "Quando o usu\u00e1rio abre o Samsung Pay, a m\u00fasica come\u00e7a automaticamente, criando uma experi\u00eancia de pagamento com trilha sonora.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.spay"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.spotify.music"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Fot\u00f3grafo Instant\u00e2neo",
+        "justificativa": "Detecta a inten\u00e7\u00e3o de capturar momentos ao abrir a galeria e prepara a c\u00e2mera imediatamente, eliminando o tempo de carregamento e garantindo que nenhum momento seja perdido.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.gallery3d"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.app.camera"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o frequente das configura\u00e7\u00f5es para o navegador, eliminando o clique manual e acelerando o acesso \u00e0 web ap\u00f3s ajustes no sistema.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "InstagramToWhatsApp",
+        "justificativa": "Automatiza a abertura do WhatsApp ap\u00f3s o Instagram para facilitar a comunica\u00e7\u00e3o r\u00e1pida.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.instagram.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Busca Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a busca do Google ap\u00f3s a abertura do aplicativo SoundCorset, eliminando o clique manual e acelerando o fluxo de pesquisa.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.soundcorset.client.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "CifraChat",
+        "justificativa": "Automatiza a abertura do WhatsApp logo ap\u00f3s abrir o Cifra Club, economizando cliques e tempo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.studiosol.cifraclub"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Fluxo Fotogr\u00e1fico Instant\u00e2neo",
+        "justificativa": "Esta rotina elimina a fric\u00e7\u00e3o entre a captura de fotos e a visualiza\u00e7\u00e3o. Ao detectar a abertura do app de c\u00e2mera RAW, ela prepara ou abre imediatamente a galeria, permitindo que o usu\u00e1rio revise suas capturas em tempo real sem precisar navegar manualmente.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.galaxyraw"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "L\u00ednguas P\u00f3s\u2011Feed",
+        "justificativa": "Estimula o aprendizado de idiomas logo ap\u00f3s o uso do Facebook, transformando o tempo de rolagem em pr\u00e1tica de linguagem.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.facebook.katana"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.duolingo"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o navegador web logo ap\u00f3s a desbloqueio do dispositivo, eliminando o tempo de espera e o toque manual para abrir o Chrome, otimizando o fluxo de acesso \u00e0 internet.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.lool"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Busca Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o do navegador para a busca r\u00e1pida, eliminando o clique manual e acelerando o fluxo de pesquisa do usu\u00e1rio.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Chegada",
+        "justificativa": "Ao detectar a abertura do Uber, assume-se que o usu\u00e1rio est\u00e1 em tr\u00e2nsito ou acabou de chegar. A rotina prepara o WhatsApp para uso imediato, otimizando o fluxo de comunica\u00e7\u00e3o p\u00f3s-viagem.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.ubercab"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Busca&Chat",
+        "justificativa": "Ao abrir a Busca do Google, o usu\u00e1rio costuma iniciar rapidamente uma conversa no WhatsApp; a rotina automatiza essa sequ\u00eancia para economizar tempo",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.googlequicksearchbox"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "launch_app",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Pausa Social",
+        "justificativa": "Detecta o padr\u00e3o de alternar do YouTube para o WhatsApp, sugerindo que o usu\u00e1rio quer pausar o v\u00eddeo para responder mensagens ou compartilhar o conte\u00fado assistido.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.youtube"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "DuolingoChat",
+        "justificativa": "Abre o WhatsApp automaticamente ap\u00f3s terminar o Duolingo, facilitando a verifica\u00e7\u00e3o de mensagens sem precisar trocar de app manualmente.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.duolingo"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Foto do WhatsApp",
+        "justificativa": "Essa rotaina \u00e9 criada para automatizar a c\u00f3pia ou salva\u00e7\u00e3o dos fotos enviados no WhatsApp para o aplicativo Google Photos, facilitando a organiza\u00e7\u00e3o e seguran\u00e7a dos dados.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.whatsapp"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "intent",
+                "parametro": "com.google.android.apps.photos"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "M\u00fasica+Chat",
+        "justificativa": "Abre o WhatsApp automaticamente ap\u00f3s iniciar o Spotify, permitindo que o usu\u00e1rio verifique mensagens sem interromper a experi\u00eancia musical.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.spotify.music"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "DeliveryChat",
+        "justificativa": "Facilita a comunica\u00e7\u00e3o com o entregador ou o restaurante via WhatsApp imediatamente ap\u00f3s abrir o app de delivery.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sankuai.sailor.afooddelivery"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "FotoChat",
+        "justificativa": "Inicia o WhatsApp automaticamente ap\u00f3s abrir o Google Fotos, facilitando o compartilhamento de imagens",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.apps.photos"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "open_app",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Abrir Configura\u00e7\u00f5es Autom\u00e1tico",
+        "justificativa": "Facilita o acesso r\u00e1pido \u00e0s configura\u00e7\u00f5es ap\u00f3s o uso do recurso de intelig\u00eancia do Settings",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings.intelligence"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Painel de Controle Instant\u00e2neo",
+        "justificativa": "Automatiza o fluxo de personaliza\u00e7\u00e3o do dispositivo, abrindo o Galaxy Registry imediatamente ap\u00f3s o Good Lock para facilitar ajustes avan\u00e7ados sem necessidade de busca manual.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.goodlock"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.samsung.android.app.galaxyregistry"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Social P\u00f3s-Compras",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o Instagram ap\u00f3s o uso do Shopee, aproveitando o fluxo natural de navega\u00e7\u00e3o do usu\u00e1rio para facilitar o acesso \u00e0s redes sociais sem esfor\u00e7o adicional.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.shopee.br"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a galeria logo ap\u00f3s o uso da captura inteligente, eliminando o clique manual e acelerando o fluxo de visualiza\u00e7\u00e3o de fotos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.smartcapture"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Clock Settings Quick",
+        "justificativa": "Permite que o usu\u00e1rio acesse rapidamente as configura\u00e7\u00f5es ap\u00f3s abrir o Clock, economizando tempo e passos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.clockpackage"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para a visualiza\u00e7\u00e3o de fotos, eliminando o clique manual ap\u00f3s a navega\u00e7\u00e3o no gerenciador de arquivos, otimizando o fluxo de acesso ao conte\u00fado visual.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.myfiles"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Pague e Toque",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o do pagamento para o entretenimento, eliminando o clique manual para abrir o Spotify ap\u00f3s concluir uma transa\u00e7\u00e3o no Samsung Pay.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.spay"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.spotify.music"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Fot\u00f3grafo Instant\u00e2neo",
+        "justificativa": "Esta rotina elimina o atrito de navega\u00e7\u00e3o ao detectar que voc\u00ea frequentemente alterna da galeria para a c\u00e2mera. Ao abrir a galeria, o sistema prepara a c\u00e2mera para disparo imediato, otimizando o fluxo de captura de novas fotos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.gallery3d"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.app.camera"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o frequente das configura\u00e7\u00f5es para o navegador, eliminando o clique manual e acelerando o acesso \u00e0 web ap\u00f3s ajustes no sistema.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte Social Instant\u00e2nea",
+        "justificativa": "Facilita a transi\u00e7\u00e3o fluida entre o consumo de conte\u00fado visual no Instagram e a comunica\u00e7\u00e3o direta no WhatsApp, eliminando o atrito de navega\u00e7\u00e3o manual entre os dois aplicativos mais usados.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.instagram.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "BuscaInstant\u00e2nea",
+        "justificativa": "Ao abrir o SoundCorset, o usu\u00e1rio costuma buscar rapidamente informa\u00e7\u00f5es, ent\u00e3o a rotina abre o Google Quick Search para facilitar a pesquisa.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.soundcorset.client.android"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Cifra & Conex\u00e3o",
+        "justificativa": "Esta rotina otimiza o fluxo de trabalho ao preparar o WhatsApp imediatamente ap\u00f3s a abertura do Cifra Club, facilitando a comunica\u00e7\u00e3o r\u00e1pida com a comunidade ou colegas de m\u00fasica sem a necessidade de navega\u00e7\u00e3o manual.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.studiosol.cifraclub"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Fluxo Fotogr\u00e1fico Instant\u00e2neo",
+        "justificativa": "Esta rotina elimina o atrito entre a captura de fotos e a visualiza\u00e7\u00e3o. Ao detectar a abertura do app de c\u00e2mera RAW, ela prepara ou abre imediatamente a galeria, permitindo que o usu\u00e1rio revise suas capturas em tempo real sem precisar navegar manualmente.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.galaxyraw"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Foco Lingu\u00edstico",
+        "justificativa": "Transi\u00e7\u00e3o suave do social para o aprendizado, eliminando a fric\u00e7\u00e3o de abrir o app manualmente ap\u00f3s o Facebook.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.facebook.katana"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.duolingo"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o navegador web, eliminando o tempo de espera e o toque manual ap\u00f3s a desbloqueio do dispositivo, otimizando o fluxo de acesso \u00e0 internet.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.lool"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Busca Instant\u00e2nea",
+        "justificativa": "Automatiza o fluxo de pesquisa ao detectar que o usu\u00e1rio abre o navegador, antecipando a necessidade de buscar informa\u00e7\u00f5es na web.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Assistente Depois de Uber",
+        "justificativa": "Nesta rotina, criamos uma assistente que abre o WhatsApp ap\u00f3s o usu\u00e1rio terminar seu t\u00e1xi para facilitar a comunica\u00e7\u00e3o e ajudar com suas necessidades.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.uber"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "intent",
+                "parametro": "com.whatsapp"
+            },
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "intent",
+                "parametro": "com.uber"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Mensageiro Instant\u00e2neo",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o WhatsApp ap\u00f3s a busca no Google, eliminando o clique manual e acelerando o fluxo de comunica\u00e7\u00e3o para quem usa o buscador como ponto de partida para intera\u00e7\u00f5es sociais.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.googlequicksearchbox"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "YouTube to WhatsApp Switch",
+        "justificativa": "Facilita a comunica\u00e7\u00e3o enquanto assiste v\u00eddeos, permitindo enviar rapidamente links ou iniciar conversas sem sair do YouTube.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.youtube"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "LinguaChat",
+        "justificativa": "Aumenta a produtividade ao abrir o WhatsApp imediatamente ap\u00f3s terminar o Duolingo, permitindo que o usu\u00e1rio verifique mensagens sem perder o foco.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.duolingo"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Mem\u00f3rias do Chat",
+        "justificativa": "Automatiza o acesso r\u00e1pido \u00e0s fotos ap\u00f3s intera\u00e7\u00f5es no WhatsApp, facilitando a visualiza\u00e7\u00e3o de m\u00eddias recebidas ou o envio de novas fotos sem precisar navegar manualmente pelo menu.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.whatsapp"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.apps.photos"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "M\u00fasicaParaChat",
+        "justificativa": "Ao ouvir m\u00fasica no Spotify, a rotina abre o WhatsApp automaticamente para que voc\u00ea possa compartilhar a m\u00fasica ou conversar enquanto escuta.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.spotify.music"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "DeliveryChat",
+        "justificativa": "Ao abrir o app de entrega, a rotina abre o WhatsApp para que o usu\u00e1rio possa rapidamente compartilhar a ordem ou conversar com amigos sobre a entrega.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sankuai.sailor.afooddelivery"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Mensagem R\u00e1pida P\u00f3s-Foto",
+        "justificativa": "Automatiza a abertura do WhatsApp imediatamente ap\u00f3s o uso do Google Fotos, facilitando o envio de fotos ou a comunica\u00e7\u00e3o instant\u00e2nea com contatos, reduzindo o tempo de transi\u00e7\u00e3o entre as aplica\u00e7\u00f5es.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.apps.photos"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Atalho de Configura\u00e7\u00f5es Inteligente",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o direta para o menu principal de configura\u00e7\u00f5es ap\u00f3s a intera\u00e7\u00e3o com os recursos de intelig\u00eancia do sistema, reduzindo cliques desnecess\u00e1rios e otimizando o fluxo de navega\u00e7\u00e3o para ajustes r\u00e1pidos.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings.intelligence"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Painel de Controle Instant\u00e2neo",
+        "justificativa": "Automatiza o fluxo de personaliza\u00e7\u00e3o do dispositivo, abrindo o Galaxy Registry imediatamente ap\u00f3s o Good Lock para facilitar ajustes avan\u00e7ados de interface e comportamento do sistema.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.goodlock"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.samsung.android.app.galaxyregistry"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Shopee para Instagram",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o Instagram ap\u00f3s a abertura do Shopee, alinhando-se ao padr\u00e3o de comportamento observado de alternar entre essas duas aplica\u00e7\u00f5es.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.shopee.br"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza a abertura da galeria logo ap\u00f3s capturar fotos, economizando tempo e garantindo que as imagens estejam prontas para visualiza\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.smartcapture"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "ClockSync",
+        "justificativa": "Permite ajustar rapidamente as configura\u00e7\u00f5es de hor\u00e1rio e alarmes logo ap\u00f3s abrir o rel\u00f3gio, otimizando a experi\u00eancia do usu\u00e1rio.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.clockpackage"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "com.android.settings",
+                "parametro": ""
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Automatiza o fluxo de navega\u00e7\u00e3o para abrir a galeria de fotos imediatamente ap\u00f3s o acesso ao gerenciador de arquivos, eliminando o clique manual e acelerando o acesso \u00e0s m\u00eddias.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.myfiles"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Pague e Ou\u00e7a",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o do pagamento para o entretenimento, eliminando o clique manual e criando uma experi\u00eancia de fluxo cont\u00ednua ap\u00f3s a conclus\u00e3o de uma transa\u00e7\u00e3o financeira.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.spay"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.spotify.music"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Fot\u00f3grafo Instant\u00e2neo",
+        "justificativa": "Detecta a inten\u00e7\u00e3o de capturar momentos ao abrir a galeria e prepara a c\u00e2mera imediatamente, eliminando o tempo de carregamento e garantindo que nenhum momento seja perdido.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.gallery3d"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "LAUNCH_APP",
+                "parametro": "com.sec.android.app.camera"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o frequente das configura\u00e7\u00f5es para o navegador, eliminando o clique manual e acelerando o acesso \u00e0 web ap\u00f3s ajustes no sistema.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte Social Instant\u00e2nea",
+        "justificativa": "Esta rotina otimiza o fluxo de comunica\u00e7\u00e3o ao antecipar a necessidade de responder a mensagens. Ao detectar que o usu\u00e1rio acabou de interagir com o Instagram (frequentemente onde conversas iniciais ou contextos sociais ocorrem), ela prepara o WhatsApp para uso imediato, reduzindo o atrito de navega\u00e7\u00e3o entre apps e mantendo o ritmo da intera\u00e7\u00e3o social.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.instagram.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Busca ao Som",
+        "justificativa": "Ao abrir o SoundCorset o usu\u00e1rio costuma iniciar uma busca r\u00e1pida, ent\u00e3o a rotina abre o Google Quick Search para agilizar o acesso",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.soundcorset.client.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "launch_app",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "WhatsApp QuickStart",
+        "justificativa": "Automatiza a abertura do WhatsApp imediatamente ap\u00f3s abrir o CifraClub, economizando tempo e mantendo a produtividade",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.studiosol.cifraclub"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Fluxo Fotogr\u00e1fico Instant\u00e2neo",
+        "justificativa": "Esta rotina elimina a fric\u00e7\u00e3o entre a captura de imagens e a visualiza\u00e7\u00e3o. Ao detectar a abertura do app de c\u00e2mera RAW, ela prepara ou abre imediatamente a galeria, permitindo que o usu\u00e1rio revise suas fotos assim que a sess\u00e3o de captura termina, otimizando o fluxo de trabalho criativo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.galaxyraw"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Duolingo Boost",
+        "justificativa": "Incentiva o aprendizado de idiomas imediatamente ap\u00f3s o uso do Facebook, aproveitando o momento de foco do usu\u00e1rio.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.facebook.katana"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.duolingo"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Navega\u00e7\u00e3o Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o navegador web, eliminando o clique manual ap\u00f3s a desbloqueio do dispositivo, otimizando o fluxo de acesso \u00e0 internet.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.lool"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Chrome to Search",
+        "justificativa": "Automatiza a abertura do Google Quick Search Box sempre que o usu\u00e1rio abre o Chrome, economizando tempo e facilitando a busca de conte\u00fado",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Uber & Chat",
+        "justificativa": "Automatiza a abertura do WhatsApp imediatamente ap\u00f3s o Uber ser aberto, otimizando o fluxo de comunica\u00e7\u00e3o durante o deslocamento.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.ubercab"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte de Comunica\u00e7\u00e3o",
+        "justificativa": "Antecipa a necessidade de comunica\u00e7\u00e3o ao detectar a inten\u00e7\u00e3o de busca, reduzindo o atrito de navega\u00e7\u00e3o e conectando diretamente ao canal de mensagens mais utilizado.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.googlequicksearchbox"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Pausa Social",
+        "justificativa": "Detecta o padr\u00e3o de altern\u00e2ncia entre v\u00eddeo e mensagens, oferecendo um atalho r\u00e1pido para o WhatsApp ap\u00f3s a abertura do YouTube, facilitando a comunica\u00e7\u00e3o imediata.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.youtube"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "P\u00f3s-Duolingo Social",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o para o WhatsApp ap\u00f3s a conclus\u00e3o ou abertura do Duolingo, aproveitando o h\u00e1bito estabelecido de verificar mensagens imediatamente ap\u00f3s a sess\u00e3o de estudo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.duolingo"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "WhatsApp\u202f\u2192\u202fFotos",
+        "justificativa": "Detecta que o usu\u00e1rio costuma abrir o Photos logo ap\u00f3s usar o WhatsApp e automatiza a abertura do \u00e1lbum para facilitar o compartilhamento de imagens",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.whatsapp"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.apps.photos"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "M\u00fasica+Mensagem",
+        "justificativa": "Abre o WhatsApp automaticamente ap\u00f3s iniciar a m\u00fasica para que voc\u00ea possa responder mensagens sem interromper a playlist.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.spotify.music"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "FoodChat",
+        "justificativa": "Quando voc\u00ea abre o app de delivery, a rotina abre o WhatsApp automaticamente para que voc\u00ea possa compartilhar o pedido ou convidar amigos a comer junto, economizando tempo e mantendo a conversa em um \u00fanico fluxo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sankuai.sailor.afooddelivery"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Foto2Chat",
+        "justificativa": "Quando voc\u00ea abre o Google Fotos, a rotina abre o WhatsApp automaticamente para que voc\u00ea possa compartilhar rapidamente a imagem ou iniciar uma conversa sobre ela.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.apps.photos"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Quick Settings",
+        "justificativa": "Acelera o acesso \u00e0s configura\u00e7\u00f5es gerais sempre que o usu\u00e1rio abre o painel de intelig\u00eancia, evitando cliques extras.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings.intelligence"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "GoodLock to Registry",
+        "justificativa": "Automatiza a abertura do Galaxy Registry logo ap\u00f3s o desbloqueio, economizando tempo e garantindo que as configura\u00e7\u00f5es estejam sempre atualizadas.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.goodlock"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.samsung.android.app.galaxyregistry"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Shopee to Insta Switch",
+        "justificativa": "Quando o usu\u00e1rio abre o Shopee, ele costuma querer conferir novidades no Instagram. Essa rotina abre o Instagram automaticamente, economizando tempo e mantendo a experi\u00eancia fluida.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.shopee.br"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.instagram.android"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "CapturaInstant\u00e2nea",
+        "justificativa": "Automatiza a visualiza\u00e7\u00e3o imediata das fotos capturadas, economizando tempo e evitando a busca manual na galeria.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.smartcapture"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ajuste R\u00e1pido",
+        "justificativa": "Automatiza o acesso direto \u00e0s configura\u00e7\u00f5es do sistema imediatamente ap\u00f3s a abertura do rel\u00f3gio, eliminando a necessidade de navega\u00e7\u00e3o manual para quem precisa de ajustes r\u00e1pidos ou verifica\u00e7\u00f5es de status.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.clockpackage"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.settings"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Quando o usu\u00e1rio acessa o gerenciador de arquivos, ele costuma querer visualizar rapidamente as imagens encontradas. Esta rotina abre automaticamente o Gallery3D para facilitar a visualiza\u00e7\u00e3o.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.app.myfiles"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Play Music After Payment",
+        "justificativa": "Esta rotaina foi criada para automatizar a abertura do aplicativo Spotify Music ap\u00f3s o pagamento realizado pelo Samsung Pay. Isso facilita o acesso a m\u00fasica preferida sem precisar navegar manualmente pelo dispositivo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.spay"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "android.intent.action.MAIN",
+                "parametro": "com.spotify.music"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Fot\u00f3grafo Instant\u00e2neo",
+        "justificativa": "Detecta a inten\u00e7\u00e3o de capturar momentos ao abrir a galeria, preparando a c\u00e2mera imediatamente para reduzir o tempo de resposta e garantir que nenhum momento seja perdido.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.sec.android.gallery3d"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.app.camera"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Abra Chrome logo ap\u00f3s configura\u00e7\u00f5es do Android",
+        "justificativa": "Essa rotaina foi criada para facilitar o acesso aos sites e aplicativos preferidos voc\u00ea logo ap\u00f3s configurar seu dispositivo Android. Ao ativar essa rotaina, voc\u00ea poder\u00e1 facilmente navegar na internet e acessar seus recursos favoritos ap\u00f3s personalizar suas configura\u00e7\u00f5es.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.settings"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "android.intent.action.MAIN",
+                "parametro": "android.intent.category.LAUNCHER"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Instawhats",
+        "justificativa": "Detecta a abertura do Instagram e, antecipando a necessidade de comunica\u00e7\u00e3o, abre o WhatsApp para facilitar o compartilhamento imediato de conte\u00fado ou mensagens relacionadas ao que foi visto.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.instagram.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "launch_app",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Busca R\u00e1pida P\u00f3s M\u00fasica",
+        "justificativa": "Ao abrir o aplicativo de som, o usu\u00e1rio costuma buscar rapidamente algo no Google; automatiza a abertura do Google Quick Search para economizar tempo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.soundcorset.client.android"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "launch_app",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "CifraChat",
+        "justificativa": "Abre o WhatsApp automaticamente ap\u00f3s ouvir a m\u00fasica no CifraClub, facilitando a troca de mensagens sobre a m\u00fasica ou a playlist sem precisar procurar o app.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.studiosol.cifraclub"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Galeria Instant\u00e2nea",
+        "justificativa": "Ao detectar a abertura do Galaxy RAW, a rotina abre automaticamente a Gallery3D para facilitar a visualiza\u00e7\u00e3o imediata das fotos capturadas.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.app.galaxyraw"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.sec.android.gallery3d"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Foco Lingu\u00edstico",
+        "justificativa": "Transi\u00e7\u00e3o suave da distra\u00e7\u00e3o social para o aprendizado, aproveitando o impulso de abrir o celular para direcion\u00e1-lo ao Duolingo imediatamente ap\u00f3s o Facebook.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.facebook.katana"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.duolingo"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "LooL to Chrome",
+        "justificativa": "Abre o Chrome automaticamente ap\u00f3s abrir o LooL para facilitar o acesso a recursos web",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.samsung.android.lool"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.android.chrome"
+            }
+        ],
+        "ativa": "false"
+    },
+    {
+        "nome": "Busca Imediata",
+        "justificativa": "Automatiza a transi\u00e7\u00e3o do navegador para a busca r\u00e1pida, eliminando o clique manual e acelerando o fluxo de pesquisa do usu\u00e1rio.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.android.chrome"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.google.android.googlequicksearchbox"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Modo Chegada",
+        "justificativa": "Ao detectar a abertura do Uber, assume-se que o usu\u00e1rio est\u00e1 em tr\u00e2nsito ou acabou de chegar. A rotina prepara o WhatsApp para uso imediato, otimizando o fluxo de comunica\u00e7\u00e3o p\u00f3s-viagem.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.ubercab"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Ponte de Comunica\u00e7\u00e3o",
+        "justificativa": "Antecipa a necessidade de comunica\u00e7\u00e3o ao detectar a abertura do buscador, reduzindo o tempo de lat\u00eancia para acessar o WhatsApp, que \u00e9 o pr\u00f3ximo passo habitual do usu\u00e1rio.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.googlequicksearchbox"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Pausa Social",
+        "justificativa": "Detecta o padr\u00e3o de alternar para o WhatsApp ap\u00f3s usar o YouTube, sugerindo uma pausa para intera\u00e7\u00f5es sociais ou atualiza\u00e7\u00f5es r\u00e1pidas.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.google.android.youtube"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Duolingo\u2011WhatsApp",
+        "justificativa": "Detecta o h\u00e1bito de abrir o WhatsApp logo ap\u00f3s usar o Duolingo, facilitando a continua\u00e7\u00e3o da pr\u00e1tica de idioma via mensagens ou grupos de estudo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.duolingo"
+        },
+        "acoes": [
+            {
+                "alvo": "MOBILE",
+                "comando": "OPEN_APP",
+                "parametro": "com.whatsapp"
+            }
+        ],
+        "ativa": false
+    },
+    {
+        "nome": "Foto do WhatsApp",
+        "justificativa": "Esta rotina foi criada para automatizar a c\u00f3pia de fotos enviadas pelo WhatsApp para o Google Photos para manter uma c\u00f3pia \u0627\u062d\u062a\u064a\u0627\u0637ia segura e f\u00e1cil de acessar. Ao receber uma nova mensagem no WhatsApp, seguem as fotos e \u00e9 automaticamente aberto o Google Photos para salvar as fotos no seu dispositivo.",
+        "gatilho": {
+            "tipo": "APP_OPENED",
+            "pacote": "com.whatsapp"
+        },
+        "acoes": [
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "android.intent.action.MAIN",
+                "parametro": "com.google.android.apps.photos"
+            },
+            {
+                "alvo": "PC|MOBILE",
+                "comando": "android.intent.action.MAIN",
+                "parametro": "com.google.android.apps.photos"
+            }
+        ],
+        "ativa": true
     }
 ]

@@ -210,6 +210,11 @@ async def websocket_endpoint(websocket: WebSocket):
                         central_alertas.pc_master = websocket
                         logger.info("🖥️ [WS] PC Master autenticado e vinculado.")
                         
+                        # Confirma para o cliente que o registro foi aceito
+                        try:
+                            await websocket.send_json({"tipo_ws": "REGISTRO_OK", "id": "PC_MASTER"})
+                        except: pass
+                        
                     elif cliente_id == "MOBILE":
                         conn_id = msg.get("connection_id", "legacy")
                         # 🛡️ ANTI-DUPLICIDADE: Só fecha se for uma conexão REALMENTE diferente

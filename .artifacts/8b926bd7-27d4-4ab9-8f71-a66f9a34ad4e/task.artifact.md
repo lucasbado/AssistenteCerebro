@@ -1,10 +1,8 @@
-# Tarefas: Naturalidade e Aprendizado Autônomo
+# Tarefas: Correção de Bugs e Estabilização
 
-- [x] **Backend: Refinamento de Personalidade (llm.py)**
-    - [x] Atualizar prompt de sistema para tom humano e estratégico
-    - [x] Implementar instrução de extração de fatos (Scavenger)
-    - [x] Adicionar `memoria_obsidian` ao exemplo de resposta JSON
-- [x] **Agentes: Orquestração de Aprendizado (agente_raciocinio.py)**
-    - [x] Refinar lógica de salvamento no Obsidian para categorias dinâmicas
-- [x] **Conhecimento: Reset de Identidade (Identidade.md)**
-    - [x] Remover regras rígidas de gírias e preparar para aprendizado orgânico
+- [ ] **PC: Fix Reference Error (App.tsx)**
+    - [ ] Mover listeners para o topo e usar `let` para escopo de cleanup
+- [ ] **API: Fix Validation (servico.py)**
+    - [ ] Mudar criação de cards para dicionários estruturados
+- [ ] **WS: Fix Reconnection (websocket.py)**
+    - [ ] Refinar log e confirmação de registro do PC_MASTER

@@ -178,6 +178,53 @@ export default function App() {
     let isComponentMounted = true;
     let reconnectTimeout: number;
     let isConnecting = false;
+    let unlistenHardware: Promise<any> | null = null;
+    let unlistenWindow: Promise<any> | null = null;
+
+    // Start Monitoring in Rust
+    invoke("start_monitoring").catch(err => {
+      addLog(`Failed to start Rust monitor: ${err}`, "text-red-400");
+    });
+
+    // Listen to Hardware Updates
+    unlistenHardware = listen<HardwareUpdate>("hardware-update", (event) => {
+      setCpu(event.payload.cpu);
+      setRam(event.payload.ram);
+
+      // Notify Cloud about hardware status including processes
+      if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
+        activeSocket.send(JSON.stringify({
+          tipo_ws: "STATUS_PC",
+          id: "PC_MASTER",
+          stats: {
+            cpu: event.payload.cpu,
+            ram: event.payload.ram,
+            online: true,
+            processes: event.payload.processes
+          }
+        }));
+      }
+    });
+
+    // Listen to Window Updates
+    let lastLogProcess = "";
+    unlistenWindow = listen<WindowUpdate>("window-update", (event) => {
+      setVision({ process: event.payload.process, title: event.payload.title });
+
+      // Deduplicação de logs
+      if (event.payload.process !== lastLogProcess) {
+        addLog(`Activity Detected: ${event.payload.process}`, "text-neon-cyan");
+        lastLogProcess = event.payload.process;
+      }
+
+      // Notify Cloud about activity
+      if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
+        activeSocket.send(JSON.stringify({
+          tipo_ws: "PC_ACTIVITY",
+          payload: { processo: event.payload.process, titulo: event.payload.title }
+        }));
+      }
+    });
 
     const setupWS = async () => {
       if (!isComponentMounted || isConnecting) return;
@@ -215,6 +262,11 @@ export default function App() {
 
           if (data.mood) setMood(data.mood);
 
+          if (data.tipo_ws === "REGISTRO_OK") {
+            addLog("✅ Autenticação confirmada pelo cérebro.", "text-neon-cyan");
+            setIsConnected(true);
+          }
+
           if (data.tipo_ws === "STATUS_PC" && data.id === "PC_MASTER") {
              setIsConnected(true);
           }
@@ -246,8 +298,8 @@ export default function App() {
 
     return () => {
       isComponentMounted = false;
-      unlistenHardware.then(u => u());
-      unlistenWindow.then(u => u());
+      if (unlistenHardware) unlistenHardware.then(u => u());
+      if (unlistenWindow) unlistenWindow.then(u => u());
       if (activeSocket) activeSocket.close();
       if (reconnectTimeout) window.clearTimeout(reconnectTimeout);
     };
