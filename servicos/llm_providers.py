@@ -20,7 +20,7 @@ class GroqProvider:
     def __init__(self):
         self.api_key = os.getenv("GROQ_API_KEY")
         self.client = AsyncGroq(api_key=self.api_key) if self.api_key else None
-        self.modelo = "groq/compound-mini"
+        self.modelo = "llama-3.3-70b-versatile"
         self.circuit_open = False
 
     def disponivel(self) -> bool:

@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-is_render = os.getenv("RENDER", "False").lower() == "true" or os.name != "nt"
+is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"] or os.name != "nt"
 default_sqlite = "sqlite+aiosqlite:///agente_local.db" if is_render else "sqlite+aiosqlite:///D:/Programacao/AssistenteCell/agente_local.db"
 
 # Prioriza a URL da nuvem (Neon.tech/Postgres), senão usa SQLite local

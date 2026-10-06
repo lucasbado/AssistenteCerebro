@@ -15,8 +15,8 @@ class AgentePcExecutor:
     """
     
     async def processar(self, evento: EventoCanonico):
-        # ☁️ ROTEAMENTO CLOUD: Se estivermos no Render, o comando deve ir via WebSocket para o PC Master
-        is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"]
+        # ☁️ ROTEAMENTO CLOUD: Se estivermos no Render ou Linux (Cloud), o comando deve ir via WebSocket para o PC Master
+        is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"] or os.name != "nt"
         if is_render:
             comando = evento.payload.get("comando")
             if comando:

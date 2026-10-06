@@ -180,8 +180,8 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(central_alertas.iniciar_monitor())
     ]
     
-    # 🖥️ LOCAL ONLY: Inicia listener UDP apenas se não estiver no Render
-    is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"]
+    # 🖥️ LOCAL ONLY: Inicia listener UDP apenas se não estiver no Render / Cloud Linux
+    is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"] or os.name != "nt"
     
     if not is_render:
         tasks.append(asyncio.create_task(pc_listener_service.iniciar()))

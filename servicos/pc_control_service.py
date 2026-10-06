@@ -12,8 +12,8 @@ from typing import List
 logger = logging.getLogger("PCControl")
 
 # 🌍 CONFIGURAÇÃO DE AMBIENTE
-# Forçamos local se não houver variável RENDER (padrão do sistema)
-is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"]
+# Detecta se está rodando no Render ou em ambiente Linux/Cloud (não-Windows)
+is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"] or os.name != "nt"
 
 # Declaramos as variáveis globais que serão preenchidas pelos imports
 pyautogui = None
