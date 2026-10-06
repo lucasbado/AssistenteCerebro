@@ -87,17 +87,43 @@ async fn minimize_window(app_handle: AppHandle) {
 }
 
 #[tauri::command]
+async fn maximize_window(app_handle: AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if window.is_maximized().unwrap_or(false) {
+            let _ = window.unmaximize();
+        } else {
+            let _ = window.maximize();
+        }
+    }
+}
+
+#[tauri::command]
 fn get_cloud_url() -> String {
-    // Tenta ler do .env na raiz do ecossistema (3 níveis acima: src-tauri/src -> src-tauri -> ollie-master-next -> raiz)
     dotenvy::from_path("../../../.env").ok();
-    std::env::var("OLLIE_CLOUD_URL").unwrap_or_else(|_| "wss://assistentecellfront.onrender.com/api/v1/ws/alertas".to_string())
+    let env = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "production".to_string());
+    if env == "development" {
+        std::env::var("OLLIE_LOCAL_URL").unwrap_or_else(|_| "ws://localhost:8000/api/v1/ws/alertas".to_string())
+    } else {
+        std::env::var("OLLIE_CLOUD_URL").unwrap_or_else(|_| "wss://assistentecellfront.onrender.com/api/v1/ws/alertas".to_string())
+    }
+}
+
+#[tauri::command]
+fn get_api_url() -> String {
+    dotenvy::from_path("../../../.env").ok();
+    let env = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "production".to_string());
+    if env == "development" {
+        "http://127.0.0.1:8000".to_string()
+    } else {
+        "https://assistentecellfront.onrender.com".to_string()
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![start_monitoring, close_window, minimize_window, get_cloud_url])
+        .invoke_handler(tauri::generate_handler![start_monitoring, close_window, minimize_window, maximize_window, get_cloud_url, get_api_url])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

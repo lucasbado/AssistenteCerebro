@@ -54,3 +54,15 @@ async def receber_comando(request: Request):
     
     await kernel.publicar(evento)
     return {"status": "ok", "id": evento.id}
+
+@router.get("/intervention/policy")
+async def get_intervention_policy():
+    from servicos.intervention_governor import intervention_governor
+    return intervention_governor.policy
+
+@router.post("/intervention/policy")
+async def update_intervention_policy(request: Request):
+    from servicos.intervention_governor import intervention_governor
+    dados = await request.json()
+    updated = intervention_governor.atualizar_politica(dados)
+    return {"status": "ok", "policy": updated}

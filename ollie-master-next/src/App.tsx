@@ -10,7 +10,9 @@ import {
   X,
   Minus,
   RefreshCw,
-  Search
+  Search,
+  Shield,
+  Maximize2
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -72,6 +74,44 @@ export default function App() {
   const [vision, setVision] = useState({ process: "IDLE", title: "Scanning neural activity..." });
   const [chatText, setChatInput] = useState("");
   const [wsInstance, setWs] = useState<WebSocket | null>(null);
+  const [showInterventionModal, setShowInterventionModal] = useState(false);
+  const [policy, setPolicy] = useState({
+    auto_open_enabled: false,
+    min_priority_score: 0.85,
+    whitelist: ["whatsapp", "telegram", "vscode"],
+    blacklist: ["jogo", "netflix", "youtube"]
+  });
+
+  const fetchPolicy = async () => {
+    try {
+      const apiUrl = await invoke<string>("get_api_url");
+      const res = await fetch(`${apiUrl}/api/v1/pc/intervention/policy`);
+      const data = await res.json();
+      setPolicy(data);
+    } catch (e) {
+      console.error("Failed to fetch policy", e);
+    }
+  };
+
+  const updatePolicy = async (newPolicy: any) => {
+    try {
+      const apiUrl = await invoke<string>("get_api_url");
+      const res = await fetch(`${apiUrl}/api/v1/pc/intervention/policy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newPolicy)
+      });
+      const data = await res.json();
+      setPolicy(data.policy);
+      addLog("🛡️ Intervention policy updated successfully.", "text-neon-cyan");
+    } catch (e) {
+      addLog(`Failed to update policy: ${e}`, "text-red-400");
+    }
+  };
+
+  useEffect(() => {
+    fetchPolicy();
+  }, []);
 
   // Mood Colors
   const accentColor = mood === 'thinking' ? '#bc13fe' : mood === 'alert' ? '#ff9800' : '#05ffa1';
@@ -84,8 +124,8 @@ export default function App() {
   const handleCommand = async (data: any) => {
     try {
       addLog(`⚡ Sending Command: ${data.comando || data.acao || 'CUSTOM'}`, "text-neon-cyan");
-      // 127.0.0.1 é mais estável que localhost para evitar problemas com IPv6/DNS
-      await fetch("http://127.0.0.1:8000/api/v1/pc/comando", {
+      const apiUrl = await invoke<string>("get_api_url");
+      await fetch(`${apiUrl}/api/v1/pc/comando`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data)
@@ -306,7 +346,7 @@ export default function App() {
   }, []);
 
   return (
-    <main className="relative w-[1050px] h-[750px] overflow-hidden p-6 text-white font-sans selection:bg-neon-purple/30 bg-black/10 border border-white/5 rounded-[32px]">
+    <main className="relative w-screen h-screen overflow-hidden p-6 text-white font-sans selection:bg-neon-purple/30 bg-black/10">
       {/* --- AURA BACKGROUNDS --- */}
       <motion.div
         animate={{
@@ -359,12 +399,21 @@ export default function App() {
               <button
                 onClick={() => invoke("minimize_window")}
                 className="p-2 text-gray-500 hover:text-white transition-colors"
+                title="Minimize"
               >
                 <Minus className="w-4 h-4" />
               </button>
               <button
+                onClick={() => invoke("maximize_window")}
+                className="p-2 text-gray-500 hover:text-white transition-colors"
+                title="Maximize / Fullscreen"
+              >
+                <Maximize2 className="w-4 h-4" />
+              </button>
+              <button
                 onClick={() => invoke("close_window")}
                 className="p-2 text-gray-500 hover:text-red-400 transition-colors"
+                title="Close"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -374,7 +423,7 @@ export default function App() {
 
         <div className="flex-1 flex gap-6 overflow-hidden">
           {/* LEFT PANEL */}
-          <aside className="w-[340px] flex flex-col gap-6">
+          <aside className="w-[340px] flex flex-col gap-6 overflow-y-auto custom-scrollbar pr-2">
 
             {/* OLLIE'S VISION */}
             <section className="glass rounded-3xl p-6 flex flex-col gap-4">
@@ -421,12 +470,37 @@ export default function App() {
               </div>
             </section>
 
+            {/* SUPER PODERES & INTERVENÇÃO */}
+            <section className="glass rounded-3xl p-6 flex flex-col gap-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-[11px] font-bold text-gray-500 tracking-[2px] uppercase flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-neon-cyan" /> Super Poderes
+                </h2>
+                <button
+                  onClick={() => setShowInterventionModal(true)}
+                  className="text-[10px] text-neon-cyan hover:underline font-mono"
+                >
+                  Configurar
+                </button>
+              </div>
+              <div className="glass p-3 rounded-2xl flex items-center justify-between">
+                <span className="text-xs font-bold text-white">Auto-Open Notificações</span>
+                <input
+                  type="checkbox"
+                  checked={policy.auto_open_enabled}
+                  onChange={(e) => updatePolicy({ ...policy, auto_open_enabled: e.target.checked })}
+                  className="w-4 h-4 accent-neon-cyan cursor-pointer"
+                />
+              </div>
+            </section>
+
             {/* QUICK ACTIONS */}
             <section className="glass rounded-3xl p-4 flex justify-around text-neon-cyan">
               {[
                 { icon: Search, label: "Neural Scan", action: () => handleCommand({ comando: "estudar_pc" }) },
                 { icon: RefreshCw, label: "Reset Link", action: () => setupWS() },
-                { icon: Database, label: "Hardware Init", action: () => handleCommand({ comando: "inicializar_hardware" }) }
+                { icon: Database, label: "Hardware Init", action: () => handleCommand({ comando: "inicializar_hardware" }) },
+                { icon: Shield, label: "Intervention Governor", action: () => setShowInterventionModal(true) }
               ].map((item, i) => (
                 <button
                   key={i}
@@ -480,6 +554,82 @@ export default function App() {
           </section>
         </div>
       </div>
+
+      {/* --- INTERVENTION GOVERNOR MODAL --- */}
+      {showInterventionModal && (
+        <div className="absolute inset-0 z-50 bg-black/95 flex items-center justify-center p-6">
+          <div className="glass w-full max-w-lg rounded-3xl p-6 flex flex-col gap-6 border border-white/10">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-black tracking-wider uppercase text-neon-cyan flex items-center gap-2">
+                <Shield className="w-5 h-5" /> Intervention Governor
+              </h3>
+              <button onClick={() => setShowInterventionModal(false)} className="text-gray-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="flex justify-between items-center glass p-4 rounded-2xl">
+                <div>
+                  <h4 className="font-bold text-white">Auto-Open Apps on Notification</h4>
+                  <p className="text-gray-400 text-[10px]">Permitir que a Ollie abra apps automaticamente</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={policy.auto_open_enabled}
+                  onChange={(e) => updatePolicy({ ...policy, auto_open_enabled: e.target.checked })}
+                  className="w-5 h-5 accent-neon-cyan cursor-pointer"
+                />
+              </div>
+
+              <div className="glass p-4 rounded-2xl space-y-2">
+                <div className="flex justify-between">
+                  <span className="font-bold text-white">Min Priority Score Threshold</span>
+                  <span className="text-neon-cyan font-mono">{policy.min_priority_score}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="1.0"
+                  step="0.05"
+                  value={policy.min_priority_score}
+                  onChange={(e) => updatePolicy({ ...policy, min_priority_score: parseFloat(e.target.value) })}
+                  className="w-full accent-neon-purple cursor-pointer"
+                />
+              </div>
+
+              <div className="glass p-4 rounded-2xl space-y-2">
+                <span className="font-bold text-white block">Whitelist (Apps permitidos)</span>
+                <div className="flex flex-wrap gap-2">
+                  {(policy.whitelist || []).map((app: string, idx: number) => (
+                    <span key={idx} className="bg-neon-cyan/10 text-neon-cyan px-2.5 py-1 rounded-full text-[10px] font-mono border border-neon-cyan/20">
+                      {app}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="glass p-4 rounded-2xl space-y-2">
+                <span className="font-bold text-white block">Blacklist (Nunca abrir sozinhos)</span>
+                <div className="flex flex-wrap gap-2">
+                  {(policy.blacklist || []).map((app: string, idx: number) => (
+                    <span key={idx} className="bg-red-500/10 text-red-400 px-2.5 py-1 rounded-full text-[10px] font-mono border border-red-500/20">
+                      {app}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowInterventionModal(false)}
+              className="bg-neon-cyan/25 hover:bg-neon-cyan/40 text-neon-cyan font-bold py-3 rounded-2xl transition-all tracking-widest uppercase text-xs border border-neon-cyan/40 shadow-[0_0_15px_rgba(5,255,161,0.2)]"
+            >
+              Close Governor
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

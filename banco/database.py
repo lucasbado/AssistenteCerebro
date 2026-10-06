@@ -52,12 +52,17 @@ async def inicializar_banco():
     Faz fallback automático para SQLite local se houver falha no Postgres (ex: quota excedida).
     """
     from banco.models import Base
+    from servicos.vector_store import registrar_hooks_conexao
     global async_engine
     try:
         async with async_engine.begin() as conn:
             # run_sync é usado para executar a rotina síncrona de DDL do SQLAlchemy
             # sem bloquear o Event Loop.
             await conn.run_sync(Base.metadata.create_all)
+        
+        # Registra hooks de WAL e tabelas virtuais FTS5/sqlite-vec se for SQLite
+        if "sqlite" in async_engine.url.drivername:
+            registrar_hooks_conexao()
     except Exception as e:
         print(f"\n[AVISO CRÍTICO] Falha ao conectar ao banco remoto PostgreSQL ({e}).")
         print("[AVISO CRÍTICO] O projeto excedeu a cota ou está sem conexão. Realizando fallback automático para SQLite local...\n")
@@ -68,4 +73,6 @@ async def inicializar_banco():
         
         async with async_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        if "sqlite" in async_engine.url.drivername:
+            registrar_hooks_conexao()
         print("[SUCESSO] Fallback para SQLite local ativado com sucesso!\n")

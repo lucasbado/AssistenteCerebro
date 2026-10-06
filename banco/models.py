@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, JSON, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, JSON, DateTime, ForeignKey, LargeBinary
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timezone
 
@@ -59,3 +59,56 @@ class MemoriaTrabalhoDB(Base):
     resumo_contexto = Column(JSON) # Lista de mensagens recentes ou um resumo da LLM
     relevancia = Column(Float, default=0.0, index=True)
     ultima_interacao = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+
+# ==========================================
+# NOVOS MODELOS DE MEMÓRIA EM CAMADAS (PROD)
+# ==========================================
+
+class FactDB(Base):
+    __tablename__ = "facts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(50), default="default", index=True)
+    text = Column(String, nullable=False)
+    keywords = Column(JSON) # Lista JSON de palavras-chave
+    embedding = Column(LargeBinary) # float32 packed 768d
+    importance = Column(Float, default=0.5, index=True)
+    last_used = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    source_msg_id = Column(String(36), nullable=True)
+
+class SummaryDB(Base):
+    __tablename__ = "summaries"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(50), default="default", index=True)
+    scope = Column(String(50), index=True) # "session:abc" | "global"
+    text = Column(String, nullable=False)
+    embedding = Column(LargeBinary, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+class SemanticCacheDB(Base):
+    __tablename__ = "semantic_cache"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(50), default="default", index=True)
+    query_hash = Column(String(64), index=True)
+    query_embedding = Column(LargeBinary, nullable=True)
+    facts_version = Column(Integer, default=1)
+    response = Column(String, nullable=False)
+    hits = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+class TaskQueueDB(Base):
+    __tablename__ = "task_queue"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(50), default="default", index=True)
+    task_type = Column(String(50), index=True) # "summarize" | "extract_facts" | "embed"
+    payload = Column(JSON)
+    status = Column(String(20), default="pending", index=True) # "pending" | "processing" | "done" | "dead"
+    attempts = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+class MetaDB(Base):
+    __tablename__ = "meta"
+    key = Column(String(100), primary_key=True)
+    value = Column(String, nullable=False)
+
