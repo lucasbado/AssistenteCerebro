@@ -34,13 +34,18 @@ class GroqProvider:
         if not self.disponivel():
             raise ValueError("Groq indisponível ou em circuit breaker.")
         
+        # Garante que a palavra "json" esteja presente no system prompt quando usando response_format={"type": "json_object"}
+        system_mod = system
+        if "json" not in system_mod.lower():
+            system_mod += "\n\n(Return your response in valid JSON format)."
+
         ultima_excecao = None
         for modelo in self.modelos:
             try:
                 logger.info(f"🤖 [Groq] Tentando gerar com o modelo: {modelo}")
                 chat_completion = await self.client.chat.completions.create(
                     messages=[
-                        {"role": "system", "content": system},
+                        {"role": "system", "content": system_mod},
                         {"role": "user", "content": prompt},
                     ],
                     model=modelo,
