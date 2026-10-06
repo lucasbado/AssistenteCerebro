@@ -12,7 +12,12 @@ logger = logging.getLogger("RoutineDiscovery")
 
 class RoutineDiscoveryService:
     def __init__(self):
-        self.routines_path = "D:/Programacao/AssistenteCell/config/routines.json"
+        self.routines_path = "config/routines.json"
+        if not os.path.exists(os.path.dirname(self.routines_path)):
+            if os.path.exists("D:/Programacao/AssistenteCell/config/routines.json"):
+                self.routines_path = "D:/Programacao/AssistenteCell/config/routines.json"
+            else:
+                os.makedirs(os.path.dirname(self.routines_path), exist_ok=True)
 
     def _get_existing_routine_names(self) -> set:
         if not os.path.exists(self.routines_path): return set()

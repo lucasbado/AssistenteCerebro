@@ -7,7 +7,9 @@ logger = logging.getLogger("MacroService")
 
 class MacroService:
     def __init__(self):
-        self.config_path = "D:/Programacao/AssistenteCell/config/macros.json"
+        self.config_path = "config/macros.json"
+        if not os.path.exists("config") and os.path.exists("D:/Programacao/AssistenteCell/config/macros.json"):
+            self.config_path = "D:/Programacao/AssistenteCell/config/macros.json"
         self._carregar_macros()
 
     def _carregar_macros(self):

@@ -9,8 +9,11 @@ from servicos.routine_generator_service import routine_generator_service
 router = APIRouter()
 logger = logging.getLogger("CapabilitiesAPI")
 
-ROUTINES_PATH = "D:/Programacao/AssistenteCell/config/routines.json"
-DISCOVERED_PATH = "D:/Programacao/AssistenteCell/config/discovered_routines.json"
+ROUTINES_PATH = "config/routines.json" if os.path.exists("config") or not os.path.exists("D:/Programacao/AssistenteCell/config") else "D:/Programacao/AssistenteCell/config/routines.json"
+DISCOVERED_PATH = "config/discovered_routines.json" if os.path.exists("config") or not os.path.exists("D:/Programacao/AssistenteCell/config") else "D:/Programacao/AssistenteCell/config/discovered_routines.json"
+
+if not os.path.exists(os.path.dirname(ROUTINES_PATH)):
+    os.makedirs(os.path.dirname(ROUTINES_PATH), exist_ok=True)
 
 class RoutineAction(BaseModel):
     alvo: str

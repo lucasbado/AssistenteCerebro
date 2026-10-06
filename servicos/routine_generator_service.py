@@ -9,8 +9,14 @@ logger = logging.getLogger("RoutineGenerator")
 
 class RoutineGeneratorService:
     def __init__(self):
-        self.discovered_path = "D:/Programacao/AssistenteCell/config/discovered_routines.json"
-        self.active_path = "D:/Programacao/AssistenteCell/config/routines.json"
+        self.discovered_path = "config/discovered_routines.json"
+        self.active_path = "config/routines.json"
+        if not os.path.exists("config"):
+            if os.path.exists("D:/Programacao/AssistenteCell/config"):
+                self.discovered_path = "D:/Programacao/AssistenteCell/config/discovered_routines.json"
+                self.active_path = "D:/Programacao/AssistenteCell/config/routines.json"
+            else:
+                os.makedirs("config", exist_ok=True)
         self.llm = ServicoLLM()
 
     async def run_batch_generation(self):
