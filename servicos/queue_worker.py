@@ -5,7 +5,7 @@ import signal
 from datetime import datetime, timezone
 from sqlalchemy.future import select
 from banco.database import AsyncSessionLocal
-from banco.models import TaskQueueDB
+from banco.models import TaskQueueDB, FactDB
 from servicos.fact_service import fact_service
 
 logger = logging.getLogger("QueueWorker")
@@ -64,6 +64,18 @@ class QueueWorker:
                     payload = task.payload if isinstance(task.payload, dict) else json.loads(task.payload)
                     texto = payload.get("texto", "")
                     await fact_service.extrair_e_salvar_fatos(texto, user_id=task.user_id)
+                elif task.task_type == "embed_fact":
+                    payload = task.payload if isinstance(task.payload, dict) else json.loads(task.payload)
+                    fact_text = payload.get("fact_text", "")
+                    # Verifica se o fato ainda existe no DB para tolerar fatos deletados pela reconciliação
+                    stmt = select(FactDB).where(FactDB.text == fact_text, FactDB.user_id == task.user_id)
+                    res = await session.execute(stmt)
+                    fato_obj = res.scalar_one_or_none()
+                    if not fato_obj:
+                        logger.info(f"ℹ️ [QueueWorker] Fato para embedding não encontrado (reconciliado/deletado): '{fact_text[:30]}...'")
+                    else:
+                        # Processamento de embedding pode ser acoplado aqui se necessário
+                        pass
                 
                 task.status = "done"
                 await session.commit()

@@ -152,14 +152,19 @@ class AgenteRaciocinio:
                             "parametro": param
                         })
 
-            # 7. MEMÓRIA PERMANENTE (Obsidian - Scavenger Protocol)
+            # 7. MEMÓRIA PERMANENTE (Obsidian + Novo Banco FactDB)
             mem_obs = resultado.get("memoria_obsidian")
             if mem_obs and isinstance(mem_obs, dict):
                 titulo = str(mem_obs.get("titulo", "Aprendizado")).strip()
                 fato = str(mem_obs.get("fato", "")).strip()
                 if titulo and fato:
-                    logger.info(f"🧠 [Aprendizado] Registrando novo fato no Obsidian [{titulo}]: {fato[:50]}...")
+                    logger.info(f"🧠 [Aprendizado] Registrando novo fato no Obsidian e FactDB [{titulo}]: {fato[:50]}...")
                     obsidian_service.registrar_fato(titulo, fato)
+                    try:
+                        from servicos.fact_service import fact_service
+                        await fact_service.extrair_e_salvar_fatos(fato)
+                    except Exception as fe:
+                        logger.error(f"Erro ao salvar fato no FactDB: {fe}")
 
         except Exception as e:
             logger.error(f"💥 Erro no Raciocínio: {e}")

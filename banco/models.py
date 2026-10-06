@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, JSON, DateTime, ForeignKey, LargeBinary
+from sqlalchemy import Column, Integer, String, Float, JSON, DateTime, ForeignKey, LargeBinary, Index, text
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timezone
 
@@ -76,6 +76,20 @@ class FactDB(Base):
     last_used = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
     source_msg_id = Column(String(36), nullable=True)
+    source_file = Column(String(255), nullable=True, index=True)
+    source_hash = Column(String(64), nullable=True, index=True)
+
+    __table_args__ = (
+        Index(
+            "idx_facts_source",
+            user_id,
+            source_file,
+            source_hash,
+            unique=True,
+            sqlite_where=text("source_hash IS NOT NULL"),
+            postgresql_where=text("source_hash IS NOT NULL")
+        ),
+    )
 
 class SummaryDB(Base):
     __tablename__ = "summaries"
