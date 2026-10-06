@@ -64,9 +64,17 @@ async def list_discovered():
             return json.load(f)
     except: return []
 
-@router.post("/approve/{nome}")
-async def approve_routine(nome: str):
+class RoutineNameRequest(BaseModel):
+    nome: str
+
+@router.post("/approve")
+@router.post("/approve/{nome:path}")
+async def approve_routine(nome: str = None, req: RoutineNameRequest = None):
     """Aprova uma rotina descoberta, movendo-a para o arquivo principal."""
+    target_name = nome or (req.nome if req else None)
+    if not target_name:
+        raise HTTPException(status_code=400, detail="Nome da rotina não fornecido.")
+
     if not os.path.exists(DISCOVERED_PATH):
         raise HTTPException(status_code=404, detail="Fila de descoberta vazia.")
     
@@ -74,11 +82,13 @@ async def approve_routine(nome: str):
         with open(DISCOVERED_PATH, "r", encoding="utf-8") as f:
             discovered = json.load(f)
         
-        # Encontra a rotina alvo
-        target = next((r for r in discovered if r["nome"] == nome), None)
+        # Encontra a rotina alvo (case-insensitive e strip)
+        target = next((r for r in discovered if r.get("nome", "").strip().lower() == target_name.strip().lower()), None)
         if not target:
-            raise HTTPException(status_code=404, detail="Rotina não encontrada na fila.")
+            raise HTTPException(status_code=404, detail=f"Rotina '{target_name}' não encontrada na fila.")
         
+        real_name = target["nome"]
+
         # Carrega rotinas ativas
         active = []
         if os.path.exists(ROUTINES_PATH):
@@ -88,10 +98,13 @@ async def approve_routine(nome: str):
         # Remove justificativa e ativa a rotina antes de mover
         target.pop("justificativa", None)
         target["ativa"] = True
-        active.append(target)
+        
+        # Evita duplicata nas ativas
+        if not any(r.get("nome", "").strip().lower() == real_name.strip().lower() for r in active):
+            active.append(target)
         
         # Remove da fila de descoberta
-        new_discovered = [r for r in discovered if r["nome"] != nome]
+        new_discovered = [r for r in discovered if r.get("nome", "").strip().lower() != real_name.strip().lower()]
         
         # Salva ambos os arquivos
         with open(ROUTINES_PATH, "w", encoding="utf-8") as f:
@@ -99,13 +112,19 @@ async def approve_routine(nome: str):
         with open(DISCOVERED_PATH, "w", encoding="utf-8") as f:
             json.dump(new_discovered, f, indent=4)
             
-        return {"status": "success", "message": f"Rotina '{nome}' ativada!"}
+        return {"status": "success", "message": f"Rotina '{real_name}' ativada!"}
     except Exception as e:
+        if isinstance(e, HTTPException): raise e
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/discovered/{nome}")
-async def reject_routine(nome: str):
+@router.delete("/discovered")
+@router.delete("/discovered/{nome:path}")
+async def reject_routine(nome: str = None, req: RoutineNameRequest = None):
     """Descarta uma rotina sugerida pela Ollie."""
+    target_name = nome or (req.nome if req else None)
+    if not target_name:
+        raise HTTPException(status_code=400, detail="Nome da rotina não fornecido.")
+
     if not os.path.exists(DISCOVERED_PATH):
         raise HTTPException(status_code=404, detail="Fila de descoberta vazia.")
     
@@ -113,13 +132,14 @@ async def reject_routine(nome: str):
         with open(DISCOVERED_PATH, "r", encoding="utf-8") as f:
             discovered = json.load(f)
             
-        new_discovered = [r for r in discovered if r["nome"] != nome]
+        new_discovered = [r for r in discovered if r.get("nome", "").strip().lower() != target_name.strip().lower()]
         
         with open(DISCOVERED_PATH, "w", encoding="utf-8") as f:
             json.dump(new_discovered, f, indent=4)
             
-        return {"status": "success", "message": f"Rotina '{nome}' descartada."}
+        return {"status": "success", "message": f"Rotina '{target_name}' descartada."}
     except Exception as e:
+        if isinstance(e, HTTPException): raise e
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/routines")
