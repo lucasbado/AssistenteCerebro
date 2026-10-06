@@ -74,8 +74,42 @@ class ObsidianService:
                 if mode == "a": f.write("\n\n---\n")
                 f.write(conteudo)
             logger.info(f"Fato registrado em {path}")
+
+            # 🌟 NOVO: Se o fato for sobre nome, apelido ou identidade, atualiza o Identidade.md automaticamente
+            if any(k in titulo.lower() for k in ["nome", "apelido", "usuario", "perfil", "identidade", "chamado"]):
+                self._atualizar_identidade(conteudo)
+
         except Exception as e:
             logger.error(f"Erro ao registrar fato no Obsidian: {e}")
+
+    def _atualizar_identidade(self, novo_fato: str):
+        """Atualiza a nota Identidade.md com fatos críticos sobre o usuário."""
+        if not self.vault_path: return
+        identidade_path = os.path.join(self.vault_path, "Identidade.md")
+        try:
+            if os.path.exists(identidade_path):
+                with open(identidade_path, "r", encoding="utf-8") as f:
+                    texto = f.read()
+                if novo_fato not in texto:
+                    if "## Quem é o Usuário?" in texto:
+                        partes = texto.split("## Quem é o Usuário?")
+                        # Insere o fato na seção do usuário
+                        resto = partes[1]
+                        secao_proxima = resto.find("## ")
+                        if secao_proxima != -1:
+                            corpo_secao = resto[:secao_proxima]
+                            fim_secao = resto[secao_proxima:]
+                        else:
+                            corpo_secao = resto
+                            fim_secao = ""
+                        
+                        novo_corpo = corpo_secao.strip() + f"\n- {novo_fato}\n\n"
+                        texto_atualizado = partes[0] + "## Quem é o Usuário?\n" + novo_corpo + fim_secao
+                        with open(identidade_path, "w", encoding="utf-8") as f:
+                            f.write(texto_atualizado)
+                        logger.info("📝 [Identidade] Identidade.md atualizado com sucesso!")
+        except Exception as e:
+            logger.error(f"Erro ao atualizar Identidade.md: {e}")
 
     def buscar_nota_relevante(self, texto_usuario: str) -> str:
         """Busca no vault por notas que contenham palavras-chave do texto do usuário."""
@@ -123,14 +157,14 @@ class ObsidianService:
                 if c.strip():
                     consolidado.append(f"### {nota.upper()}: {c.strip()[:250]}")
 
-            # 3. Fato mais recente
+            # 3. Fatos mais recentes (até 3 arquivos para não perder contexto)
             if os.path.exists(self.agente_dir):
                 arquivos = [f for f in os.listdir(self.agente_dir) if f.endswith(".md")]
                 arquivos.sort(key=lambda x: os.path.getmtime(os.path.join(self.agente_dir, x)), reverse=True)
-                if arquivos:
-                    conteudo = self.ler_nota(arquivos[0])
+                for arq in arquivos[:3]:
+                    conteudo = self.ler_nota(arq)
                     if conteudo.strip():
-                        consolidado.append(f"### ÚLTIMO APRENDIZADO: {conteudo.strip()[:300]}")
+                        consolidado.append(f"### APRENDIZADO RECENTE ({arq}):\n{conteudo.strip()[:300]}")
         except Exception as e:
             logger.error(f"Erro ao listar conhecimento do Obsidian: {e}")
         

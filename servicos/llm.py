@@ -9,6 +9,7 @@ from servicos.semantic_cache import semantic_cache_service
 from servicos.context_builder import context_builder
 from servicos.obsidian_service import obsidian_service
 from servicos.consciencia import consciencia
+from modelos.catalogo import EntidadeSemantica
 
 logger = logging.getLogger("ServicoLLM")
 
@@ -93,3 +94,46 @@ RESPOSTA (JSON):
                 resposta_str = await self.ollama.gerar(prompt, system, max_tokens=400)
                 return json.loads(resposta_str)
             raise
+
+    async def resumir_perfil_usuario(self, texto_perfil: str) -> dict:
+        system = "Ollie: Analise os dados de perfil do usuário e retorne um JSON estrito com 'resumo' e 'cards'."
+        prompt = f"DADOS DO PERFIL:\n{texto_perfil}"
+        provider = self._pick_provider()
+        try:
+            resp = await provider.gerar(prompt, system, max_tokens=600)
+            return json.loads(resp)
+        except Exception as e:
+            logger.error(f"Erro em resumir_perfil_usuario: {e}")
+            return {"resumo": "Resumo indisponível.", "cards": []}
+
+    async def classificar_contato(self, contato_nome: str) -> EntidadeSemantica:
+        from modelos.catalogo import EntidadeSemantica
+        system = "Classifique o contato e retorne um JSON com os atributos (ex: nome, tipo)."
+        prompt = f"CONTATO: {contato_nome}"
+        provider = self._pick_provider()
+        try:
+            resp = await provider.gerar(prompt, system, max_tokens=200)
+            data = json.loads(resp)
+            return EntidadeSemantica(tipo="CONTATO", chave=contato_nome, atributos=data)
+        except:
+            return EntidadeSemantica(tipo="CONTATO", chave=contato_nome, atributos={"nome": contato_nome})
+
+    async def sintetizar_resposta_pesquisa(self, query: str, conteudo: str, historico: list) -> dict:
+        system = "Sintetize a pesquisa web e retorne um JSON estrito com 'resposta_amigavel' e 'fato_para_aprender'."
+        prompt = f"QUERY: {query}\nCONTEÚDO: {conteudo}"
+        provider = self._pick_provider()
+        try:
+            resp = await provider.gerar(prompt, system, max_tokens=500)
+            return json.loads(resp)
+        except Exception as e:
+            logger.error(f"Erro em sintetizar_resposta_pesquisa: {e}")
+            return {"resposta_amigavel": f"Pesquisei sobre {query}, mas tive um erro ao sintetizar.", "fato_para_aprender": ""}
+
+    async def _gerar_json(self, prompt: str, system: str) -> dict:
+        provider = self._pick_provider()
+        try:
+            resp = await provider.gerar(prompt, system, max_tokens=800)
+            return json.loads(resp)
+        except Exception as e:
+            logger.error(f"Erro em _gerar_json: {e}")
+            return {}
