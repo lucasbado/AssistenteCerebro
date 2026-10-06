@@ -168,6 +168,19 @@ class AgenteRaciocinio:
 
         except Exception as e:
             logger.error(f"💥 Erro no Raciocínio: {e}")
+            try:
+                await kernel.publicar(evento.clonar(
+                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                    acao=TipoAcao.INTENCAO_INTERACAO,
+                    origem=OrigemEvento.IA,
+                    payload={
+                        "texto": "Estou atingindo o limite de requisições da IA (Rate Limit). Tente novamente em instantes!",
+                        "titulo": "Ollie",
+                        "tipo_ws": "CHAT_RESPONSE"
+                    },
+                    metadados={"tipo_destino": "CHAT"}
+                ))
+            except: pass
         finally:
             self._locks_ativos.remove(lock_id)
 

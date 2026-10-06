@@ -74,7 +74,7 @@ class GerenciadorNotificacoes:
         
         # 🛡️ GARANTIA DE ENTREGA: Nunca envia resposta de chat vazia
         if tipo_ws == "CHAT_RESPONSE" and not dados_para_envio.get("texto"):
-            dados_para_envio["texto"] = "Feito!"
+            dados_para_envio["texto"] = "Comando processado com sucesso!"
             
         dados_para_envio.setdefault("titulo", "Assistente")
         dados_para_envio["origem_sistema"] = "OLLIE"

@@ -82,6 +82,49 @@ export default function App() {
     blacklist: ["jogo", "netflix", "youtube"]
   });
 
+  const [discoveredRoutines, setDiscoveredRoutines] = useState<any[]>([]);
+
+  const fetchDiscovered = async () => {
+    try {
+      const apiUrl = await invoke<string>("get_api_url");
+      const res = await fetch(`${apiUrl}/api/v1/capabilities/discovered`);
+      const data = await res.json();
+      setDiscoveredRoutines(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("Failed to fetch discovered routines", e);
+    }
+  };
+
+  const approveRoutine = async (nome: string) => {
+    try {
+      const apiUrl = await invoke<string>("get_api_url");
+      const res = await fetch(`${apiUrl}/api/v1/capabilities/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome })
+      });
+      const data = await res.json();
+      addLog(`✅ ${data.message || 'Rotina ativada!'}`, "text-neon-cyan");
+      fetchDiscovered();
+    } catch (e) {
+      addLog(`Failed to approve routine: ${e}`, "text-red-400");
+    }
+  };
+
+  const rejectRoutine = async (nome: string) => {
+    try {
+      const apiUrl = await invoke<string>("get_api_url");
+      const res = await fetch(`${apiUrl}/api/v1/capabilities/discovered/${encodeURIComponent(nome)}`, {
+        method: "DELETE"
+      });
+      const data = await res.json();
+      addLog(`🗑️ ${data.message || 'Rotina descartada.'}`, "text-neon-orange");
+      fetchDiscovered();
+    } catch (e) {
+      addLog(`Failed to reject routine: ${e}`, "text-red-400");
+    }
+  };
+
   const fetchPolicy = async () => {
     try {
       const apiUrl = await invoke<string>("get_api_url");
@@ -111,6 +154,7 @@ export default function App() {
 
   useEffect(() => {
     fetchPolicy();
+    fetchDiscovered();
   }, []);
 
   // Mood Colors
@@ -123,15 +167,14 @@ export default function App() {
 
   const handleCommand = async (data: any) => {
     try {
-      addLog(`⚡ Sending Command: ${data.comando || data.acao || 'CUSTOM'}`, "text-neon-cyan");
-      const apiUrl = await invoke<string>("get_api_url");
-      await fetch(`${apiUrl}/api/v1/pc/comando`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-      });
+      const cmd = data.comando || data.acao || 'CUSTOM';
+      const param = data.url || data.parametro || data.app || data.query || data.macro || "";
+      addLog(`⚡ Executing local PC command: ${cmd} (${param})`, "text-neon-cyan");
+
+      await invoke("execute_pc_command", { comando: cmd, parametro: param });
+      addLog(`✅ Executed successfully: ${cmd}`, "text-neon-cyan");
     } catch (err) {
-      addLog(`Bridge Error: ${err}`, "text-red-400");
+      addLog(`Execution Error: ${err}`, "text-red-400");
     }
   };
 
@@ -617,6 +660,42 @@ export default function App() {
                       {app}
                     </span>
                   ))}
+                </div>
+              </div>
+
+              {/* Rotinas Descobertas pela Ollie */}
+              <div className="glass p-4 rounded-2xl space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-white block">Rotinas Descobertas (Pendentes)</span>
+                  <button onClick={fetchDiscovered} className="text-[10px] text-neon-cyan hover:underline">Atualizar</button>
+                </div>
+                <div className="max-h-36 overflow-y-auto space-y-2 pr-1">
+                  {discoveredRoutines.length === 0 ? (
+                    <p className="text-gray-500 text-[10px] italic">Nenhuma rotina descoberta pendente.</p>
+                  ) : (
+                    discoveredRoutines.map((r, idx) => (
+                      <div key={idx} className="glass p-2 rounded-xl flex items-center justify-between gap-2">
+                        <div className="truncate">
+                          <p className="font-bold text-white text-[10px] truncate">{r.nome}</p>
+                          <p className="text-gray-400 text-[9px] truncate">{r.justificativa}</p>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            onClick={() => approveRoutine(r.nome)}
+                            className="bg-neon-cyan/20 text-neon-cyan hover:bg-neon-cyan/40 px-2 py-0.5 rounded text-[9px] font-bold"
+                          >
+                            Ativar
+                          </button>
+                          <button
+                            onClick={() => rejectRoutine(r.nome)}
+                            className="bg-red-500/20 text-red-400 hover:bg-red-500/40 px-2 py-0.5 rounded text-[9px] font-bold"
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
