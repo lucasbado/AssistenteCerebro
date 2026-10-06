@@ -50,16 +50,16 @@ class RoutineGeneratorService:
 
     async def _materialize_routine(self, sugestao: dict) -> dict | None:
         """
-        Usa inteligência para converter uma sugestão simples em um objeto de rotina rico.
+        Converte uma sugestão simples em um objeto de rotina rico de forma 100% determinística (sem gargalos de LLM).
         """
         try:
-            # Se for uma sugestão temporal de PC
-            if sugestao["skill_id"] == "automacao_temporal_pc":
+            skill_id = sugestao.get("skill_id")
+            
+            if skill_id == "automacao_temporal_pc":
                 programa = sugestao["action_parameter"].split(":")[-1]
-                periodo = sugestao["nome"].split(" ")[1].replace(":", "") # Extrai MANHA, TARDE etc
-                
+                periodo = sugestao["nome"].split(" ")[1].replace(":", "")
                 return {
-                    "nome": f"Acesso Rápido: {programa} ({periodo})",
+                    "nome": sugestao["nome"],
                     "justificativa": sugestao["justificativa"],
                     "gatilho": {
                         "tipo": "TIME_RANGE",
@@ -67,32 +67,56 @@ class RoutineGeneratorService:
                         "fim": self._get_time_for_period(periodo, "fim"),
                         "evento": "PC_LOGIN"
                     },
-                    "acoes": [
-                        {"alvo": "PC", "comando": "abrir_app", "parametro": programa}
-                    ],
-                    "ativa": False # Sempre inicia inativa para verificação
+                    "acoes": [{"alvo": "PC", "comando": "abrir_app", "parametro": programa}],
+                    "ativa": False
                 }
 
-            # Se for uma sinergia Cross-Device
-            if sugestao["skill_id"] == "automacao_cross":
+            elif skill_id == "automacao_cross":
                 pacote = sugestao["trigger_package"]
                 programa = sugestao["action_parameter"].split(":")[-1]
-                
+                return {
+                    "nome": sugestao["nome"],
+                    "justificativa": sugestao["justificativa"],
+                    "gatilho": {"tipo": "APP_OPENED", "pacote": pacote},
+                    "acoes": [{"alvo": "PC", "comando": "abrir_app", "parametro": programa}],
+                    "ativa": False
+                }
+
+            elif skill_id == "automacao_fluxo":
+                p1 = sugestao["trigger_package"]
+                p2 = sugestao["action_parameter"]
+                return {
+                    "nome": sugestao["nome"],
+                    "justificativa": sugestao["justificativa"],
+                    "gatilho": {"tipo": "APP_OPENED", "pacote": p1},
+                    "acoes": [{"alvo": "MOBILE", "comando": "open_app", "parametro": p2}],
+                    "ativa": False
+                }
+
+            elif skill_id == "automacao_temporal_mobile":
+                pacote = sugestao["action_parameter"]
+                periodo = sugestao["nome"].split(" ")[1].replace(":", "")
                 return {
                     "nome": sugestao["nome"],
                     "justificativa": sugestao["justificativa"],
                     "gatilho": {
-                        "tipo": "APP_OPENED",
-                        "pacote": pacote
+                        "tipo": "TIME_RANGE",
+                        "inicio": self._get_time_for_period(periodo, "inicio"),
+                        "fim": self._get_time_for_period(periodo, "fim"),
+                        "evento": "SYSTEM_START"
                     },
-                    "acoes": [
-                        {"alvo": "PC", "comando": "abrir_app", "parametro": programa}
-                    ],
+                    "acoes": [{"alvo": "MOBILE", "comando": "open_app", "parametro": pacote}],
                     "ativa": False
                 }
 
-            # Para outros casos, usa a LLM para criar algo mais "criativo"
-            return await self._llm_enhance_routine(sugestao)
+            else:
+                return {
+                    "nome": sugestao["nome"],
+                    "justificativa": sugestao["justificativa"],
+                    "gatilho": {"tipo": "MANUAL"},
+                    "acoes": [{"alvo": "MOBILE", "comando": "toast", "parametro": sugestao["nome"]}],
+                    "ativa": False
+                }
 
         except Exception as e:
             logger.error(f"Erro ao materializar rotina: {e}")

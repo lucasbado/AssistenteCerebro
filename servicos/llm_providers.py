@@ -20,12 +20,10 @@ class GroqProvider:
     def __init__(self):
         self.api_key = os.getenv("GROQ_API_KEY")
         self.client = AsyncGroq(api_key=self.api_key) if self.api_key else None
-        # Lista de modelos Groq em cascata para fallback automático (migração entre LLMs)
+        # Lista de modelos Groq em cascata otimizada com os modelos ativos/funcionais
         self.modelos = [
-            "llama-3.1-8b-instant",
-            "llama-3.3-70b-versatile",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b"
+            "openai/gpt-oss-20b",
+            "openai/gpt-oss-120b"
         ]
         self.circuit_open = False
 
