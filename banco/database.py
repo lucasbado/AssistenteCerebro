@@ -59,6 +59,12 @@ async def inicializar_banco():
             # run_sync é usado para executar a rotina síncrona de DDL do SQLAlchemy
             # sem bloquear o Event Loop.
             await conn.run_sync(Base.metadata.create_all)
+            # Auto-migração segura para colunas novas em tabelas existentes no Postgres/SQLite
+            try:
+                await conn.exec_driver_sql("ALTER TABLE facts ADD COLUMN IF NOT EXISTS source_file VARCHAR(255);")
+                await conn.exec_driver_sql("ALTER TABLE facts ADD COLUMN IF NOT EXISTS source_hash VARCHAR(64);")
+            except Exception:
+                pass
         
         # Registra hooks de WAL e tabelas virtuais FTS5/sqlite-vec se for SQLite
         if "sqlite" in async_engine.url.drivername:
@@ -73,6 +79,11 @@ async def inicializar_banco():
         
         async with async_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            try:
+                await conn.exec_driver_sql("ALTER TABLE facts ADD COLUMN IF NOT EXISTS source_file VARCHAR(255);")
+                await conn.exec_driver_sql("ALTER TABLE facts ADD COLUMN IF NOT EXISTS source_hash VARCHAR(64);")
+            except Exception:
+                pass
         if "sqlite" in async_engine.url.drivername:
             registrar_hooks_conexao()
         print("[SUCESSO] Fallback para SQLite local ativado com sucesso!\n")
