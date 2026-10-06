@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, JSON, DateTime, ForeignKey, LargeBinary, Index, text
+from sqlalchemy import Column, Integer, String, Float, JSON, DateTime, ForeignKey, LargeBinary, Index, text as sql_text
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timezone
 
@@ -86,8 +86,8 @@ class FactDB(Base):
             source_file,
             source_hash,
             unique=True,
-            sqlite_where=text("source_hash IS NOT NULL"),
-            postgresql_where=text("source_hash IS NOT NULL")
+            sqlite_where=sql_text("source_hash IS NOT NULL"),
+            postgresql_where=sql_text("source_hash IS NOT NULL")
         ),
     )
 
