@@ -11,7 +11,7 @@ logger = logging.getLogger("LLMProviders")
 
 @runtime_checkable
 class LLMProvider(Protocol):
-    async def gerar(self, prompt: str, system: str, max_tokens: int = 1000) -> str:
+    async def gerar(self, prompt: str, system: str, max_tokens: int = 2500) -> str:
         ...
     def disponivel(self) -> bool:
         ...
@@ -22,6 +22,7 @@ class GroqProvider:
         self.client = AsyncGroq(api_key=self.api_key) if self.api_key else None
         # Lista de modelos Groq em cascata otimizada com os modelos ativos/funcionais
         self.modelos = [
+            "llama-3.3-70b-versatile",
             "llama3-70b-8192",
             "llama3-8b-8192",
             "llama-3.2-3b-preview",
@@ -32,7 +33,7 @@ class GroqProvider:
     def disponivel(self) -> bool:
         return bool(self.client and not self.circuit_open)
 
-    async def gerar(self, prompt: str, system: str, max_tokens: int = 1000) -> str:
+    async def gerar(self, prompt: str, system: str, max_tokens: int = 2500) -> str:
         if not self.disponivel():
             raise ValueError("Groq indisponível ou em circuit breaker.")
         

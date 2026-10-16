@@ -73,7 +73,7 @@ RESPOSTA (JSON):
 
         provider = self._pick_provider()
         try:
-            resposta_str = await provider.gerar(prompt, system, max_tokens=400)
+            resposta_str = await provider.gerar(prompt, system, max_tokens=2000)
             
             # Sucesso: reseta falhas consecutivas
             self._consecutive_failures = 0
@@ -91,7 +91,7 @@ RESPOSTA (JSON):
             # Tenta fallback para Ollama se falhou na Groq
             if provider != self.ollama and self.ollama.disponivel():
                 logger.warning("🔄 [LLM] Acionando fallback para Ollama local...")
-                resposta_str = await self.ollama.gerar(prompt, system, max_tokens=400)
+                resposta_str = await self.ollama.gerar(prompt, system, max_tokens=2000)
                 return json.loads(resposta_str)
             raise
 
@@ -100,7 +100,7 @@ RESPOSTA (JSON):
         prompt = f"DADOS DO PERFIL:\n{texto_perfil}"
         provider = self._pick_provider()
         try:
-            resp = await provider.gerar(prompt, system, max_tokens=600)
+            resp = await provider.gerar(prompt, system, max_tokens=2000)
             return json.loads(resp)
         except Exception as e:
             logger.error(f"Erro em resumir_perfil_usuario: {e}")
@@ -112,7 +112,7 @@ RESPOSTA (JSON):
         prompt = f"CONTATO: {contato_nome}"
         provider = self._pick_provider()
         try:
-            resp = await provider.gerar(prompt, system, max_tokens=200)
+            resp = await provider.gerar(prompt, system, max_tokens=2000)
             data = json.loads(resp)
             return EntidadeSemantica(tipo="CONTATO", chave=contato_nome, atributos=data)
         except:
@@ -123,7 +123,7 @@ RESPOSTA (JSON):
         prompt = f"QUERY: {query}\nCONTEÚDO: {conteudo}"
         provider = self._pick_provider()
         try:
-            resp = await provider.gerar(prompt, system, max_tokens=500)
+            resp = await provider.gerar(prompt, system, max_tokens=2000)
             return json.loads(resp)
         except Exception as e:
             logger.error(f"Erro em sintetizar_resposta_pesquisa: {e}")
@@ -132,7 +132,7 @@ RESPOSTA (JSON):
     async def _gerar_json(self, prompt: str, system: str) -> dict:
         provider = self._pick_provider()
         try:
-            resp = await provider.gerar(prompt, system, max_tokens=800)
+            resp = await provider.gerar(prompt, system, max_tokens=2000)
             return json.loads(resp)
         except Exception as e:
             logger.error(f"Erro em _gerar_json: {e}")
