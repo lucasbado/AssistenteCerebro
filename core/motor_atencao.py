@@ -96,7 +96,7 @@ class PipelineAtencao:
 
         # janelas
 
-        self.janela_deduplicacao = 5 # Reduzido para permitir rajadas de mensagens legítimas
+        self.janela_deduplicacao = 2 # Ajustado para 2s para capturar mensagens rápidas em sequência
 
         self.janela_midia = 15
 

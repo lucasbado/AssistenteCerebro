@@ -2,7 +2,7 @@ import logging
 import os
 import asyncio
 from core.evento import EventoCanonico
-from core.tipos import EstadoEvento, TipoAcao
+from core.tipos import EstadoEvento, TipoAcao, OrigemEvento
 from servicos.pc_control_service import pc_control_service
 
 logger = logging.getLogger("AgentePcExecutor")
@@ -132,6 +132,10 @@ class AgentePcExecutor:
 
             # --- COMANDOS SISTEMA ---
             elif comando == "abrir_app" or comando == "abrir_programa":
+                from servicos.intervention_governor import intervention_governor
+                if evento.origem == OrigemEvento.IA and not intervention_governor.permitir_abertura_automatica(param):
+                    logger.info(f"🛡️ [Agente PC] Abertura proativa de app '{param}' bloqueada pelo Intervention Governor.")
+                    return
                 foi_focada = pc_control_service.abrir_app(param)
                 
                 if foi_focada:
@@ -147,7 +151,11 @@ class AgentePcExecutor:
                         }
                     ))
 
-            elif comando == "abrir_url":
+            elif comando == "abrir_url" or comando == "open_url":
+                from servicos.intervention_governor import intervention_governor
+                if evento.origem == OrigemEvento.IA and not intervention_governor.permitir_abertura_automatica(param):
+                    logger.info(f"🛡️ [Agente PC] Abertura proativa de URL '{param}' bloqueada pelo Intervention Governor.")
+                    return
                 pc_control_service.abrir_url(param)
 
             elif comando == "abrir_arquivo":

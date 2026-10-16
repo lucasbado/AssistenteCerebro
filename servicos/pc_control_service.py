@@ -304,26 +304,91 @@ class PcControlService:
             if current and current.get('item'):
                 self.sp.current_user_saved_tracks_add(tracks=[current['item']['id']])
 
+    def _garantir_vm(self):
+        if not self.vm:
+            try:
+                self.inicializar()
+            except: pass
+
     def set_vm_param(self, param, valor):
-        if self.vm: self.vm.set(param, valor)
+        self._garantir_vm()
+        if self.vm:
+            try:
+                val_str = str(valor).strip()
+                if val_str.isdigit() or (val_str.startswith("-") and val_str[1:].isdigit()):
+                    val_converted = int(val_str)
+                else:
+                    try:
+                        val_converted = float(val_str)
+                    except ValueError:
+                        val_converted = val_str
+                self.vm.set(param, val_converted)
+                logger.info(f"🎙️ [Voicemeeter] Set {param} = {val_converted}")
+            except Exception as e:
+                logger.error(f"❌ [Voicemeeter] Erro set {param}: {e}")
+
+    def get_audio_state(self):
+        self._garantir_vm()
+        res = {}
+        if self.vm:
+            try:
+                for strip in [0, 1, 2, 3, 4]:
+                    res[str(strip)] = {
+                        "a1": int(self.vm.get(f"Strip[{strip}].A1") or 0),
+                        "a2": int(self.vm.get(f"Strip[{strip}].A2") or 0),
+                        "a3": int(self.vm.get(f"Strip[{strip}].A3") or 0),
+                        "mute": int(self.vm.get(f"Strip[{strip}].Mute") or 0)
+                    }
+            except Exception as e:
+                logger.error(f"Erro ao obter estado audio: {e}")
+        return res
 
     def set_gain(self, canal, valor_porcentagem):
+        self._garantir_vm()
         if self.vm:
             db = -60.0 + (valor_porcentagem * self.fator_vol)
             self.vm.set(f"Strip[{canal}].Gain", db)
 
     def toggle_rota(self, canal, saida, estado):
+        self._garantir_vm()
         if self.vm: self.vm.set(f"Strip[{canal}].{saida.upper()}", 1 if estado else 0)
 
     def mutar_mic(self):
+        self._garantir_vm()
         if self.vm:
             curr = int(self.vm.get('Strip[0].Mute'))
             self.vm.set('Strip[0].Mute', 0 if curr == 1 else 1)
+
+    def ciclar_saida(self, canal=3):
+        self._garantir_vm()
+        if self.vm:
+            try:
+                a1 = int(self.vm.get(f"Strip[{canal}].A1") or 0)
+                a2 = int(self.vm.get(f"Strip[{canal}].A2") or 0)
+                a3 = int(self.vm.get(f"Strip[{canal}].A3") or 0)
+
+                if a1 == 1 and a2 == 0 and a3 == 0:
+                    self.vm.set(f"Strip[{canal}].A1", 0)
+                    self.vm.set(f"Strip[{canal}].A2", 1)
+                    self.vm.set(f"Strip[{canal}].A3", 0)
+                elif a1 == 0 and a2 == 1 and a3 == 0:
+                    self.vm.set(f"Strip[{canal}].A1", 0)
+                    self.vm.set(f"Strip[{canal}].A2", 0)
+                    self.vm.set(f"Strip[{canal}].A3", 1)
+                else:
+                    self.vm.set(f"Strip[{canal}].A1", 1)
+                    self.vm.set(f"Strip[{canal}].A2", 0)
+                    self.vm.set(f"Strip[{canal}].A3", 0)
+                logger.info(f"🎧 [PCControl] Canal {canal} ciclou saída (A1={a1}, A2={a2}, A3={a3})")
+            except Exception as e:
+                logger.error(f"Erro ao ciclar saída: {e}")
 
     def abrir_app(self, app_key):
         if not app_key: return False
         chave = str(app_key).lower().strip()
         if self.trazer_janela_para_frente(chave): return True
+        if not self.indexed_apps:
+            self.mapear_todos_apps()
         path = self.app_paths.get(chave)
         if not path:
             match = self.match_inteligente(chave, list(self.indexed_apps.keys()))
@@ -385,6 +450,8 @@ class PcControlService:
                 pyautogui.keyDown(main_key)
                 pyautogui.press('tab')
                 pyautogui.keyUp(main_key)
+            elif len(keys) == 1:
+                pyautogui.press(keys[0])
             else:
                 pyautogui.hotkey(*keys)
         except Exception as e:

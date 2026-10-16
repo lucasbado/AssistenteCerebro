@@ -169,6 +169,13 @@ export default function App() {
     try {
       const cmd = data.comando || data.acao || 'CUSTOM';
       const param = data.url || data.parametro || data.app || data.query || data.macro || "";
+
+      // 🛡️ CHECK INTERVENTION POLICY (Super Poderes / Auto-Open)
+      if (!policy.auto_open_enabled && (cmd === "open_url" || cmd === "abrir_url" || cmd === "abrir_app" || cmd === "abrir_programa")) {
+        addLog(`🛡️ Intervention blocked by policy (Auto-Open OFF): ${cmd} (${param})`, "text-neon-orange");
+        return;
+      }
+
       addLog(`⚡ Executing local PC command: ${cmd} (${param})`, "text-neon-cyan");
 
       await invoke("execute_pc_command", { comando: cmd, parametro: param });

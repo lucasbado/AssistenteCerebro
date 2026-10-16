@@ -11,9 +11,8 @@ from servicos.memoria_trabalho import memoria_trabalho
 
 logger = logging.getLogger(__name__)
 
-# Tempo em segundos para agrupar mensagens da mesma conversa antes de enviar para a IA
-# Aumentado para 45 segundos na Nuvem para maximizar a economia de tokens
-DEBOUNCE_SECONDS = 45
+# Tempo em segundos para agrupar mensagens da mesma conversa antes de enviar para a IA (Otimizado para tempo real)
+DEBOUNCE_SECONDS = 5
 
 class AgenteMemoriaTrabalho:
     """
@@ -87,8 +86,11 @@ class AgenteMemoriaTrabalho:
             partes_resumo = []
             nome_app = chave_conversa.split('.')[-1].capitalize() if '.' in chave_conversa else "Sistema"
             if "whatsapp" in chave_conversa.lower(): nome_app = "WhatsApp"
-            if "instagram" in chave_conversa.lower(): nome_app = "Instagram"
-            if "tiktok" in chave_conversa.lower() or "musically" in chave_conversa.lower(): nome_app = "TikTok"
+            elif "telegram" in chave_conversa.lower(): nome_app = "Telegram"
+            elif "discord" in chave_conversa.lower(): nome_app = "Discord"
+            elif "instagram" in chave_conversa.lower(): nome_app = "Instagram"
+            elif "messaging" in chave_conversa.lower() or "sms" in chave_conversa.lower(): nome_app = "SMS/Mensagens"
+            elif "tiktok" in chave_conversa.lower(): nome_app = "TikTok"
 
             for remetente, dados in dados_por_remetente.items():
                 textos = dados["mensagens"]
