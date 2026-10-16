@@ -158,6 +158,17 @@ class AgentePcExecutor:
                     return
                 pc_control_service.abrir_url(param)
 
+            elif comando in ["ligar_luz", "desligar_luz", "toggle_luz"]:
+                from servicos.home_assistant_service import home_assistant_service
+                entity_id = param if param and param.startswith("light.") else "light.yeelink_color5_027d_light"
+                if comando == "ligar_luz":
+                    await home_assistant_service.ligar_luz(entity_id)
+                elif comando == "desligar_luz":
+                    await home_assistant_service.desligar_luz(entity_id)
+                elif comando == "toggle_luz":
+                    await home_assistant_service.toggle_luz(entity_id)
+                logger.info(f"💡 [Agente PC] Comando Home Assistant executado: {comando} em {entity_id}")
+
             elif comando == "abrir_arquivo":
                 if pc_control_service.abrir_arquivo(param):
                     evento.estado = EstadoEvento.CONCLUIDO

@@ -7,6 +7,7 @@ from api.memoria import router as memoria_router
 from api.router_timeline import router as timeline_router
 from api.router import router as home_router
 from api.router_capabilities import router as capabilities_router
+from api.router_ha import router as ha_router
 from api.contexto import router as contexto_router
 
 def criar_app_api():
@@ -37,6 +38,7 @@ def criar_app_api():
     app.include_router(timeline_router, prefix="/api/v1/timeline", tags=["Timeline"])
     # 🌟 NOVO: Registra os endpoints GET e PUT para /capabilities
     app.include_router(capabilities_router, prefix="/api/v1/capabilities", tags=["Capabilities"])
+    app.include_router(ha_router, prefix="/api/v1/ha", tags=["Home Assistant"])
     # 🧠 NOVO: Recebe o snapshot de consciência do ambiente
     app.include_router(contexto_router, prefix="/api/v1/contexto", tags=["Contexto"])
 
