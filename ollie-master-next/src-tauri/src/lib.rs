@@ -182,7 +182,7 @@ async fn execute_pc_command(comando: String, parametro: Option<String>) -> Resul
             std::process::Command::new(&py_exe).args(["-c", py_code]).output().map_err(|e| e.to_string())?;
             Ok("PC restart initiated".to_string())
         }
-        "abrir_app" | "abrir_programa" => {
+        "abrir_app" | "abrir_programa" | "vscode" | "android_studio" | "spotify" | "discord" | "lol" | "chrome" | "steam" | "clone_hero" => {
             let target_app = if !param.is_empty() { &param } else { &comando };
             let py_code = format!(
                 "import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.abrir_app('{}')",
@@ -247,6 +247,20 @@ async fn execute_pc_command(comando: String, parametro: Option<String>) -> Resul
             );
             std::process::Command::new(&py_exe).args(["-c", &py_code]).output().map_err(|e| e.to_string())?;
             Ok(format!("Ciclar saída canal {}: executed", canal))
+        }
+        "ligar_luz" | "desligar_luz" | "toggle_luz" => {
+            let entity_id = if !param.is_empty() { &param } else { "light.yeelink_color5_027d_light" };
+            let service_action = match comando.as_str() {
+                "ligar_luz" => "turn_on",
+                "desligar_luz" => "turn_off",
+                _ => "toggle",
+            };
+            let py_code = format!(
+                "import sys, asyncio; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.home_assistant_service import home_assistant_service; asyncio.run(home_assistant_service.chamar_servico('light', '{}', '{}'))",
+                service_action, entity_id
+            );
+            std::process::Command::new(&py_exe).args(["-c", &py_code]).output().map_err(|e| e.to_string())?;
+            Ok(format!("Home Assistant executed: {} on {}", comando, entity_id))
         }
         _ => {
             #[cfg(target_os = "windows")]

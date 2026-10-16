@@ -161,13 +161,29 @@ class AgentePcExecutor:
             elif comando in ["ligar_luz", "desligar_luz", "toggle_luz"]:
                 from servicos.home_assistant_service import home_assistant_service
                 entity_id = param if param and param.startswith("light.") else "light.yeelink_color5_027d_light"
+                success = False
                 if comando == "ligar_luz":
-                    await home_assistant_service.ligar_luz(entity_id)
+                    success = await home_assistant_service.ligar_luz(entity_id)
                 elif comando == "desligar_luz":
-                    await home_assistant_service.desligar_luz(entity_id)
+                    success = await home_assistant_service.desligar_luz(entity_id)
                 elif comando == "toggle_luz":
-                    await home_assistant_service.toggle_luz(entity_id)
-                logger.info(f"💡 [Agente PC] Comando Home Assistant executado: {comando} em {entity_id}")
+                    success = await home_assistant_service.toggle_luz(entity_id)
+                
+                if success:
+                    logger.info(f"💡 [Agente PC] Comando Home Assistant executado com sucesso: {comando} em {entity_id}")
+                else:
+                    logger.error(f"❌ [Agente PC] Falha ao executar comando Home Assistant: {comando} em {entity_id}")
+                    from core.kernel import kernel
+                    from core.tipos import CategoriaEvento, OrigemEvento, TipoAcao
+                    await kernel.publicar(evento.clonar(
+                        categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                        acao=TipoAcao.INTENCAO_INTERACAO,
+                        origem=OrigemEvento.IA,
+                        payload={
+                            "texto": f"Tentei controlar a luz no Home Assistant, mas a requisição falhou. Verifique se o HASS está acessível em {home_assistant_service.base_url} e se é necessário configurar um token (HA_TOKEN).",
+                            "tipo_ws": "CHAT_RESPONSE"
+                        }
+                    ))
 
             elif comando == "abrir_arquivo":
                 if pc_control_service.abrir_arquivo(param):

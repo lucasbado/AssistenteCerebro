@@ -17,9 +17,11 @@ class HomeAssistantService:
         
         url = f"{self.base_url}/api/services/{domain}/{service}"
         headers = {
-            "Authorization": f"Bearer {self.token}" if self.token else "",
             "Content-Type": "application/json",
         }
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+
         payload = {"entity_id": entity_id}
         if extra_data:
             payload.update(extra_data)
@@ -31,7 +33,7 @@ class HomeAssistantService:
                     logger.info(f"🏠 [HASS] Serviço {domain}.{service} executado com sucesso em {entity_id}.")
                     return True
                 else:
-                    logger.error(f"❌ [HASS] Erro ao chamar serviço HASS: {response.status_code} - {response.text}")
+                    logger.error(f"❌ [HASS] Erro ao chamar serviço HASS ({response.status_code}): {response.text}")
                     return False
         except Exception as e:
             logger.error(f"💥 [HASS] Exceção ao comunicar com Home Assistant: {e}")
