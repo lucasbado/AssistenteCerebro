@@ -22,9 +22,10 @@ class GroqProvider:
         self.client = AsyncGroq(api_key=self.api_key) if self.api_key else None
         # Lista de modelos Groq em cascata otimizada com os modelos ativos/funcionais
         self.modelos = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "mixtral-8x7b-32768"
+            "llama3-70b-8192",
+            "llama3-8b-8192",
+            "llama-3.2-3b-preview",
+            "gemma2-9b-it"
         ]
         self.circuit_open = False
 
