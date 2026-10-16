@@ -11,7 +11,7 @@ logger = logging.getLogger("LLMProviders")
 
 @runtime_checkable
 class LLMProvider(Protocol):
-    async def gerar(self, prompt: str, system: str, max_tokens: int = 500) -> str:
+    async def gerar(self, prompt: str, system: str, max_tokens: int = 1000) -> str:
         ...
     def disponivel(self) -> bool:
         ...
@@ -22,15 +22,16 @@ class GroqProvider:
         self.client = AsyncGroq(api_key=self.api_key) if self.api_key else None
         # Lista de modelos Groq em cascata otimizada com os modelos ativos/funcionais
         self.modelos = [
-            "openai/gpt-oss-20b",
-            "openai/gpt-oss-120b"
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768"
         ]
         self.circuit_open = False
 
     def disponivel(self) -> bool:
         return bool(self.client and not self.circuit_open)
 
-    async def gerar(self, prompt: str, system: str, max_tokens: int = 500) -> str:
+    async def gerar(self, prompt: str, system: str, max_tokens: int = 1000) -> str:
         if not self.disponivel():
             raise ValueError("Groq indisponível ou em circuit breaker.")
         
@@ -71,7 +72,7 @@ class OllamaProvider:
     def disponivel(self) -> bool:
         return not os.getenv("RENDER")
 
-    async def gerar(self, prompt: str, system: str, max_tokens: int = 500) -> str:
+    async def gerar(self, prompt: str, system: str, max_tokens: int = 1000) -> str:
         payload = {
             "model": self.modelo,
             "prompt": prompt,
