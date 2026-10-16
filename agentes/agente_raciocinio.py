@@ -71,16 +71,21 @@ class AgenteRaciocinio:
 
             historico = await self.memoria_trabalho.obter_contexto(chave_conversa) or []
 
-            # 4. Invocação da LLM
-            resultado = await self.llm.classificar_evento(
-                categoria=evento.categoria.value,
-                pacote=evento.pacote,
-                payload=evento.payload,
-                historico=historico,
-                timestamp_dispositivo=evento.timestamp,
-                knowledge=conhecimento_atual,
-                habits=habitos_str
-            )
+            # 4. Invocação da LLM (com Heurística Local Fast-Path)
+            heuristic_res = self._tentar_heuristica_local(texto_u)
+            if heuristic_res:
+                logger.info(f"⚡ [Heurística Local] Resolvido sem LLM: {heuristic_res}")
+                resultado = heuristic_res
+            else:
+                resultado = await self.llm.classificar_evento(
+                    categoria=evento.categoria.value,
+                    pacote=evento.pacote,
+                    payload=evento.payload,
+                    historico=historico,
+                    timestamp_dispositivo=evento.timestamp,
+                    knowledge=conhecimento_atual,
+                    habits=habitos_str
+                )
 
             # 🚀 EXTRAÇÃO ROBUSTA (SCAVENGER)
             exec_direta_raw = self._buscar_campo(resultado, "execucao_direta")
@@ -168,19 +173,24 @@ class AgenteRaciocinio:
 
         except Exception as e:
             logger.error(f"💥 Erro no Raciocínio: {e}")
-            try:
-                await kernel.publicar(evento.clonar(
-                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                    acao=TipoAcao.INTENCAO_INTERACAO,
-                    origem=OrigemEvento.IA,
-                    payload={
-                        "texto": "Estou atingindo o limite de requisições da IA (Rate Limit). Tente novamente em instantes!",
-                        "titulo": "Ollie",
-                        "tipo_ws": "CHAT_RESPONSE"
-                    },
-                    metadados={"tipo_destino": "CHAT"}
-                ))
-            except: pass
+            err_str = str(e).lower()
+            is_rate_limit = "429" in err_str or "rate limit" in err_str or "rate_limit" in err_str
+            
+            if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+                msg = "Estou atingindo o limite de requisições da IA (Rate Limit). Tente novamente em instantes!" if is_rate_limit else "Tive um pequeno soluço ao processar seu pedido. Pode repetir?"
+                try:
+                    await kernel.publicar(evento.clonar(
+                        categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
+                        acao=TipoAcao.INTENCAO_INTERACAO,
+                        origem=OrigemEvento.IA,
+                        payload={
+                            "texto": msg,
+                            "titulo": "Ollie",
+                            "tipo_ws": "CHAT_RESPONSE"
+                        },
+                        metadados={"tipo_destino": "CHAT"}
+                    ))
+                except: pass
         finally:
             self._locks_ativos.remove(lock_id)
 
@@ -275,3 +285,45 @@ class AgenteRaciocinio:
         try:
             with open(log_path, "a", encoding="utf-8") as f: f.write(entry)
         except: pass
+
+    def _tentar_heuristica_local(self, texto: str) -> dict | None:
+        if not texto: return None
+        t = texto.lower().strip()
+
+        # 💡 COMANDOS DE ILUMINAÇÃO
+        if any(kw in t for kw in ["luz", "lampada", "lâmpada"]):
+            is_off = any(kw in t for kw in ["desliga", "apaga", "desligar", "apagar", "off"])
+            is_on = any(kw in t for kw in ["liga", "acende", "ligar", "acender", "on"])
+            
+            entity_param = "quarto"
+            if "malu" in t: entity_param = "malu"
+            elif "sala" in t: entity_param = "sala"
+
+            if is_off:
+                return {
+                    "execucao_direta": [{"alvo": "MOBILE", "comando": "TURN_OFF_LIGHT", "parametro": entity_param}],
+                    "mensagem_dinamica": f"Desligando a luz do {entity_param}.",
+                    "tipo_interacao": "NOTIFICAR"
+                }
+            elif is_on:
+                return {
+                    "execucao_direta": [{"alvo": "MOBILE", "comando": "TURN_ON_LIGHT", "parametro": entity_param}],
+                    "mensagem_dinamica": f"Ligando a luz do {entity_param}.",
+                    "tipo_interacao": "NOTIFICAR"
+                }
+            else:
+                return {
+                    "execucao_direta": [{"alvo": "MOBILE", "comando": "TOGGLE_LIGHT", "parametro": entity_param}],
+                    "mensagem_dinamica": f"Alternando a luz do {entity_param}.",
+                    "tipo_interacao": "NOTIFICAR"
+                }
+
+        # 🎙️ MIC / MUTE
+        if any(kw in t for kw in ["mutar mic", "muta mic", "desmutar mic", "desmuta mic", "mutar microfone"]):
+            return {
+                "execucao_direta": [{"alvo": "PC", "comando": "mutar_mic", "parametro": ""}],
+                "mensagem_dinamica": "Alternando mudo do microfone.",
+                "tipo_interacao": "NOTIFICAR"
+            }
+
+        return None

@@ -91,9 +91,17 @@ RESPOSTA (JSON):
             # Tenta fallback para Ollama se falhou na Groq
             if provider != self.ollama and self.ollama.disponivel():
                 logger.warning("🔄 [LLM] Acionando fallback para Ollama local...")
-                resposta_str = await self.ollama.gerar(prompt, system, max_tokens=2000)
-                return json.loads(resposta_str)
-            raise
+                try:
+                    resposta_str = await self.ollama.gerar(prompt, system, max_tokens=2000)
+                    return json.loads(resposta_str)
+                except: pass
+
+            return {
+                "intencao_captada": "FALLBACK_ERRO",
+                "tipo_interacao": "NOTIFICAR",
+                "mensagem_dinamica": "Processando comando...",
+                "execucao_direta": []
+            }
 
     async def resumir_perfil_usuario(self, texto_perfil: str) -> dict:
         system = "Ollie: Analise os dados de perfil do usuário e retorne um JSON estrito com 'resumo' e 'cards'."
