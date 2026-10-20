@@ -79,14 +79,15 @@ def configure_sources():
     print(f'Pacote de treinamento: {spec.origin}', flush=True)
 
 
-def setup():
+def setup(*, cpu=False):
     configure_runtime()
     if sys.version_info[:2] != (3, 11) or sys.platform != 'linux':
         raise RuntimeError('Use o Python 3.11 isolado criado pela primeira célula.')
     WORK.mkdir(exist_ok=True)
-    # PyTorch/piper antigos precisam desse conjunto compatível de Python e CUDA.
+    # A validação em CPU usa as mesmas versões e evita baixar bibliotecas CUDA.
+    index = 'https://download.pytorch.org/whl/cpu' if cpu else 'https://download.pytorch.org/whl/cu121'
     run(sys.executable, '-m', 'pip', 'install', 'torch==2.5.0', 'torchvision==0.20.0',
-        'torchaudio==2.5.0', '--index-url', 'https://download.pytorch.org/whl/cu121')
+        'torchaudio==2.5.0', '--index-url', index)
     run(sys.executable, '-m', 'pip', 'install', '-r', WORK / 'requirements-treino.txt')
     checkout('https://github.com/dscripka/openWakeWord', WORK / 'openwakeword', OWW_REV)
     checkout('https://github.com/rhasspy/piper-sample-generator', WORK / 'piper-sample-generator', PIPER_REV)
@@ -247,22 +248,28 @@ def train(phrase, examples, steps):
 
 
 def main():
+    global WORK
     configure_runtime()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('etapa', choices=['preparar', 'previa', 'dados', 'treinar'])
+    parser.add_argument('etapa', choices=['preparar', 'previa', 'dados', 'treinar', 'verificar'])
     parser.add_argument('--frase', default='hey ollie')
     parser.add_argument('--exemplos', type=int, choices=range(100, 50001), default=1000)
     parser.add_argument('--passos', type=int, choices=range(1000, 50001), default=10000)
+    parser.add_argument('--workspace', type=Path, default=WORK)
+    parser.add_argument('--cpu', action='store_true', help='Preparar PyTorch CPU para a verificação Linux.')
     args = parser.parse_args()
-    WORK.mkdir(exist_ok=True)
+    WORK = args.workspace.expanduser().resolve()
+    WORK.mkdir(parents=True, exist_ok=True)
     os.chdir(WORK)
     if not args.frase.strip() or len(args.frase) > 100:
         parser.error('Use uma chamada curta e não vazia.')
-    if args.etapa == 'preparar': setup()
+    if args.etapa == 'preparar': setup(cpu=args.cpu)
     else:
         configure_sources()
         if args.etapa == 'previa': preview(args.frase)
         elif args.etapa == 'dados': data()
+        elif args.etapa == 'verificar':
+            run(sys.executable, Path(__file__).with_name('validar_pipeline.py'), '--workspace', WORK)
         else: train(args.frase, args.exemplos, args.passos)
 
 

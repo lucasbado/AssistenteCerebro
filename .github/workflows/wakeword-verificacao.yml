@@ -1,0 +1,63 @@
+name: Verificar pipeline de wake word
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/wakeword/**'
+      - '.github/workflows/wakeword-verificacao.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wakeword-verificacao-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      OLLIE_WAKEWORD_WORK: ${{ runner.temp }}/ollie-wakeword
+      MPLBACKEND: module://matplotlib_inline.backend_inline
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Preparar dependencias reais em CPU
+        shell: bash
+        run: |
+          mkdir -p "$OLLIE_WAKEWORD_WORK"
+          cp tools/wakeword/requirements-treino.txt "$OLLIE_WAKEWORD_WORK/requirements-treino.txt"
+          python tools/wakeword/colab_ollie.py preparar --workspace "$OLLIE_WAKEWORD_WORK" --cpu
+      - name: Gerar uma amostra e executar uma atualizacao de pesos
+        if: always()
+        shell: bash
+        run: |
+          python tools/wakeword/validar_pipeline.py --workspace "$OLLIE_WAKEWORD_WORK"
+      - name: Registrar resultado real
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['OLLIE_WAKEWORD_WORK'])
+          path = root / 'verificacao-pipeline/ultimo-relatorio.json'
+          if path.exists():
+              report = json.loads(path.read_text())
+              rendered = json.dumps(report, ensure_ascii=False, indent=2)
+              print('OLLIE_VALIDACAO_JSON_INICIO')
+              print(rendered)
+              print('OLLIE_VALIDACAO_JSON_FIM')
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+                  summary.write('## Verificacao real do pipeline\n\n```json\n' + rendered + '\n```\n')
+          else:
+              print('A preparacao falhou antes da verificacao. Consulte o log da etapa anterior.')
+          PY

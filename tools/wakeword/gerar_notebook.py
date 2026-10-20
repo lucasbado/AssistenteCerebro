@@ -15,7 +15,7 @@ def cell(kind, source):
 
 def generate():
     hashes = {name: hashlib.sha256((HERE / name).read_bytes().replace(b'\r\n', b'\n')).hexdigest()
-              for name in ['colab_ollie.py', 'execucao.py', 'requirements-treino.txt']}
+              for name in ['colab_ollie.py', 'execucao.py', 'requirements-treino.txt', 'validar_pipeline.py']}
     setup = '''# @title 1. Preparar ambiente compatível (Python 3.11 separado)
 import hashlib, json, sys, urllib.request
 from pathlib import Path
