@@ -1,0 +1,39 @@
+[
+  {
+    "tipo": "positivo",
+    "arquivos": 1,
+    "segundos": 0.575,
+    "limiar": 0.5,
+    "frames_consecutivos": 2,
+    "modelo_sha256": "42cda4d736a2d1742b5c174a3cc00157011b915057372fb21d06df231664dd2e",
+    "resultados": [
+      {
+        "arquivo": "chamada.wav",
+        "segundos": 0.575,
+        "pico": 0.8624164462089539,
+        "ativacoes": [
+          0.72
+        ]
+      }
+    ],
+    "fracao_de_arquivos_detectados": 1.0
+  },
+  {
+    "tipo": "negativo",
+    "arquivos": 1,
+    "segundos": 30.0,
+    "limiar": 0.5,
+    "frames_consecutivos": 2,
+    "modelo_sha256": "42cda4d736a2d1742b5c174a3cc00157011b915057372fb21d06df231664dd2e",
+    "resultados": [
+      {
+        "arquivo": "silencio.wav",
+        "segundos": 30.0,
+        "pico": 0.0008242130279541016,
+        "ativacoes": []
+      }
+    ],
+    "ativacoes_indevidas": 0,
+    "ativacoes_por_hora_observada": 0.0
+  }
+]

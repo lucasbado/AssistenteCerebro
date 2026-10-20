@@ -1,5 +1,9 @@
 # Verificação real do pipeline de wake word
 
+O [treino completo com todos os dados](validacao-wakeword-completo.md) também
+foi concluído posteriormente. Este documento preserva a verificação curta
+inicial de uma atualização de pesos.
+
 Execução concluída em 20/10/2026, com Python 3.11.17 no Linux, em CPU.
 Fonte: [execução GitHub Actions](https://github.com/lucasbado/AssistenteCerebro/actions/runs/39487054223).
 Commit executado: `fecc64baaaa792484da1d1a2826ea787efc6e2ba`.
