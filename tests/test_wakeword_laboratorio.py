@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import struct
 import sys
+import subprocess
 from types import SimpleNamespace
 import wave
 
@@ -151,3 +152,32 @@ def test_subprocesso_sucesso_nao_gera_falso_erro(tmp_path):
     log = tmp_path / 'etapa.log'
     run_logged([sys.executable, '-c', "print('pronto')"], log_path=log)
     assert log.read_text(encoding='utf-8').strip() == 'pronto'
+
+
+def test_clone_homonimo_nao_oculta_pacote_e_filhos_herdam_correcao(tmp_path, monkeypatch):
+    import tools.wakeword.colab_ollie as colab
+    package = tmp_path / 'openwakeword/openwakeword'
+    package.mkdir(parents=True)
+    (package / '__init__.py').write_text('')
+    (package / 'train.py').write_text('MARKER = "treinamento encontrado"')
+    monkeypatch.setattr(colab, 'WORK', tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delenv('PYTHONPATH', raising=False)
+    monkeypatch.delitem(sys.modules, 'openwakeword', raising=False)
+    import importlib.util
+    before = importlib.util.find_spec('openwakeword')
+    assert before.origin is None  # Reproduz o clone externo encontrado como namespace.
+    colab.configure_sources()
+    after = importlib.util.find_spec('openwakeword')
+    assert Path(after.origin) == package / '__init__.py'
+    code = "from openwakeword.train import MARKER; print(MARKER)"
+    result = subprocess.run([sys.executable, '-c', code], cwd=tmp_path,
+                            text=True, capture_output=True, encoding='utf-8', check=True)
+    assert result.stdout.strip() == 'treinamento encontrado'
+
+
+def test_clone_incompleto_produz_erro_explicito(tmp_path, monkeypatch):
+    import tools.wakeword.colab_ollie as colab
+    monkeypatch.setattr(colab, 'WORK', tmp_path)
+    with pytest.raises(RuntimeError, match='train.py'):
+        colab.configure_sources()

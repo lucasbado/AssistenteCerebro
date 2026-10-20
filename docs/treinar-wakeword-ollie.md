@@ -54,6 +54,14 @@ do processo e inclui as últimas linhas da causa no erro final. Também salva os
 logs completos em `/content/ollie-wakeword/logs`, acessível pela lateral Arquivos
 do Colab. Reabrir o notebook não exige apagar o ambiente já preparado.
 
+O erro `No module named 'openwakeword.train'` foi reproduzido após a instalação
+editável: a pasta externa do clone era encontrada como namespace antes do pacote
+interno. O helper agora prioriza a raiz correta em `sys.path` e transmite essa
+mesma raiz em `PYTHONPATH` aos processos de treinamento. O teste com o clone real
+confirmou que o arquivo `train.py` passou a ser encontrado no processo principal
+e no filho. A importação completa das dependências Linux continua sendo conferida
+na preparação do Colab.
+
 Ao terminar, execute **5. Baixar modelo ONNX** para baixar `hey_ollie.onnx` e
 `ultimo_modelo.json`. A versão guiada exporta somente ONNX e não instala conversores
 TensorFlow/TFLite. O manifesto registra frase, parâmetros e hash do modelo.
@@ -126,9 +134,10 @@ O novo notebook foi validado estruturalmente; o treino completo no Linux e a
 pronúncia da prévia continuam pendentes. Não há um modelo Hey Ollie pronto nesta
 revisão. Se o helper ou as dependências do treino forem alterados, regenere o
 notebook com `python tools/wakeword/gerar_notebook.py` para atualizar seus hashes.
-Os 20 testes locais passaram, cobrindo intervalo de ativação, rejeição de scores
+Os 22 testes locais passaram, cobrindo intervalo de ativação, rejeição de scores
 inválidos, formato de áudio, reinício entre gravações, integridade do notebook e
-propagação de erros reais dos processos para a saída visível.
+propagação de erros reais dos processos para a saída visível. A regressão de
+importação verifica também que um subprocesso encontra o módulo de treino.
 
 Depois dessa validação, a integração Android deverá reproduzir o processamento
 de áudio, executar os modelos no aparelho, abrir a sessão existente e pausar a

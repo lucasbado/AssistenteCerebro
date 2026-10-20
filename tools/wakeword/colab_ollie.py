@@ -5,6 +5,8 @@ Não acessa credenciais, servidor Ollie ou gravações pessoais.
 """
 import argparse
 import hashlib
+import importlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -53,6 +55,25 @@ def checkout(url, path, revision):
     run('git', 'checkout', revision, cwd=path)
 
 
+def configure_sources():
+    """Prioriza o pacote interno; o diretório externo do clone é um namespace homônimo."""
+    repository = (WORK / 'openwakeword').resolve()
+    package = repository / 'openwakeword'
+    if not (package / '__init__.py').is_file() or not (package / 'train.py').is_file():
+        raise RuntimeError('O clone não contém openwakeword/train.py. Execute a preparação novamente.')
+    source = str(repository)
+    sys.path[:] = [source, *(path for path in sys.path if path != source)]
+    # train.py roda em outro processo e também precisa encontrar o pacote interno.
+    inherited = os.environ.get('PYTHONPATH', '').split(os.pathsep)
+    os.environ['PYTHONPATH'] = os.pathsep.join([source, *(path for path in inherited if path and path != source)])
+    importlib.invalidate_caches()
+    spec = importlib.util.find_spec('openwakeword')
+    expected = package / '__init__.py'
+    if spec is None or not spec.origin or Path(spec.origin).resolve() != expected:
+        raise RuntimeError('Outro módulo openwakeword está ocultando o código do treino.')
+    print(f'Pacote de treinamento: {spec.origin}', flush=True)
+
+
 def setup():
     if sys.version_info[:2] != (3, 11) or sys.platform != 'linux':
         raise RuntimeError('Use o Python 3.11 isolado criado pela primeira célula.')
@@ -65,6 +86,7 @@ def setup():
     checkout('https://github.com/rhasspy/piper-sample-generator', WORK / 'piper-sample-generator', PIPER_REV)
     # Só ONNX: dispensa TensorFlow, conversores e o runtime de TFLite.
     run(sys.executable, '-m', 'pip', 'install', '--no-deps', '-e', WORK / 'openwakeword')
+    configure_sources()
     download('https://github.com/rhasspy/piper-sample-generator/releases/download/v2.0.0/en_US-libritts_r-medium.pt',
              WORK / 'piper-sample-generator/models/en_US-libritts_r-medium.pt')
     for name in ('melspectrogram', 'embedding_model'):
@@ -190,9 +212,11 @@ def main():
     if not args.frase.strip() or len(args.frase) > 100:
         parser.error('Use uma chamada curta e não vazia.')
     if args.etapa == 'preparar': setup()
-    elif args.etapa == 'previa': preview(args.frase)
-    elif args.etapa == 'dados': data()
-    else: train(args.frase, args.exemplos, args.passos)
+    else:
+        configure_sources()
+        if args.etapa == 'previa': preview(args.frase)
+        elif args.etapa == 'dados': data()
+        else: train(args.frase, args.exemplos, args.passos)
 
 
 if __name__ == '__main__':
