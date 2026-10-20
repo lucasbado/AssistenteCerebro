@@ -74,11 +74,14 @@ async def receber_comando(request: Request):
 @router.get("/intervention/policy")
 async def get_intervention_policy():
     from servicos.intervention_governor import intervention_governor
-    return intervention_governor.policy
+    return await intervention_governor.obter_politica()
 
 @router.post("/intervention/policy")
 async def update_intervention_policy(request: Request):
     from servicos.intervention_governor import intervention_governor
     dados = await request.json()
-    updated = intervention_governor.atualizar_politica(dados)
+    try:
+        updated = await intervention_governor.atualizar_politica(dados)
+    except ValueError as e:
+        raise HTTPException(422, detail="Política de abertura inválida.") from e
     return {"status": "ok", "policy": updated}

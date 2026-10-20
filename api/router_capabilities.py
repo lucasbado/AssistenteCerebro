@@ -36,6 +36,7 @@ class RoutineCreate(BaseModel):
     ativa: bool = False
     cooldown_segundos: int = Field(default=3600, ge=60)
     uma_vez_por_dia: bool = False
+    importancia_abertura: float = Field(default=0, ge=0, le=1, allow_inf_nan=False)
 
 
 class RoutineNameRequest(BaseModel):
@@ -44,6 +45,7 @@ class RoutineNameRequest(BaseModel):
 
 class RoutineStateRequest(RoutineNameRequest):
     ativa: bool
+    importancia_abertura: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
 
 
 async def _operacao(operacao):
@@ -105,7 +107,7 @@ async def add_routine(routine: RoutineCreate):
 
 @router.patch("/routines")
 async def update_routine_state(req: RoutineStateRequest):
-    return await _operacao(catalogo_rotinas.definir_ativa(req.nome, req.ativa))
+    return await _operacao(catalogo_rotinas.definir_ativa(req.nome, req.ativa, req.importancia_abertura))
 
 
 @router.delete("/routines")

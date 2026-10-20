@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 async def banco_teste(tmp_path, monkeypatch):
     from banco.database import _criar_motor, inicializar_banco
     from servicos.llm import ServicoLLM
+    from servicos import intervention_governor
     engine = _criar_motor("sqlite+aiosqlite:///" + (tmp_path / "teste.db").as_posix())
     await inicializar_banco(engine)
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

@@ -91,8 +91,31 @@ class AgenteRotina:
                 ("MOBILE" in destinos and not central_alertas.mobile_client)):
             logger.info("Rotina %s aguarda os dispositivos necessários; nenhuma ação foi encaminhada", nome)
             return False
+        from servicos.intervention_governor import e_abertura, intervention_governor
+        from servicos.abertura_apps import sugerir_abertura, metadados_abertura
+        acoes = [a for a in acoes if not (
+            a.get("alvo") == "PC" and a.get("comando") == "abrir_app"
+            and evento_origem.categoria == CategoriaEvento.PC_ACTIVITY
+            and processo_pc(evento_origem.payload) == str(a.get("parametro")).lower())]
+        aberturas = [(i, a) for i, a in enumerate(acoes) if e_abertura(a.get("comando"))]
+        if len(aberturas) > 1:
+            # Não reservar uma abertura e abandonar a rotina ao negar a seguinte.
+            primeira = aberturas[0][1]
+            await sugerir_abertura(evento_origem, primeira.get("alvo"), primeira.get("comando"),
+                                   primeira.get("parametro"), "rotina_com_varias_aberturas")
+            return True
+        autorizacoes = {}
+        rotina = next((r for r in self.routines if r.get("nome") == nome), {})
+        for indice, acao in enumerate(acoes):
+            if e_abertura(acao.get("comando")):
+                decisao = await intervention_governor.avaliar_abertura(acao.get("parametro"), acao.get("alvo"),
+                    rotina.get("importancia_abertura", 0))
+                if not decisao["permitida"]:
+                    await sugerir_abertura(evento_origem, acao.get("alvo"), acao.get("comando"), acao.get("parametro"), decisao["motivo"])
+                    return True
+                autorizacoes[indice] = metadados_abertura(decisao)
         executou = False
-        for acao in acoes:
+        for indice, acao in enumerate(acoes):
             try:
                 alvo, comando, param = acao.get("alvo"), acao.get("comando"), acao.get("parametro")
                 if alvo == "PC":
@@ -102,7 +125,7 @@ class AgenteRotina:
                         categoria=CategoriaEvento.SISTEMA_COMANDO_PC, acao=TipoAcao.NORMAL,
                         origem=OrigemEvento.SISTEMA, pacote="sistema.rotina",
                         payload={"comando": comando, "parametro": param},
-                        metadados={"rotina_aprovada": nome}))
+                        metadados={"rotina_aprovada": nome, **autorizacoes.get(indice, {})}))
                 elif alvo == "IA":
                     payload = {"titulo": nome, "texto": param, "tipo_ws": "NOTIFICACAO",
                                "tipo_interacao": comando, "chave_deduplicacao": f"rotina:{nome}"}
@@ -119,7 +142,8 @@ class AgenteRotina:
                         metadados={"rotina_aprovada": nome}))
                 elif alvo == "MOBILE":
                     await central_alertas._enviar_direto(central_alertas.mobile_client,
-                        {"tipo_ws": "COMANDO_SISTEMA", "acao": comando, "parametro": param})
+                        {"tipo_ws": "COMANDO_SISTEMA", "acao": comando, "parametro": param,
+                         "id_comando": evento_origem.id, **autorizacoes.get(indice, {})})
                 else:
                     continue
                 executou = True

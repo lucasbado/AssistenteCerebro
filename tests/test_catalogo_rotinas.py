@@ -168,12 +168,14 @@ async def test_rotina_da_casa_usa_eventos_e_responde_como_notificacao(catalogo_t
 
 async def test_pc_offline_nao_executa_metade_da_rotina_nem_consume_intervalo(catalogo_teste, monkeypatch):
     import agentes.agente_rotina as modulo
+    from servicos.intervention_governor import intervention_governor
+    await intervention_governor.atualizar_politica({"auto_open_enabled": True})
     from api.websocket import central_alertas
     monkeypatch.setenv("RENDER", "true")
     monkeypatch.setattr(central_alertas, "pc_master", None)
     publicar = AsyncMock()
     monkeypatch.setattr(modulo.kernel, "publicar", publicar)
-    r = {**rotina(), "ativa": True}
+    r = {**rotina(), "ativa": True, "importancia_abertura": .95}
     r["acoes"].append({"alvo": "PC", "comando": "abrir_app", "parametro": "code.exe"})
     await catalogo_teste.adicionar(r)
     evento = EventoCanonico(categoria=CategoriaEvento.APP_FOREGROUND, origem=OrigemEvento.ANDROID,

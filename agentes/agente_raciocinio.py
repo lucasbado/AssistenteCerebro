@@ -99,6 +99,15 @@ class AgenteRaciocinio:
             if tem_casa and tipo_interacao != "SUGERIR":
                 # O agente da casa responde após confirmação; a LLM não antecipa sucesso.
                 msg_ia = None
+            from servicos.intervention_governor import e_abertura
+            from servicos.abertura_apps import pedido_explicito_de_abertura
+            explicito = (evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO and
+                         pedido_explicito_de_abertura(texto_u))
+            tem_abertura = any(isinstance(item, dict) and
+                e_abertura(item.get("comando") or item.get("action")) for item in acoes_extraidas)
+            if tem_abertura:
+                # A sugestão abaixo contém o botão real; não anunciar execução que foi negada.
+                msg_ia = None
 
             # 📝 LOG COGNITIVO
             self._registrar_log_cognitivo(texto_u, habitos_contexto, resultado)
@@ -125,12 +134,12 @@ class AgenteRaciocinio:
                     acao=TipoAcao.INTENCAO_INTERACAO, 
                     origem=OrigemEvento.IA, 
                     payload=payload_notif, 
-                    metadados={"tipo_destino": "CHAT" if tipo_ws == "CHAT_RESPONSE" else "NOTIFICACAO"}
+                    metadados={**evento.metadados, "tipo_destino": "CHAT" if tipo_ws == "CHAT_RESPONSE" else "NOTIFICACAO"}
                 ))
 
             # 6. EXECUÇÃO DE COMANDOS (Ollie Agindo)
             exec_direta_lista = []
-            if tipo_interacao != "SUGERIR":
+            if tipo_interacao in {"NOTIFICAR", "SUGERIR"}:
                 if isinstance(exec_direta_raw, list): exec_direta_lista = exec_direta_raw
                 elif exec_direta_raw: exec_direta_lista = [exec_direta_raw]
 
@@ -142,6 +151,8 @@ class AgenteRaciocinio:
                 param = str(exec_direta.get("parametro") or exec_direta.get("param") or exec_direta.get("value") or "").strip()
 
                 if not comando: continue
+                if tipo_interacao == "SUGERIR" and not e_abertura(comando):
+                    continue
                 if comando in ACOES:
                     if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
                         await kernel.publicar(evento.clonar(
@@ -150,27 +161,39 @@ class AgenteRaciocinio:
                             payload={"acao": ACOES[comando], "alvo": param}))
                     continue
                 
-                # 🚀 SUPORTE A MÚLTIPLOS ALVOS (Ex: "PC|MOBILE")
+                from servicos.roteamento_pedidos import resolver_abertura, contexto_pedido, responder_pedido
+                # O texto do usuário e a origem prevalecem sobre o destino escolhido pela LLM.
+                if e_abertura(comando) and explicito and tipo_interacao != "SUGERIR":
+                    try:
+                        alvo, comando, param = resolver_abertura(evento, comando, param)
+                    except ValueError as erro:
+                        await responder_pedido(evento, str(erro))
+                        break
                 alvos = [a.strip() for a in alvo.split("|")]
                 
                 logger.info(f"⚡ [Raciocínio] Executando em {alvos}: {comando}({param})")
 
+                from servicos.abertura_apps import sugerir_abertura
                 for a in alvos:
+                    # Background reasoning may suggest an app, but never appoints itself authority to open it.
+                    if e_abertura(comando) and (not explicito or tipo_interacao == "SUGERIR"):
+                        await sugerir_abertura(evento, a, comando, param, "inferencia_sem_pedido")
+                        continue
                     if a == "PC":
-                        await kernel.publicar(EventoCanonico(
-                            categoria=CategoriaEvento.SISTEMA_COMANDO_PC, 
-                            acao=TipoAcao.NORMAL, 
+                        await kernel.publicar(evento.clonar(
+                            categoria=CategoriaEvento.SISTEMA_COMANDO_PC, acao=TipoAcao.NORMAL,
                             origem=OrigemEvento.IA,
-                            pacote="pc.master",
-                            payload={"comando": comando, "parametro": param}
-                        ))
+                            payload={"comando": comando, "parametro": param},
+                            metadados={**(contexto_pedido(evento) if explicito else evento.metadados), "pedido_explicito": explicito}))
                     elif a == "MOBILE":
                         from api.websocket import central_alertas
-                        await central_alertas._broadcast({
-                            "tipo_ws": "COMANDO_SISTEMA", 
-                            "acao": comando.upper(), 
-                            "parametro": param
-                        })
+                        enviado = await central_alertas.enviar_comando_mobile({
+                            "tipo_ws": "COMANDO_SISTEMA", "acao": comando.upper(), "parametro": param,
+                            "correlacao_id": evento.correlacao_id, "id_comando": evento.id,
+                            **({"abertura_modo": "pedido", "abertura_autorizada": True} if e_abertura(comando) else {})})
+                        if e_abertura(comando) and explicito:
+                            await responder_pedido(evento, "Enviei o pedido de abertura para o celular." if enviado
+                                else "O celular está desconectado. Não enviei o pedido de abertura.")
 
             # 7. MEMÓRIA PERMANENTE (Obsidian + Novo Banco FactDB)
             mem_obs = resultado.get("memoria_obsidian")
@@ -203,7 +226,7 @@ class AgenteRaciocinio:
                             "titulo": "Ollie",
                             "tipo_ws": "CHAT_RESPONSE"
                         },
-                        metadados={"tipo_destino": "CHAT"}
+                        metadados={**evento.metadados, "tipo_destino": "CHAT"}
                     ))
                 except: pass
         finally:
@@ -304,6 +327,10 @@ class AgenteRaciocinio:
     def _tentar_heuristica_local(self, texto: str) -> dict | None:
         if not texto: return None
         t = texto.lower().strip()
+        from servicos.roteamento_pedidos import interpretar_abertura
+        abertura = interpretar_abertura(texto)
+        if abertura:
+            return abertura
 
         # 💡 COMANDOS DE ILUMINAÇÃO
         from servicos.controle_casa import controle_casa

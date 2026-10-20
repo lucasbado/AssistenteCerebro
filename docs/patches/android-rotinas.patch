@@ -293,7 +293,7 @@
 +                        }
 +                    }
 +                }
-+            }, correlationId = id)
++            }, correlationId = id, spoken = true)
 +        timeout?.cancel()
 +        timeout = scope.launch {
 +            delay(45000)
@@ -502,6 +502,24 @@
 +            acoes = listOf(action), ativa = false)
 +    }
 +}
+--- a/app/src/main/java/com/example/assistentecell/command/AppOpeningPolicy.kt
++++ b/app/src/main/java/com/example/assistentecell/command/AppOpeningPolicy.kt
+@@ -0,0 +1,15 @@
++package com.example.assistentecell.command
++
++/** Missing authorization/importance never means automatic permission. */
++object AppOpeningPolicy {
++    val commands = setOf("OPEN_APP", "ABRIR_APP", "ABRIR_APP_MOBILE", "ABRIR_PROGRAMA", "LAUNCH_APP",
++        "OPEN_URL", "ABRIR_URL", "ABRIR_URL_MOBILE", "WEB_SEARCH", "PESQUISAR", "PESQUISA_GOOGLE",
++        "ABRIR_NOTIFICACAO", "ABRIR_MENSAGEM", "READ_MESSAGE")
++    fun permits(manual: Boolean, mode: String, authorized: Boolean, enabled: Boolean,
++                importance: Double, minimum: Double, lastGlobal: Long, lastTarget: Long, now: Long): Boolean {
++        if (manual || (mode == "pedido" && authorized)) return true
++        return mode == "automatica" && authorized && enabled && importance.isFinite() && importance > 0 && importance <= 1 &&
++            importance >= minimum && (lastGlobal == 0L || now - lastGlobal >= 600000) &&
++            (lastTarget == 0L || now - lastTarget >= 3600000)
++    }
++}
 --- a/app/src/main/java/com/example/assistentecell/command/HouseCommandExecutor.kt
 +++ b/app/src/main/java/com/example/assistentecell/command/HouseCommandExecutor.kt
 @@ -0,0 +1,45 @@
@@ -573,7 +591,15 @@
          // Tenta pegar 'acao', 'acao_tipo' ou 'comando' para compatibilidade total
          val type = (when {
              json.has("acao") -> json.optString("acao")
-@@ -93,16 +93,13 @@
+@@ -81,6 +81,7 @@
+         }
+         
+         val alvo = json.optString("alvo", "MOBILE").uppercase()
++        if (type in AppOpeningPolicy.commands && !allowOpening(context, json, type, parameter, userInitiated)) return
+         
+         Log.d(TAG, "🚀 Processando Comando: $type | Alvo: $alvo | Param: $parameter")
+ 
+@@ -93,16 +94,13 @@
              }
  
              when (type) {
@@ -582,7 +608,7 @@
 +                        .setAction(Intent.ACTION_ASSIST))
 +                }
                  // --- COMANDOS JÁ EXISTENTES (Alinhados com o Backend) ---
-                 "OPEN_APP", "ABRIR_APP", "ABRIR_APP_MOBILE", "ABRIR_PROGRAMA" -> {
+-                "OPEN_APP", "ABRIR_APP", "ABRIR_APP_MOBILE", "ABRIR_PROGRAMA" -> {
 -                    val paramLower = parameter.lowercase().trim()
 -                    val pcAppKey = pcAppAliases[paramLower] ?: pcAppAliases.entries.find { paramLower.contains(it.key) }?.value
 -                    if (pcAppKey != null) {
@@ -591,11 +617,12 @@
 -                    } else {
 -                        openApp(context, parameter)
 -                    }
-+                    openApp(context, parameter, userInitiated)
++                "OPEN_APP", "ABRIR_APP", "ABRIR_APP_MOBILE", "ABRIR_PROGRAMA", "LAUNCH_APP" -> {
++                    openApp(context, parameter, userInitiated = true) // The shared guard above already authorized this opening.
                  }
                  "LOCK", "BLOQUEAR", "BLOQUEAR_PC", "LOCK_PC", "TRAVAR_PC" -> PCCommandSender.enviarComando("bloquear_pc", context)
                  "SUSPEND", "SUSPENDER", "DORMIR", "DORMIR_PC", "HIBERNAR", "HIBERNAR_PC", "HIBERNATE" -> PCCommandSender.enviarComando("hibernar_pc", context)
-@@ -117,7 +114,7 @@
+@@ -117,7 +115,7 @@
                              val normalized = parameter.replace("'", "\"")
                              val innerJson = JSONObject(normalized)
                              Log.d(TAG, "🔄 Execução recursiva de comando proativo...")
@@ -604,7 +631,27 @@
                          } catch (e: Exception) {
                              Log.e(TAG, "Falha no comando recursivo: ${e.message}")
                              PCCommandSender.enviarComando(parameter, context)
-@@ -229,56 +226,30 @@
+@@ -180,8 +178,8 @@
+                         PCCommandSender.enviarComando(parameter, context)
+                     }
+                 }
+-                "OPEN_URL", "ABRIR_URL" -> openUrl(context, parameter)
+-                "WEB_SEARCH", "PESQUISAR" -> webSearch(context, parameter)
++                "OPEN_URL", "ABRIR_URL", "ABRIR_URL_MOBILE" -> openUrl(context, parameter)
++                "WEB_SEARCH", "PESQUISAR", "PESQUISA_GOOGLE" -> webSearch(context, parameter)
+                 "SET_TIMER", "TIMER" -> setTimer(context, parameter)
+                 "TOGGLE_WIFI", "WIFI" -> toggleWifi(context)
+                 "TOGGLE_BLUETOOTH", "BLUETOOTH" -> toggleBluetooth(context)
+@@ -193,7 +191,7 @@
+                     val success = com.example.assistentecell.ListenerDeNotificacoes.abrirNotificacaoPeloId(parameter)
+                     if (!success) {
+                         // Se falhar pelo ID, tenta abrir o app genérico como fallback
+-                        openApp(context, parameter)
++                        openApp(context, parameter, userInitiated = true)
+                     }
+                 }
+                 "TOGGLE_FLASHLIGHT", "LANTERNA" -> toggleFlashlight(context, json.optBoolean("estado", true))
+@@ -229,56 +227,30 @@
      }
  
      private fun executeLightCommand(context: Context, type: String, parameter: String) {
@@ -685,11 +732,49 @@
          }
      }
  
-@@ -313,10 +284,10 @@
+@@ -313,10 +285,48 @@
          }
      }
  
 -    private fun openApp(context: Context, nameOrPackage: String) {
++    private fun allowOpening(context: Context, json: JSONObject, type: String, target: String, manual: Boolean): Boolean {
++        val prefs = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
++        val now = System.currentTimeMillis()
++        val id = json.optString("id_comando", json.optString("id"))
++        val identity = "$id|$type|$target"
++        val handled = prefs.getStringSet("handled_app_openings", emptySet()).orEmpty()
++        if (id.isNotBlank() && identity in handled) return false
++        val localMinimum = when (prefs.getString("min_importance_level", "MEDIUM")) { "HIGH" -> .95; "LOW" -> 0.0; else -> .6 }
++        val minimum = maxOf(localMinimum, prefs.getFloat("server_min_open_importance", .85f).toDouble())
++        val allowed = AppOpeningPolicy.permits(manual, json.optString("abertura_modo"),
++            json.optBoolean("abertura_autorizada", false), prefs.getBoolean("auto_open_apps_enabled", false) && prefs.getBoolean("server_auto_open_enabled", false),
++            json.optDouble("importance_score", 0.0), minimum,
++            prefs.getLong("last_automatic_open", 0), prefs.getLong("last_open_$target", 0), now)
++        if (allowed) {
++            val edit = prefs.edit()
++            if (!manual && json.optString("abertura_modo") == "automatica") {
++                edit.putLong("last_automatic_open", now).putLong("last_open_$target", now)
++            }
++            if (id.isNotBlank()) edit.putStringSet("handled_app_openings", (handled.toList().takeLast(100).toSet() + identity))
++            edit.apply()
++            return true
++        }
++        Log.i(TAG, "Abertura automática bloqueada antes de iniciar o aplicativo")
++        val minimumLevel = prefs.getString("min_importance_level", "MEDIUM").orEmpty()
++        if (minimumLevel == "HIGH" || now - prefs.getLong("last_open_suggestion", 0) < 600000 ||
++            now - prefs.getLong("suggested_open_$target", 0) < 3600000) return false
++        prefs.edit().putLong("last_open_suggestion", now).putLong("suggested_open_$target", now).apply()
++        val correlation = json.optString("correlacao_id").ifBlank { java.util.UUID.randomUUID().toString() }
++        val pc = json.optString("alvo").equals("PC", ignoreCase = true)
++        val actionType = if (pc) "PC_COMMAND" else type
++        val actionTarget = if (pc) JSONObject().put("alvo", "PC").put("acao", type).put("parametro", target).toString() else target
++        com.example.assistentecell.NotificationHandler.showNotification(context,
++            com.example.assistentecell.data.model.AlertaPayload(titulo = "Abrir aplicativo?",
++                texto = "A Ollie sugeriu abrir um aplicativo. Você decide quando abrir.",
++                acao_tipo = actionType, acao_parametro = actionTarget, acao_texto = "Abrir aplicativo", correlacao_id = correlation))
++        return false
++    }
++
 +    private fun openApp(context: Context, nameOrPackage: String, userInitiated: Boolean = false) {
          val prefs = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
          val autoOpenEnabled = prefs.getBoolean("auto_open_apps_enabled", false)
@@ -698,7 +783,7 @@
              Log.w(TAG, "🚫 Abertura automática de app bloqueada por preferência do usuário: $nameOrPackage")
              return
          }
-@@ -340,8 +311,8 @@
+@@ -340,8 +350,8 @@
              context.startActivity(launchIntent)
              Log.d(TAG, "✅ App local $nameOrPackage aberto com sucesso")
          } else {
@@ -709,7 +794,7 @@
          }
      }
  
-@@ -349,28 +320,10 @@
+@@ -349,28 +359,10 @@
          val pm = context.packageManager
          val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
          
@@ -764,7 +849,19 @@
 -}+}
 --- a/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
 +++ b/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
-@@ -25,16 +25,32 @@
+@@ -7,6 +7,11 @@
+ import retrofit2.http.DELETE
+ 
+ interface CognitiveApiService {
++    @GET("api/v1/pc/intervention/policy")
++    suspend fun getInterventionPolicy(): InterventionSettings
++
++    @POST("api/v1/pc/intervention/policy")
++    suspend fun setInterventionPolicy(@Body changes: Map<String, @JvmSuppressWildcards Any>): InterventionUpdate
+ 
+     @GET("api/v1/home")
+     suspend fun getHomeData(): HomeResponse
+@@ -25,16 +30,32 @@
  
      // --- Rotinas e Capacidades ---
      @GET("api/v1/capabilities/discovered")
@@ -890,18 +987,19 @@
 +}
 --- a/app/src/main/java/com/example/assistentecell/data/model/AlertaPayload.kt
 +++ b/app/src/main/java/com/example/assistentecell/data/model/AlertaPayload.kt
-@@ -6,5 +6,7 @@
+@@ -6,5 +6,8 @@
      val acao_tipo: String?,      // Ex: "OPEN_APP"
      val acao_parametro: String?, // Ex: "com.spotify.music"
      val acao_texto: String?,     // Ex: "Ouvir Música"
 -    val correlacao_id: String    // ID para o feedback
 +    val correlacao_id: String,   // Conversation lineage, separate from the delivery ID.
 +    val id: String? = null,
-+    val urgencia: String = "NORMAL"
++    val urgencia: String = "NORMAL",
++    val tipo_ws: String = "NOTIFICACAO"
  )
 --- a/app/src/main/java/com/example/assistentecell/data/model/RoutineModels.kt
 +++ b/app/src/main/java/com/example/assistentecell/data/model/RoutineModels.kt
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,32 @@
 +package com.example.assistentecell.data.model
 +
 +data class RoutineTrigger(
@@ -919,7 +1017,8 @@
 +    val gatilho: RoutineTrigger? = null, val acoes: List<RoutineAction> = emptyList(),
 +    val ativa: Boolean = false, val cooldown_segundos: Int = 3600,
 +    val uma_vez_por_dia: Boolean = false, val evidencia: RoutineEvidence? = null,
-+    val problemas: List<String> = emptyList(), val pode_ativar: Boolean? = null
++    val problemas: List<String> = emptyList(), val pode_ativar: Boolean? = null, val importancia_abertura: Double = 0.0,
++    val controle_abertura_version: Int = 0
 +)
 +
 +data class RoutineEvidence(
@@ -927,11 +1026,15 @@
 +    val dias_distintos: Int = 0, val confianca: Double = 0.0
 +)
 +data class RoutineName(val nome: String)
-+data class RoutineState(val nome: String, val ativa: Boolean)
++data class RoutineState(val nome: String, val ativa: Boolean, val importancia_abertura: Double? = null)
 +data class RoutineMutation(val status: String = "", val message: String = "", val geradas: Int? = null)
++
++data class InterventionSettings(val auto_open_enabled: Boolean = false, val min_priority_score: Double = .85,
++    val controle_abertura_version: Int = 0, val whitelist: List<String> = emptyList(), val blacklist: List<String> = emptyList())
++data class InterventionUpdate(val policy: InterventionSettings)
 --- a/app/src/main/java/com/example/assistentecell/data/repository/CognitiveRepository.kt
 +++ b/app/src/main/java/com/example/assistentecell/data/repository/CognitiveRepository.kt
-@@ -58,41 +58,29 @@
+@@ -58,41 +58,32 @@
          }
      }
  
@@ -954,7 +1057,10 @@
 +    suspend fun getRoutines() = routineRequest { apiService.getRoutines() }
 +    suspend fun approveRoutine(nome: String) = routineRequest { apiService.approveRoutine(RoutineName(nome)) }
 +    suspend fun rejectRoutine(nome: String) = routineRequest { apiService.rejectRoutine(RoutineName(nome)) }
-+    suspend fun setRoutineState(nome: String, ativa: Boolean) = routineRequest { apiService.setRoutineState(RoutineState(nome, ativa)) }
++    suspend fun setRoutineState(nome: String, ativa: Boolean, importancia: Double? = null) = routineRequest { apiService.setRoutineState(RoutineState(nome, ativa, importancia)) }
++    suspend fun getInterventionPolicy() = routineRequest { apiService.getInterventionPolicy() }
++    suspend fun setInterventionPolicy(enabled: Boolean) = routineRequest { apiService.setInterventionPolicy(mapOf("auto_open_enabled" to enabled)) }
++    suspend fun setOpeningAllowlist(apps: List<String>) = routineRequest { apiService.setInterventionPolicy(mapOf("whitelist" to apps)) }
 +    suspend fun deleteRoutine(nome: String) = routineRequest {
 +        try { apiService.deleteRoutine(RoutineName(nome)) }
 +        catch (e: retrofit2.HttpException) {
@@ -1303,6 +1409,15 @@
          super.onDestroy()
          voiceManager?.shutdown()
          webSocket?.close(1000, "Serviço destruído")
+@@ -248,7 +259,7 @@
+             "LOW" -> 1
+             else -> 2
+         }
+-        val score = classifyImportance(pacoteApp, titulo, texto)
++        val score = com.example.assistentecell.notifications.ImportancePolicy.classify(titulo, texto, sbn.notification.category)
+         if (score < minScore) {
+             Log.d("AgenteSensor", "🔇 Notificação ignorada por importância insuficiente (Score: $score < Min: $minScore): $titulo")
+             return
 @@ -324,6 +335,7 @@
      }
  
@@ -1311,7 +1426,22 @@
          handlerReconexao.removeCallbacksAndMessages(null)
          if (isConectando) {
              Log.d("AGENTE_WS", "⏳ Já existe uma tentativa de conexão em curso. Ignorando.")
-@@ -368,6 +380,9 @@
+@@ -362,12 +374,24 @@
+                 }
+                 Log.e("AGENTE_WS", "✅ CONEXÃO ESTABELECIDA ($currentConnId)")
+                 ChatBridge.updateConnectionStatus(true)
++                serviceScope.launch {
++                    RetrofitClient.cognitiveRepository.getInterventionPolicy().onSuccess { policy ->
++                        val prefs = getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
++                        val edit = prefs.edit().putBoolean("server_auto_open_enabled", policy.auto_open_enabled)
++                            .putFloat("server_min_open_importance", policy.min_priority_score.toFloat())
++                        if (!policy.auto_open_enabled) edit.putBoolean("auto_open_apps_enabled", false)
++                        edit.apply()
++                    }
++                }
+                 
+                 // --- HANDSHAKE DE IDENTIFICAÇÃO ---
+                 val registro = JSONObject().apply {
                      put("tipo_ws", "REGISTRO")
                      put("id", "MOBILE")
                      put("connection_id", currentConnId)
@@ -1321,7 +1451,7 @@
                  }
                  webSocket.send(registro.toString())
              }
-@@ -387,38 +402,19 @@
+@@ -387,38 +411,19 @@
                      }
  
                      val correlacaoId = json.optString("correlacao_id", "")
@@ -1367,7 +1497,7 @@
                          }
                          webSocket.send(registro.toString())
                          Log.d("AGENTE_WS", "📤 Resposta ao desafio de identificação: MOBILE ($currentConnId)")
-@@ -489,13 +485,21 @@
+@@ -489,13 +494,21 @@
                          return
                      }
  
@@ -1391,7 +1521,7 @@
                          }
                          return
                      }
-@@ -509,79 +513,30 @@
+@@ -509,79 +522,30 @@
                          // 🔍 FILTRO DE HÁBITOS REFORÇADO: Silencia e oculta notificações redundantes
                          // Respeita o switch 'habit_filter_enabled'
                          val habitFilterActive = prefs.getBoolean("habit_filter_enabled", true)
@@ -1480,14 +1610,14 @@
  
                          val acaoTipo = if (json.has("acao_tipo")) json.optString("acao_tipo") else null
                          val acaoParametro = if (json.has("acao_parametro")) json.optString("acao_parametro") else null
-@@ -596,11 +551,13 @@
+@@ -596,11 +560,13 @@
                                      acao_tipo = acaoTipo,
                                      acao_parametro = acaoParametro,
                                      acao_texto = acaoTexto,
 -                                    correlacao_id = correlationId
 +                                    correlacao_id = correlationId,
 +                                    id = json.optString("id").takeIf { it.isNotBlank() },
-+                                    urgencia = json.optString("urgencia", "NORMAL")
++                                    urgencia = json.optString("urgencia", "NORMAL"), tipo_ws = tipoWs
                                  )
                                  
                                  // 🌟 SILÊNCIO INTELIGENTE: Se o app estiver aberto, não mostra notificação de sistema
@@ -1496,7 +1626,7 @@
                                      NotificationHandler.showNotification(this@ListenerDeNotificacoes, payload)
                                  } else {
                                      Log.d("AgenteSensor", "🔇 App em foco: Notificação de sistema suprimida")
-@@ -608,7 +565,10 @@
+@@ -608,7 +574,10 @@
                                  
                                  // 🛡️ MODO FOCO: Se estiver ativo, não dispara o overlay disruptivo
                                  // 🛡️ SESSÃO ATIVA: Se a tela de voz estiver aberta, não dispara overlay redundante
@@ -1508,7 +1638,7 @@
                                      dispararNotificacaoLocal(titulo, texto, acaoTipo, acaoParametro, acaoTexto, correlationId)
                                  } else {
                                      Log.d("AgenteSensor", "🔇 Overlay bloqueado: Foco Ativo ou Sessão de Voz Ativa")
-@@ -624,6 +584,7 @@
+@@ -624,6 +593,7 @@
              }
  
              override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -1516,7 +1646,7 @@
                  isConectando = false
                  if (this@ListenerDeNotificacoes.webSocket == webSocket) {
                      this@ListenerDeNotificacoes.webSocket = null
-@@ -638,6 +599,7 @@
+@@ -638,6 +608,7 @@
              }
  
              override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -1524,7 +1654,7 @@
                  isConectando = false
                  if (this@ListenerDeNotificacoes.webSocket == webSocket) {
                      this@ListenerDeNotificacoes.webSocket = null
-@@ -652,6 +614,7 @@
+@@ -652,6 +623,7 @@
      }
  
      private fun agendarReconexao() {
@@ -1532,7 +1662,7 @@
          handlerReconexao.removeCallbacksAndMessages(null)
          handlerReconexao.postDelayed({
              Log.e("AGENTE_WS", "🔄 Iniciando auto-reconexão...")
-@@ -676,38 +639,39 @@
+@@ -676,38 +648,39 @@
          isMonitorando = true
          thread {
              val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -1603,7 +1733,7 @@
                  }
                  Thread.sleep(2000)
              }
-@@ -736,6 +700,7 @@
+@@ -736,6 +709,7 @@
                  Log.e("AgenteSensor", "❌ Falha ao conectar no PC: ${e.message}")
              }
              override fun onResponse(call: Call, response: Response) {
@@ -1611,6 +1741,26 @@
                  response.close()
              }
          })
+@@ -773,19 +747,6 @@
+     /**
+      * 🌟 Classifica a importância da notificação (3 = HIGH, 2 = MEDIUM, 1 = LOW).
+      */
+-    private fun classifyImportance(pacoteApp: String, titulo: String, texto: String): Int {
+-        val content = "$titulo $texto".lowercase()
+-        val highKeywords = listOf("pix", "transferência", "transferencia", "compra aprovada", "banco", "pagamento", "extrato", "saldo", "chamada", "ligação", "ligacao", "urgente")
+-        if (highKeywords.any { content.contains(it) } || (pacoteApp.contains("whatsapp") && !content.contains("mensagens"))) {
+-            return 3 // HIGH
+-        }
+-        val lowKeywords = listOf("curtiu", "publicou", "story", "stories", "reels", "seguiu", "comentou", "promoção", "promocao", "desconto", "frete", "cashback", "notícia", "noticia")
+-        if (lowKeywords.any { content.contains(it) } || pacoteApp.contains("tiktok") || (pacoteApp.contains("instagram") && content.contains("postou"))) {
+-            return 1 // LOW
+-        }
+-        return 2 // MEDIUM
+-    }
+-
+     /**
+      * 🧹 Normaliza o texto para deduplicação: remove números, pontuação e espaços extras.
+      */
 --- a/app/src/main/java/com/example/assistentecell/MainActivity.kt
 +++ b/app/src/main/java/com/example/assistentecell/MainActivity.kt
 @@ -110,7 +110,25 @@
@@ -1690,9 +1840,9 @@
 +
 +/** Chat uses the same authenticated client as sensors and WebSocket. */
 +class BackendChatTransport(private val client: OkHttpClient, private val serverUrl: () -> String) {
-+    fun enqueue(text: String, packageName: String, callback: Callback, correlationId: String? = null): Call {
++    fun enqueue(text: String, packageName: String, callback: Callback, correlationId: String? = null, spoken: Boolean = false): Call {
 +        val payload = mapOf("categoria" to "SISTEMA_COMANDO_USUARIO", "origem" to "ANDROID",
-+            "pacote" to packageName, "payload" to mapOf("texto" to text)) +
++            "pacote" to packageName, "payload" to mapOf("texto" to text, "canal" to if (spoken) "voz" else "texto")) +
 +            (correlationId?.let { mapOf("correlacao_id" to it) } ?: emptyMap())
 +        val request = Request.Builder().url(serverUrl() + "eventos")
 +            .post(Gson().toJson(payload).toRequestBody("application/json; charset=utf-8".toMediaType())).build()
@@ -1826,7 +1976,7 @@
 +}
 --- a/app/src/main/java/com/example/assistentecell/NotificationHandler.kt
 +++ b/app/src/main/java/com/example/assistentecell/NotificationHandler.kt
-@@ -1,186 +1,100 @@
+@@ -1,186 +1,103 @@
  package com.example.assistentecell
  
 -import com.example.assistentecell.data.model.AlertaPayload
@@ -1875,6 +2025,9 @@
      }
  
      fun showNotification(context: Context, payload: AlertaPayload) {
++        val minimum = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
++            .getString("min_importance_level", "MEDIUM").orEmpty()
++        if (!com.example.assistentecell.notifications.ImportancePolicy.allowsOutgoing(minimum, payload.urgencia, payload.tipo_ws == "CHAT_RESPONSE")) return
 +        if (payload.texto.isBlank()) return
          createNotificationChannel(context)
          val prefs = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
@@ -2077,6 +2230,25 @@
          }
      }
  }
+--- a/app/src/main/java/com/example/assistentecell/notifications/ImportancePolicy.kt
++++ b/app/src/main/java/com/example/assistentecell/notifications/ImportancePolicy.kt
+@@ -0,0 +1,16 @@
++package com.example.assistentecell.notifications
++
++import java.text.Normalizer
++
++object ImportancePolicy {
++    fun minimum(level: String) = when (level) { "HIGH" -> 3; "LOW" -> 1; else -> 2 }
++    fun classify(title: String, text: String, category: String? = null): Int {
++        val content = Normalizer.normalize("$title $text".lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
++        if (category in setOf("call", "alarm")) return 3
++        if (listOf("promocao", "desconto", "cashback", "frete", "curtiu", "reels", "stories", "story", "seguiu", "publicou", "comentou").any { it in content }) return 1
++        if (listOf("pix recebido", "pix enviado", "transferencia recebida", "compra aprovada", "compra recusada", "pagamento aprovado", "tentativa de acesso", "acesso suspeito", "chamada", "ligacao perdida").any { it in content }) return 3
++        return 2
++    }
++    fun allowsOutgoing(level: String, urgency: String, chat: Boolean): Boolean = chat ||
++        (when (urgency.uppercase()) { "ALTA" -> 3; "BAIXA" -> 1; else -> 2 }) >= minimum(level)
++}
 --- a/app/src/main/java/com/example/assistentecell/notifications/IncomingMessagePolicy.kt
 +++ b/app/src/main/java/com/example/assistentecell/notifications/IncomingMessagePolicy.kt
 @@ -0,0 +1,33 @@
@@ -2228,7 +2400,7 @@
 +}
 --- a/app/src/main/java/com/example/assistentecell/ui/screens/CapabilitiesScreen.kt
 +++ b/app/src/main/java/com/example/assistentecell/ui/screens/CapabilitiesScreen.kt
-@@ -1,747 +1,219 @@
+@@ -1,747 +1,230 @@
  package com.example.assistentecell.ui.screens
  
 -import android.content.Context
@@ -2416,7 +2588,8 @@
 +                    RoutineCard(routine, suggested = tab == 0, enabled = !busy, label = label,
 +                        onApprove = { approve = routine },
 +                        onDelete = { delete = routine to (tab == 0) },
-+                        onToggle = { viewModel.setRoutineState(routine.nome, it) })
++                        onToggle = { viewModel.setRoutineState(routine.nome, it) },
++                        onImportance = { viewModel.setOpeningImportance(routine, it) })
 +                }
 +            }
 +            if (localRules.isNotEmpty()) {
@@ -2494,8 +2667,68 @@
 -                                }
 -                            }
 -                        }
--                    }
--                }
++        }
++    }
++    delete?.let { (routine, suggested) ->
++        AlertDialog(onDismissRequest = { delete = null }, title = { Text("Excluir ${routine.nome}?") },
++            text = { Text(if (suggested) "Essa sugestão será descartada." else "Essa rotina deixará de executar.") },
++            confirmButton = { TextButton(onClick = {
++                if (suggested) viewModel.rejectRoutine(routine.nome) else viewModel.deleteRoutine(routine.nome)
++                delete = null
++            }) { Text("Excluir") } },
++            dismissButton = { TextButton(onClick = { delete = null }) { Text("Cancelar") } })
++    }
++    approve?.let { routine ->
++        AlertDialog(onDismissRequest = { approve = null }, title = { Text("Ativar ${routine.nome}?") },
++            text = { Column(Modifier.verticalScroll(rememberScrollState())) {
++                Text(RoutineDescription.trigger(routine, label))
++                routine.acoes.forEach { Text(RoutineDescription.action(it, label)) }
++                Spacer(Modifier.height(12.dp))
++                Text("Após ativar, a rotina aguardará o próximo gatilho. Você pode pausá-la em Minhas rotinas.")
++            } },
++            confirmButton = { TextButton(onClick = { viewModel.approveRoutine(routine.nome); approve = null }) { Text("Ativar rotina") } },
++            dismissButton = { TextButton(onClick = { approve = null }) { Text("Cancelar") } })
++    }
++    if (create) RoutineCreateDialog(onDismiss = { create = false }, busy = busy, feedback = feedback, onSave = { routine ->
++        viewModel.createRoutine(routine) { create = false; tab = 1 }
++    })
++}
++
++@Composable
++private fun RoutineCard(routine: ApiRoutine, suggested: Boolean, enabled: Boolean, label: (String) -> String,
++                        onApprove: () -> Unit, onDelete: () -> Unit, onToggle: (Boolean) -> Unit, onImportance: (Double) -> Unit) {
++    Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
++        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++            Row(verticalAlignment = Alignment.CenterVertically) {
++                Text(routine.nome, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
++                if (!suggested) Switch(checked = routine.ativa, onCheckedChange = onToggle, enabled = enabled && routine.pode_ativar != null && (routine.ativa || routine.pode_ativar == true))
++            }
++            Text(if (suggested) "Aguardando sua aprovação"
++                else if (!routine.ativa) "Pausada"
++                else if (routine.pode_ativar == false) "Ativa no cadastro — precisa de revisão"
++                else if (routine.pode_ativar == null) "Ativa no servidor atual"
++                else "Ativa — aguardando gatilho",
++                color = MaterialTheme.colorScheme.primary)
++            routine.justificativa?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
++            Text("Quando: ${RoutineDescription.trigger(routine, label)}")
++            routine.acoes.forEach { Text("Então: ${RoutineDescription.action(it, label)}") }
++            Text("Intervalo mínimo: ${routine.cooldown_segundos / 60} min" + if (routine.uma_vez_por_dia) " · Uma vez por dia" else "",
++                style = MaterialTheme.typography.bodySmall)
++            if (suggested) {
++                val evidence = routine.evidencia
++                Text(if (evidence != null && evidence.amostras > 0)
++                    "Observado em ${evidence.amostras} de ${evidence.oportunidades} oportunidades, em ${evidence.dias_distintos} dias."
++                    else "Sugestão antiga ou manual, sem evidência de uso registrada. Revise as ações antes de ativar.",
++                    style = MaterialTheme.typography.bodySmall)
++            }
++            routine.problemas.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
++            if (!suggested && routine.acoes.any { it.comando.uppercase() in com.example.assistentecell.command.AppOpeningPolicy.commands }) {
++                Text("Importância para abrir apps: ${if (routine.importancia_abertura >= .95) "Alta" else if (routine.importancia_abertura >= .6) "Média" else "Só sugerir"}")
++                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                    listOf("Só sugerir" to 0.0, "Média" to .6, "Alta" to .95).forEach { (label, score) ->
++                        TextButton(enabled = enabled && routine.controle_abertura_version >= 1, onClick = { onImportance(score) }) { Text(label) }
+                     }
+                 }
 -                is AutomationUiState.Loading -> {
 -                    item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(2.dp))) }
 -                }
@@ -2576,70 +2809,18 @@
 -                        }
 -                    }
 -                }
--            }
++                Text("Alta não ignora o bloqueio geral nem a lista de apps permitidos.", style = MaterialTheme.typography.bodySmall)
++                if (routine.controle_abertura_version < 1) Text("Atualize o servidor para configurar a importância desta rotina.", style = MaterialTheme.typography.bodySmall)
++            }
++            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
++                TextButton(onClick = onDelete, enabled = enabled) { Text("Excluir", color = MaterialTheme.colorScheme.error) }
++                if (suggested) Button(onClick = onApprove, enabled = enabled && routine.pode_ativar == true && routine.acoes.isNotEmpty()) { Text("Revisar e ativar") }
+             }
          }
 -
 -        if (showCreateMacroDialog) {
 -            CreateMacroDialog(onDismiss = { showCreateMacroDialog = false })
-+    }
-+    delete?.let { (routine, suggested) ->
-+        AlertDialog(onDismissRequest = { delete = null }, title = { Text("Excluir ${routine.nome}?") },
-+            text = { Text(if (suggested) "Essa sugestão será descartada." else "Essa rotina deixará de executar.") },
-+            confirmButton = { TextButton(onClick = {
-+                if (suggested) viewModel.rejectRoutine(routine.nome) else viewModel.deleteRoutine(routine.nome)
-+                delete = null
-+            }) { Text("Excluir") } },
-+            dismissButton = { TextButton(onClick = { delete = null }) { Text("Cancelar") } })
-+    }
-+    approve?.let { routine ->
-+        AlertDialog(onDismissRequest = { approve = null }, title = { Text("Ativar ${routine.nome}?") },
-+            text = { Column(Modifier.verticalScroll(rememberScrollState())) {
-+                Text(RoutineDescription.trigger(routine, label))
-+                routine.acoes.forEach { Text(RoutineDescription.action(it, label)) }
-+                Spacer(Modifier.height(12.dp))
-+                Text("Após ativar, a rotina aguardará o próximo gatilho. Você pode pausá-la em Minhas rotinas.")
-+            } },
-+            confirmButton = { TextButton(onClick = { viewModel.approveRoutine(routine.nome); approve = null }) { Text("Ativar rotina") } },
-+            dismissButton = { TextButton(onClick = { approve = null }) { Text("Cancelar") } })
-+    }
-+    if (create) RoutineCreateDialog(onDismiss = { create = false }, busy = busy, feedback = feedback, onSave = { routine ->
-+        viewModel.createRoutine(routine) { create = false; tab = 1 }
-+    })
-+}
-+
-+@Composable
-+private fun RoutineCard(routine: ApiRoutine, suggested: Boolean, enabled: Boolean, label: (String) -> String,
-+                        onApprove: () -> Unit, onDelete: () -> Unit, onToggle: (Boolean) -> Unit) {
-+    Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
-+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-+            Row(verticalAlignment = Alignment.CenterVertically) {
-+                Text(routine.nome, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-+                if (!suggested) Switch(checked = routine.ativa, onCheckedChange = onToggle, enabled = enabled && routine.pode_ativar != null && (routine.ativa || routine.pode_ativar == true))
-+            }
-+            Text(if (suggested) "Aguardando sua aprovação"
-+                else if (!routine.ativa) "Pausada"
-+                else if (routine.pode_ativar == false) "Ativa no cadastro — precisa de revisão"
-+                else if (routine.pode_ativar == null) "Ativa no servidor atual"
-+                else "Ativa — aguardando gatilho",
-+                color = MaterialTheme.colorScheme.primary)
-+            routine.justificativa?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-+            Text("Quando: ${RoutineDescription.trigger(routine, label)}")
-+            routine.acoes.forEach { Text("Então: ${RoutineDescription.action(it, label)}") }
-+            Text("Intervalo mínimo: ${routine.cooldown_segundos / 60} min" + if (routine.uma_vez_por_dia) " · Uma vez por dia" else "",
-+                style = MaterialTheme.typography.bodySmall)
-+            if (suggested) {
-+                val evidence = routine.evidencia
-+                Text(if (evidence != null && evidence.amostras > 0)
-+                    "Observado em ${evidence.amostras} de ${evidence.oportunidades} oportunidades, em ${evidence.dias_distintos} dias."
-+                    else "Sugestão antiga ou manual, sem evidência de uso registrada. Revise as ações antes de ativar.",
-+                    style = MaterialTheme.typography.bodySmall)
-+            }
-+            routine.problemas.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
-+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-+                TextButton(onClick = onDelete, enabled = enabled) { Text("Excluir", color = MaterialTheme.colorScheme.error) }
-+                if (suggested) Button(onClick = onApprove, enabled = enabled && routine.pode_ativar == true && routine.acoes.isNotEmpty()) { Text("Revisar e ativar") }
-+            }
-         }
+-        }
 -
 -        if (showBottomSheet && selectedCapabilityForConfig != null) {
 -            ModalBottomSheet(
@@ -3277,7 +3458,88 @@
          color = Color.White.copy(alpha = 0.07f),
 --- a/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt
 +++ b/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt
-@@ -47,7 +47,7 @@
+@@ -1,6 +1,7 @@
+ package com.example.assistentecell.ui.screens
+ 
+ import android.content.Intent
++import kotlinx.coroutines.launch
+ import androidx.compose.foundation.background
+ import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.*
+@@ -42,12 +43,80 @@
+     var isQuickReplyEnabled by remember { mutableStateOf(prefs.getBoolean("quick_reply_enabled", true)) }
+     var isFocusModeActive by remember { mutableStateOf(prefs.getBoolean("focus_mode_active", false)) }
+     var isAutoOpenEnabled by remember { mutableStateOf(prefs.getBoolean("auto_open_apps_enabled", false)) }
++    var openingPolicyError by remember { mutableStateOf<String?>(null) }
++    var openingPolicyBusy by remember { mutableStateOf(false) }
++    var openingPolicyVersion by remember { mutableStateOf(0) }
++    var allowedOpeningApps by remember { mutableStateOf<List<String>>(emptyList()) }
++    var blockedOpeningApps by remember { mutableStateOf<List<String>>(emptyList()) }
++    var showOpeningApps by remember { mutableStateOf(false) }
++    var openingAppPicker by remember { mutableStateOf(false) }
++    var openingAppsDraft by remember { mutableStateOf<List<String>>(emptyList()) }
++    fun appLabel(value: String): String = when (value) {
++        "whatsapp", "com.whatsapp" -> "WhatsApp"
++        "telegram", "org.telegram.messenger" -> "Telegram"
++        "vscode", "code.exe" -> "VS Code (PC)"
++        "instagram", "com.instagram.android" -> "Instagram"
++        "youtube", "com.google.android.youtube" -> "YouTube"
++        "netflix", "com.netflix.mediaclient" -> "Netflix"
++        else -> try { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(value, 0)).toString() } catch (_: Exception) { value }
++    }
++    val openingScope = rememberCoroutineScope()
++    LaunchedEffect(Unit) {
++        com.example.assistentecell.api.RetrofitClient.cognitiveRepository.getInterventionPolicy().onSuccess { policy ->
++            openingPolicyVersion = policy.controle_abertura_version
++            allowedOpeningApps = policy.whitelist
++            blockedOpeningApps = policy.blacklist
++            isAutoOpenEnabled = isAutoOpenEnabled && policy.auto_open_enabled
++            prefs.edit {
++                putBoolean("auto_open_apps_enabled", isAutoOpenEnabled)
++                putBoolean("server_auto_open_enabled", policy.auto_open_enabled)
++                putFloat("server_min_open_importance", policy.min_priority_score.toFloat())
++            }
++        }
++    }
++    if (showOpeningApps) {
++        AlertDialog(onDismissRequest = { if (!openingPolicyBusy) showOpeningApps = false },
++            title = { Text("Apps permitidos") },
++            text = {
++                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                    Text("Somente estes apps podem abrir sozinhos. Seus pedidos por voz ou toque continuam funcionando para os demais.")
++                    LazyColumn(Modifier.heightIn(max = 240.dp)) {
++                        items(openingAppsDraft) { app ->
++                            Row(verticalAlignment = Alignment.CenterVertically) {
++                                Text(appLabel(app), Modifier.weight(1f))
++                                TextButton(enabled = !openingPolicyBusy, onClick = { openingAppsDraft = openingAppsDraft - app }) { Text("Remover") }
++                            }
++                        }
++                    }
++                    TextButton(enabled = !openingPolicyBusy, onClick = { openingAppPicker = true }) { Text("Adicionar aplicativo") }
++                    if (blockedOpeningApps.isNotEmpty()) Text("Bloqueios adicionais do servidor: ${blockedOpeningApps.joinToString { appLabel(it) }}.", style = MaterialTheme.typography.bodySmall)
++                    openingPolicyError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
++                }
++            },
++            confirmButton = { Button(enabled = !openingPolicyBusy, onClick = {
++                openingPolicyBusy = true
++                openingScope.launch {
++                    com.example.assistentecell.api.RetrofitClient.cognitiveRepository.setOpeningAllowlist(openingAppsDraft)
++                        .onSuccess { result ->
++                            allowedOpeningApps = result.policy.whitelist
++                            openingPolicyError = null
++                            showOpeningApps = false
++                        }.onFailure { openingPolicyError = "Não consegui salvar os apps permitidos. Tente novamente." }
++                    openingPolicyBusy = false
++                }
++            }) { Text("Salvar") } },
++            dismissButton = { TextButton(enabled = !openingPolicyBusy, onClick = { showOpeningApps = false }) { Text("Cancelar") } })
++    }
++    if (openingAppPicker) AppPickerDialog(onDismiss = { openingAppPicker = false }, onAppSelected = { app ->
++        app.packageName?.takeIf { it.isNotBlank() }?.let { openingAppsDraft = (openingAppsDraft + it).distinct() }
++        openingAppPicker = false
++    })
+     var minImportance by remember { mutableStateOf(prefs.getString("min_importance_level", "MEDIUM") ?: "MEDIUM") }
+     var showClearDataDialog by remember { mutableStateOf(false) }
      var showImportanceDialog by remember { mutableStateOf(false) }
  
      var pcIp by remember { mutableStateOf(prefs.getString("pc_ip", "192.168.15.22") ?: "192.168.15.22") }
@@ -3286,7 +3548,7 @@
      var haUrl by remember { mutableStateOf(prefs.getString("ha_url", "http://homeassistant.local:8123/") ?: "http://homeassistant.local:8123/") }
      var haToken by remember { mutableStateOf(prefs.getString("ha_token", "") ?: "") }
      
-@@ -157,24 +157,39 @@
+@@ -157,24 +226,39 @@
  
      if (showUrlDialog) {
          var tempUrl by remember { mutableStateOf(serverUrl) }
@@ -3336,7 +3598,76 @@
                      com.example.assistentecell.ListenerDeNotificacoes.reconnect()
                      showUrlDialog = false
                  }) {
-@@ -488,7 +503,7 @@
+@@ -269,7 +353,7 @@
+             text = {
+                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                     val options = listOf(
+-                        Triple("HIGH", "🔴 Apenas Alta (Bancos, Pix, Urgências)", "Intervém apenas em chamadas, Pix e transações financeiras."),
++                        Triple("HIGH", "🔴 Apenas Alta", "Chamadas, transações confirmadas e alertas de segurança. Pedidos feitos por você continuam respondidos."),
+                         Triple("MEDIUM", "🟡 Média e Acima (Padrão)", "Intervém em mensagens diretas e lembretes."),
+                         Triple("LOW", "🟢 Todas", "Intervém em qualquer notificação, incluindo redes sociais.")
+                     )
+@@ -435,7 +519,7 @@
+                     SettingItemNew(
+                         title = "Nível de Importância",
+                         subtitle = when (minImportance) {
+-                            "HIGH" -> "Apenas Alta (Bancos, Pix, Chamadas)"
++                            "HIGH" -> "Alta: chamadas, transações e segurança"
+                             "LOW" -> "Todas as Notificações"
+                             else -> "Média e Acima (Padrão)"
+                         },
+@@ -445,13 +529,47 @@
+                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                     SettingItemNew(
+                         title = "Abertura Automática de Apps",
+-                        subtitle = "Permitir que Ollie abra apps automaticamente",
++                        subtitle = "Exige rotina com importância suficiente, app permitido e intervalo entre aberturas",
+                         icon = Icons.Outlined.Smartphone,
+                         showSwitch = true,
+                         checked = isAutoOpenEnabled,
+                         onCheckedChange = { 
+-                            isAutoOpenEnabled = it
+-                            prefs.edit { putBoolean("auto_open_apps_enabled", it) }
++                            if (it && openingPolicyVersion < 1) {
++                                openingPolicyError = "Atualize o servidor antes de ativar a abertura automática."
++                            } else if (!openingPolicyBusy) {
++                                val requested = it
++                                if (!requested) {
++                                    isAutoOpenEnabled = false
++                                    prefs.edit { putBoolean("auto_open_apps_enabled", false) }
++                                }
++                                openingPolicyBusy = true
++                                openingScope.launch {
++                                    com.example.assistentecell.api.RetrofitClient.cognitiveRepository.setInterventionPolicy(requested)
++                                        .onSuccess { result ->
++                                            isAutoOpenEnabled = result.policy.auto_open_enabled
++                                            prefs.edit {
++                                                putBoolean("auto_open_apps_enabled", isAutoOpenEnabled)
++                                                putBoolean("server_auto_open_enabled", isAutoOpenEnabled)
++                                                putFloat("server_min_open_importance", result.policy.min_priority_score.toFloat())
++                                            }
++                                            openingPolicyError = null
++                                        }.onFailure { openingPolicyError = "Não consegui salvar a política no servidor. Tente novamente." }
++                                    openingPolicyBusy = false
++                                }
++                            }
++                        }
++                    )
++                    openingPolicyError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
++                    SettingItemNew(
++                        title = "Apps permitidos para abertura automática",
++                        subtitle = if (openingPolicyVersion >= 1) allowedOpeningApps.joinToString { appLabel(it) }.ifBlank { "Nenhum aplicativo" } else "Disponível após atualizar o servidor",
++                        icon = Icons.Outlined.Apps,
++                        onClick = {
++                            if (openingPolicyVersion >= 1) {
++                                openingAppsDraft = allowedOpeningApps
++                                openingPolicyError = null
++                                showOpeningApps = true
++                            }
+                         }
+                     )
+                 }
+@@ -488,7 +606,7 @@
                          showSwitch = true,
                          checked = isDevEnvironment,
                          onCheckedChange = { dev ->
@@ -3347,7 +3678,7 @@
                              com.example.assistentecell.api.RetrofitClient.updateBaseUrl(newUrl)
 --- a/app/src/main/java/com/example/assistentecell/ui/viewmodel/AutomationViewModel.kt
 +++ b/app/src/main/java/com/example/assistentecell/ui/viewmodel/AutomationViewModel.kt
-@@ -2,69 +2,70 @@
+@@ -2,69 +2,71 @@
  
  import androidx.lifecycle.ViewModel
  import androidx.lifecycle.viewModelScope
@@ -3458,6 +3789,7 @@
 +    fun approveRoutine(nome: String) = mutate({ repository.approveRoutine(nome) })
 +    fun rejectRoutine(nome: String) = mutate({ repository.rejectRoutine(nome) })
 +    fun setRoutineState(nome: String, ativa: Boolean) = mutate({ repository.setRoutineState(nome, ativa) })
++    fun setOpeningImportance(routine: ApiRoutine, importance: Double) = mutate({ repository.setRoutineState(routine.nome, routine.ativa, importance) })
 +    fun deleteRoutine(nome: String) = mutate({ repository.deleteRoutine(nome) })
 +    fun createRoutine(routine: ApiRoutine, onSaved: () -> Unit = {}) = mutate({ repository.createRoutine(routine) }, onSaved)
  }
@@ -3595,7 +3927,7 @@
 -                    response.close()
 -                }
 -            })
-+            }, correlationId = correlation)
++            }, correlationId = correlation, spoken = spoken)
 +        }
 +    }
 +
@@ -4124,6 +4456,64 @@
      val timestamp: Long = System.currentTimeMillis()
  )
  
+--- a/app/src/test/java/com/example/assistentecell/AppOpeningPolicyTest.kt
++++ b/app/src/test/java/com/example/assistentecell/AppOpeningPolicyTest.kt
+@@ -0,0 +1,55 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.command.AppOpeningPolicy
++import com.example.assistentecell.notifications.ImportancePolicy
++import org.junit.Assert.*
++import org.junit.Test
++
++class AppOpeningPolicyTest {
++    private fun permits(mode: String = "automatica", authorized: Boolean = true,
++                        enabled: Boolean = true, score: Double = .95,
++                        lastGlobal: Long = 0, lastTarget: Long = 0, manual: Boolean = false) =
++        AppOpeningPolicy.permits(manual, mode, authorized, enabled, score, .85,
++            lastGlobal, lastTarget, 7200000)
++
++    @Test fun legacyCommandsCannotLaunchEvenWithAutoOpeningEnabled() {
++        assertFalse(permits(mode = "", authorized = false))
++        assertFalse(permits(authorized = false))
++        assertFalse(permits(enabled = false))
++    }
++
++    @Test fun importanceMustBeExplicitAndFinite() {
++        assertFalse(permits(score = 0.0))
++        assertFalse(permits(score = .6))
++        assertFalse(permits(score = Double.NaN))
++        assertFalse(permits(score = Double.POSITIVE_INFINITY))
++        assertTrue(permits())
++    }
++
++    @Test fun explicitRequestsAndNotificationTapsWorkWithAutomationOff() {
++        assertTrue(permits(mode = "pedido", enabled = false, score = 0.0))
++        assertFalse(permits(mode = "pedido", authorized = false, enabled = false))
++        assertTrue(permits(mode = "", authorized = false, enabled = false, manual = true))
++    }
++
++    @Test fun previousLaunchesEnforceGlobalAndPerAppIntervals() {
++        assertFalse(permits(lastGlobal = 7200000 - 599999))
++        assertFalse(permits(lastTarget = 7200000 - 3599999))
++        assertTrue(permits(lastGlobal = 7200000 - 600000, lastTarget = 7200000 - 3600000))
++    }
++
++    @Test fun ordinaryMessagesAreMediumAndPixPromotionsAreLow() {
++        assertEquals(2, ImportancePolicy.classify("Contato", "Toma banho"))
++        assertEquals(1, ImportancePolicy.classify("Banco", "Cashback para compras com Pix recebido"))
++        assertEquals(3, ImportancePolicy.classify("Banco", "Pix recebido de Ana"))
++        assertEquals(3, ImportancePolicy.classify("Contato", "", "call"))
++        assertEquals(3, ImportancePolicy.classify("Conta", "Tentativa de acesso"))
++    }
++
++    @Test fun highFilterSilencesNormalSuggestionsAndKeepsRequestedReplies() {
++        assertFalse(ImportancePolicy.allowsOutgoing("HIGH", "NORMAL", false))
++        assertTrue(ImportancePolicy.allowsOutgoing("HIGH", "ALTA", false))
++        assertTrue(ImportancePolicy.allowsOutgoing("HIGH", "NORMAL", true))
++        assertFalse(ImportancePolicy.allowsOutgoing("MEDIUM", "BAIXA", false))
++    }
++}
 --- a/app/src/test/java/com/example/assistentecell/BackendAuthTest.kt
 +++ b/app/src/test/java/com/example/assistentecell/BackendAuthTest.kt
 @@ -0,0 +1,90 @@
@@ -4219,7 +4609,7 @@
 +}
 --- a/app/src/test/java/com/example/assistentecell/BackendChatTransportTest.kt
 +++ b/app/src/test/java/com/example/assistentecell/BackendChatTransportTest.kt
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,86 @@
 +package com.example.assistentecell
 +
 +import com.example.assistentecell.network.BackendAuthInterceptor
@@ -4252,7 +4642,7 @@
 +            override fun onResponse(call: Call, response: Response) {
 +                response.use { code.set(it.code) }; done.countDown()
 +            }
-+        }, correlationId = "voice-request-123")
++        }, correlationId = "voice-request-123", spoken = true)
 +        assertTrue(done.await(3, TimeUnit.SECONDS))
 +        assertNull(error.get())
 +        return code.get()
@@ -4280,6 +4670,7 @@
 +            assertEquals("voice-request-123", event["correlacao_id"].asString)
 +            assertEquals("com.example.assistentecell.chat", event["pacote"].asString)
 +            assertEquals("Olá, Ollie!", event["payload"].asJsonObject["texto"].asString)
++            assertEquals("voz", event["payload"].asJsonObject["canal"].asString)
 +        } finally { client.dispatcher.executorService.shutdownNow() }
 +    }
 +
@@ -4521,7 +4912,7 @@
 +}
 --- a/app/src/test/java/com/example/assistentecell/RoutineManagementTest.kt
 +++ b/app/src/test/java/com/example/assistentecell/RoutineManagementTest.kt
-@@ -0,0 +1,105 @@
+@@ -0,0 +1,128 @@
 +package com.example.assistentecell
 +
 +import com.example.assistentecell.data.api.CognitiveApiService
@@ -4625,6 +5016,29 @@
 +        assertFalse(draft.ativa)
 +        assertEquals("com.trabalho", draft.gatilho!!.pacote)
 +        assertEquals(RoutineAction("PC", "abrir_app", "vscode"), draft.acoes.single())
++    }
++
++    @Test fun importanceAndAllowlistUseIndependentAuthenticatedUpdates() = runBlocking {
++        val requests = mutableListOf<Request>()
++        val (client, repo) = client {
++            requests.add(it)
++            200 to """{"status":"ok","policy":{"auto_open_enabled":false,"min_priority_score":0.85,"controle_abertura_version":1,"whitelist":["com.instagram.android"],"blacklist":[]}}"""
++        }
++        try {
++            val policy = repo.setOpeningAllowlist(listOf("com.instagram.android")).getOrThrow().policy
++            assertFalse(policy.auto_open_enabled)
++            assertEquals(1, policy.controle_abertura_version)
++            val body = Buffer(); requests.single().body!!.writeTo(body)
++            val json = Gson().fromJson(body.readUtf8(), JsonObject::class.java)
++            assertEquals("com.instagram.android", json["whitelist"].asJsonArray[0].asString)
++            assertFalse(json.has("auto_open_enabled")) // Choosing an app never enables automation.
++            requests.clear()
++            assertTrue(repo.setRoutineState("Rede social", false, .95).isSuccess)
++            val state = Buffer(); requests.single().body!!.writeTo(state)
++            val updated = Gson().fromJson(state.readUtf8(), JsonObject::class.java)
++            assertEquals(.95, updated["importancia_abertura"].asDouble, 0.0)
++            assertFalse(updated["ativa"].asBoolean) // Changing importance keeps a paused routine paused.
++        } finally { client.dispatcher.executorService.shutdownNow() }
 +    }
 +}
 --- a/app/src/test/java/com/example/assistentecell/VoiceReplyTrackerTest.kt

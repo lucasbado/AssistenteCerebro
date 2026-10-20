@@ -71,7 +71,7 @@ class CatalogoRotinas:
                 nome, assinatura = chave_nome(nova["nome"]), assinatura_rotina(nova)
                 if nome in nomes or assinatura in assinaturas:
                     continue
-                dados["descobertas"].append({**deepcopy(nova), "ativa": False})
+                dados["descobertas"].append({**deepcopy(nova), "ativa": False, "importancia_abertura": 0})
                 nomes.add(nome); assinaturas.add(assinatura); total += 1
             return total
         return await self._transacao(alterar)
@@ -89,7 +89,7 @@ class CatalogoRotinas:
             rotina = validar_rotina(alvo)
             if any(chave_nome(r["nome"]) == chave_nome(nome) for r in dados["ativas"]):
                 raise ValueError("Já existe uma rotina cadastrada com esse nome.")
-            dados["ativas"].append({**rotina, "ativa": True})
+            dados["ativas"].append({**rotina, "ativa": True, "importancia_abertura": 0})
             dados["descobertas"].remove(alvo)
             return {"status": "success", "message": "Rotina ativada. Ela aguardará o próximo gatilho compatível."}
         return await self._transacao(alterar)
@@ -102,9 +102,11 @@ class CatalogoRotinas:
             return {"status": "success", "message": "Rotina removida. Esse padrão não será sugerido novamente."}
         return await self._transacao(alterar)
 
-    async def definir_ativa(self, nome, ativa):
+    async def definir_ativa(self, nome, ativa, importancia_abertura=None):
         def alterar(dados):
             rotina = self._encontrar(dados["ativas"], nome)
+            if importancia_abertura is not None:
+                rotina["importancia_abertura"] = importancia_abertura
             if ativa:
                 normalizada = validar_rotina(rotina)
                 rotina.update(normalizada)

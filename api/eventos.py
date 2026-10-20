@@ -13,6 +13,7 @@ from core.evento import EventoCanonico
 from core.tipos import CategoriaEvento, OrigemEvento
 from core.motor_atencao import pipeline_atencao
 from core.kernel import kernel
+from servicos.roteamento_pedidos import metadados_entrada
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -102,7 +103,10 @@ async def receber_evento(request: Request):
         categoria=CategoriaEvento(evento.categoria.upper()),
         origem=OrigemEvento.ANDROID,
         pacote=evento.pacote or "br.com.ollie.sensor.sistema",
-        payload=evento.conteudo
+        payload=evento.conteudo,
+        metadados=(metadados_entrada(
+            "PC" if str(evento.pacote).startswith("pc.") else "MOBILE", evento.conteudo.get("canal"))
+            if evento.categoria.upper() == "SISTEMA_COMANDO_USUARIO" else {})
     )
     
     if evento.correlacao_id:

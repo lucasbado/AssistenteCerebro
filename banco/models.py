@@ -12,6 +12,12 @@ class CatalogoRotinasDB(Base):
     versao = Column(Integer, nullable=False, default=1)
     dados = Column(JSON, nullable=False)
 
+
+class PoliticaIntervencaoDB(Base):
+    __tablename__ = "politica_intervencao"
+    id = Column(Integer, primary_key=True)
+    dados = Column(JSON, nullable=False)
+
 class EventoEpisodicoDB(Base):
     """
     MEMÓRIA EPISÓDICA (O histórico permanente do cérebro).

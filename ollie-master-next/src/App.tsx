@@ -10,12 +10,16 @@ import {
   RefreshCw,
   Search,
   Shield,
-  Maximize2
+  Maximize2,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { DesktopReplies } from './desktopReplies';
+import { DesktopVoice } from './desktopVoice';
 
 async function authenticatedFetch(url: string, options: RequestInit = {}) {
   const token = await invoke<string>("get_auth_token");
@@ -82,6 +86,26 @@ export default function App() {
   const [ram, setRam] = useState(0);
   const [vision, setVision] = useState({ process: "IDLE", title: "Scanning neural activity..." });
   const [chatText, setChatInput] = useState("");
+  const [voiceEnabled, setVoiceEnabled] = useState(() => localStorage.getItem('ollie.desktopVoice') !== 'false');
+  const voiceEnabledRef = useRef(voiceEnabled);
+  voiceEnabledRef.current = voiceEnabled;
+  const desktopReplies = useRef(new DesktopReplies());
+  const desktopVoice = useRef<DesktopVoice | null>(null);
+  if (!desktopVoice.current) desktopVoice.current = new DesktopVoice({
+    fetchAudio: async (text, signal) => {
+      const api = await invoke<string>('get_api_url');
+      const url = new URL(`${api}/api/v1/voice/speak`);
+      url.searchParams.set('text', text);
+      url.searchParams.set('voice', 'pt-BR-ThalitaNeural');
+      const response = await authenticatedFetch(url.toString(), { signal });
+      return response.blob();
+    },
+    createAudio: url => new Audio(url),
+    createUrl: blob => URL.createObjectURL(blob),
+    revokeUrl: url => URL.revokeObjectURL(url),
+    speakLocal: text => invoke('speak_response', { text }),
+    stopLocal: () => invoke('stop_speech'),
+  });
   const [wsInstance, setWs] = useState<WebSocket | null>(null);
   const [showInterventionModal, setShowInterventionModal] = useState(false);
   const [policy, setPolicy] = useState({
@@ -212,7 +236,7 @@ export default function App() {
       }
 
       // 🛡️ CHECK INTERVENTION POLICY (Super Poderes / Auto-Open)
-      if (data.origem === "IA" && !policyRef.current.auto_open_enabled && (cmd === "open_url" || cmd === "abrir_url" || cmd === "abrir_app" || cmd === "abrir_programa")) {
+      if (data.origem === "IA" && !(data.abertura_modo === "pedido" && data.abertura_autorizada === true) && !policyRef.current.auto_open_enabled && (cmd === "open_url" || cmd === "abrir_url" || cmd === "abrir_app" || cmd === "abrir_programa")) {
         addLog(`🛡️ Intervention blocked by policy (Auto-Open OFF): ${cmd} (${param})`, "text-neon-orange");
         finish('erro');
         return;
@@ -255,11 +279,13 @@ export default function App() {
   const sendChat = async () => {
     if (!chatText.trim() || wsInstance?.readyState !== WebSocket.OPEN) return;
     addLog(`👤 USER >> ${chatText}`, "text-white");
+    const correlation = crypto.randomUUID();
+    desktopReplies.current.expect(correlation);
 
     wsInstance.send(JSON.stringify({
       tipo_ws: "CHAT_MESSAGE",
       texto: chatText,
-      pacote: "pc.chat"
+      pacote: "pc.chat", correlacao_id: correlation, canal: "texto"
     }));
 
     setChatInput("");
@@ -362,9 +388,14 @@ export default function App() {
           if (data.tipo_ws === "CHAT_RESPONSE") {
             addLog(`🤖 OLLIE: ${data.texto}`, "text-neon-purple text-[13px] font-bold");
             setMood("idle");
+            const reply = desktopReplies.current.consume(data);
+            if (reply && voiceEnabledRef.current) {
+              void desktopVoice.current!.speak(reply).catch(() =>
+                addLog('Não consegui reproduzir a voz. A resposta continua no chat.', 'text-neon-orange'));
+            }
           }
 
-          if (data.comando && data.tipo_ws !== 'COMANDO_ACEITO') {
+          if (data.comando && data.tipo_ws === 'COMANDO_PC') {
             addLog(`⚡ EXEC_CMD: ${data.comando.toUpperCase()}`, "text-neon-cyan");
             void handleCommand(data, ws);
           }
@@ -405,6 +436,7 @@ export default function App() {
 
     reconnectRef.current = () => {
       if (reconnectTimeout) window.clearTimeout(reconnectTimeout);
+      void desktopVoice.current?.stop().catch(() => {});
       if (activeSocket) {
         activeSocket.onclose = null;
         activeSocket.close();
@@ -596,7 +628,28 @@ export default function App() {
           <section className="flex-1 glass rounded-3xl p-6 flex flex-col gap-5">
             <div className="flex justify-between items-center">
               <h2 className="text-[11px] font-bold text-gray-500 tracking-[2px] uppercase">Neural Stream Log</h2>
-              <Terminal className="w-5 h-5 text-neon-cyan" />
+              <div className="flex items-center gap-3">
+                <button className="text-xs text-neon-cyan hover:text-white" onClick={() => {
+                  if (!voiceEnabledRef.current) {
+                    setVoiceEnabled(true);
+                    localStorage.setItem('ollie.desktopVoice', 'true');
+                  }
+                  void desktopVoice.current!.speak('Oi! Sou a Ollie. Essa é minha voz mais natural no computador.')
+                    .catch(() => addLog('Não consegui reproduzir o teste de voz.', 'text-neon-orange'));
+                }}>Testar voz</button>
+                <button title={voiceEnabled ? 'Silenciar respostas da Ollie' : 'Ouvir respostas da Ollie'}
+                  aria-label={voiceEnabled ? 'Silenciar respostas da Ollie' : 'Ouvir respostas da Ollie'}
+                  aria-pressed={voiceEnabled}
+                  onClick={() => {
+                    const enabled = !voiceEnabled;
+                    setVoiceEnabled(enabled);
+                    localStorage.setItem('ollie.desktopVoice', String(enabled));
+                    if (!enabled) void desktopVoice.current!.stop().catch(() => {});
+                  }} className="text-neon-cyan hover:text-white p-1">
+                  {voiceEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+                </button>
+                <Terminal className="w-5 h-5 text-neon-cyan" />
+              </div>
             </div>
 
             <div className="flex-1 glass-dark rounded-2xl p-4 overflow-y-auto custom-scrollbar">

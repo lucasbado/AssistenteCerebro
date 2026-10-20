@@ -264,11 +264,13 @@ async def test_rejeitar_impede_regeneracao(catalogo_teste):
 
 async def test_rotina_pc_aprovada_emite_comando_uma_vez_e_ignora_replay(catalogo_teste, monkeypatch):
     import agentes.agente_rotina as modulo
+    from servicos.intervention_governor import intervention_governor
+    await intervention_governor.atualizar_politica({"auto_open_enabled": True})
     from api.websocket import central_alertas
     monkeypatch.setattr(central_alertas, "pc_master", object())
     publicar = AsyncMock()
     monkeypatch.setattr(modulo.kernel, "publicar", publicar)
-    await catalogo_teste.adicionar({"nome": "Editor", "ativa": True, "uma_vez_por_dia": True,
+    await catalogo_teste.adicionar({"nome": "Editor", "ativa": True, "uma_vez_por_dia": True, "importancia_abertura": .95,
         "gatilho": {"tipo": "TIME_RANGE", "inicio": "00:00", "fim": "23:59", "evento": "PC_ACTIVITY"},
         "acoes": [{"alvo": "PC", "comando": "abrir_app", "parametro": "code.exe"}]})
     agente = AgenteRotina()

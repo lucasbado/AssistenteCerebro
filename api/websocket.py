@@ -78,6 +78,11 @@ class GerenciadorNotificacoes:
             self.confirmacoes.atualizar(identificador, "pc_offline")
         return self.confirmacoes.consultar(identificador)
 
+    async def enviar_comando_mobile(self, mensagem):
+        if self.mobile_client is None:
+            return False
+        return await self._enviar_direto(self.mobile_client, dict(mensagem))
+
     async def conectar(self, websocket: WebSocket):
         protocolos = websocket.headers.get("sec-websocket-protocol", "").split(",")
         await websocket.accept(subprotocol="ollie" if "ollie" in [p.strip() for p in protocolos] else None)
@@ -152,11 +157,14 @@ class GerenciadorNotificacoes:
         dados_para_envio['correlacao_id'] = str(payload.get('correlacao_id', ''))
         dados_para_envio['id'] = str(payload.get('id', ''))
 
-        # Respostas do chat do desktop voltam ao desktop, mesmo com celular conectado.
-        if tipo_ws == "CHAT_RESPONSE" and str(payload.get("pacote", "")).startswith("pc."):
-            if self.pc_master:
-                return await self._enviar_direto(self.pc_master, dados_para_envio)
-            return False
+        # Uma resposta pertence ao dispositivo que fez o pedido; não há fallback para outro.
+        if tipo_ws == "CHAT_RESPONSE":
+            destino = metadados.get("dispositivo_origem") or (
+                "PC" if str(payload.get("pacote", "")).startswith("pc.") else "MOBILE")
+            dados_para_envio["dispositivo_destino"] = destino
+            dados_para_envio["canal_origem"] = metadados.get("canal_origem", "texto")
+            cliente = self.pc_master if destino == "PC" else self.mobile_client
+            return await self._enviar_direto(cliente, dados_para_envio) if cliente is not None else False
 
         # ROTEAMENTO RESTRITO:
         # 1. MOBILE: Prioridade para comandos de sistema/luz e chat
@@ -317,18 +325,14 @@ async def websocket_endpoint(websocket: WebSocket):
                             logger.debug(f"📱 [WS] Celular re-confirmou identidade ({conn_id}).")
 
                 elif tipo == "CHAT_MESSAGE":
-                    # 🛡️ ANTI-LOOP: Se vier do PC Master, redireciona como CHAT_RESPONSE para o Mobile
-                    if msg.get("pacote") == "pc.master" or msg.get("id") == "PC_MASTER":
-                        logger.info("⚡ [WS RELAY] Redirecionando resposta do PC Master para o Celular.")
-                        msg["tipo_ws"] = "CHAT_RESPONSE"
-                        if central_alertas.mobile_client:
-                            await central_alertas._enviar_direto(central_alertas.mobile_client, msg)
-                        continue
-
                     from core.kernel import kernel
+                    from servicos.roteamento_pedidos import metadados_entrada
                     from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento, PrioridadeEvento
                     from core.evento import EventoCanonico
                     logger.info(f"💬 [WS] Mensagem de chat recebida: {msg.get('texto')}")
+                    dispositivo = ("PC" if websocket is central_alertas.pc_master else "MOBILE"
+                        if websocket is central_alertas.mobile_client else
+                        "PC" if str(msg.get("pacote", "")).startswith("pc.") else "MOBILE")
                     await kernel.publicar(EventoCanonico(
                         categoria=CategoriaEvento.SISTEMA_COMANDO_USUARIO,
                         acao=TipoAcao.NORMAL,
@@ -336,6 +340,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         pacote=msg.get("pacote", "com.example.assistentecell"),
                         **({"correlacao_id": msg["correlacao_id"]} if isinstance(msg.get("correlacao_id"), str) and 0 < len(msg["correlacao_id"]) <= 128 else {}),
                         prioridade=PrioridadeEvento.ALTA,
+                        metadados=metadados_entrada(dispositivo, msg.get("canal")),
                         payload={"texto": msg.get("texto")}
                     ))
 

@@ -4,6 +4,7 @@ use active_win_pos_rs::get_active_window;
 use std::time::Duration;
 use tokio::time::sleep;
 use std::sync::atomic::{AtomicBool, Ordering};
+mod desktop_voice;
 
 static MONITORING_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -195,6 +196,8 @@ pub fn run() {
             get_cloud_url,
             get_api_url,
             get_auth_token,
+            desktop_voice::speak_response,
+            desktop_voice::stop_speech,
             execute_pc_command
         ])
         .run(tauri::generate_context!())

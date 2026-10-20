@@ -16,15 +16,18 @@ class AgentePcExecutor:
     
     async def processar(self, evento: EventoCanonico):
         comando = evento.payload.get("comando")
-        if evento.origem == OrigemEvento.IA and (
-            comando in {"abrir_app", "abrir_programa", "abrir_url", "open_url"}
-            or evento.acao == TipoAcao.EXECUTAR_PROGRAMA
-        ):
-            from servicos.intervention_governor import intervention_governor
-            alvo = (evento.payload.get("app") or evento.payload.get("url")
-                    or evento.payload.get("parametro") or evento.payload.get("programa"))
-            if not intervention_governor.permitir_abertura_automatica(alvo):
+        from servicos.intervention_governor import e_abertura, intervention_governor
+        from servicos.abertura_apps import metadados_abertura, sugerir_abertura
+        if (e_abertura(comando) or evento.acao == TipoAcao.EXECUTAR_PROGRAMA) and not evento.metadados.get("abertura_autorizada"):
+            alvo_app = (evento.payload.get("app") or evento.payload.get("url")
+                        or evento.payload.get("parametro") or evento.payload.get("programa"))
+            decisao = await intervention_governor.avaliar_abertura(alvo_app, "PC",
+                evento.metadados.get("importance_score"),
+                explicito=evento.origem == OrigemEvento.USUARIO or evento.metadados.get("pedido_explicito") is True)
+            if not decisao["permitida"]:
+                await sugerir_abertura(evento, "PC", comando or "abrir_app", alvo_app, decisao["motivo"])
                 return
+            evento = evento.clonar(metadados={**evento.metadados, **metadados_abertura(decisao)})
         # ☁️ ROTEAMENTO CLOUD: Se estivermos no Render ou Linux (Cloud), o comando deve ir via WebSocket para o PC Master
         is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"] or os.name != "nt"
         if is_render or comando == "wake_ollie":
@@ -41,13 +44,19 @@ class AgentePcExecutor:
                     "comando": comando,
                     "parametro": evento.payload.get("parametro") or evento.payload.get("programa"),
                     "origem": evento.origem.value,
+                    **{k: evento.metadados[k] for k in ("abertura_autorizada", "abertura_modo", "importance_score") if k in evento.metadados},
                     "valor": evento.payload.get("valor"),
                     "app": evento.payload.get("app"),
                     "url": evento.payload.get("url"),
                     "id_comando": evento.payload.get("id_comando") or evento.id,
                     "correlacao_id": evento.correlacao_id
                 }
-                await central_alertas.enviar_comando_pc(payload_ws)
+                resultado = await central_alertas.enviar_comando_pc(payload_ws)
+                if e_abertura(comando) and evento.metadados.get("pedido_usuario"):
+                    from servicos.roteamento_pedidos import responder_pedido
+                    offline = not resultado or resultado.get("status") == "pc_offline"
+                    await responder_pedido(evento, "O PC está desconectado. Não enviei o pedido de abertura." if offline
+                        else "Enviei o pedido de abertura para o PC.")
             return
 
         if evento.acao == TipoAcao.EXECUTAR_PROGRAMA:
@@ -150,29 +159,10 @@ class AgentePcExecutor:
 
             # --- COMANDOS SISTEMA ---
             elif comando == "abrir_app" or comando == "abrir_programa":
-                from servicos.intervention_governor import intervention_governor
-                if evento.origem == OrigemEvento.IA and not intervention_governor.permitir_abertura_automatica(param):
-                    logger.info(f"🛡️ [Agente PC] Abertura proativa de app '{param}' bloqueada pelo Intervention Governor.")
-                    return
-                foi_focada = pc_control_service.abrir_app(param)
-                
-                if foi_focada:
-                    from core.kernel import kernel
-                    await kernel.publicar(evento.clonar(
-                        categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                        acao=TipoAcao.INTENCAO_INTERACAO,
-                        origem=OrigemEvento.IA,
-                        payload={
-                            "texto": f"O {param} foi aberto ou trazido para frente.",
-                            "tipo_ws": "CHAT_RESPONSE"
-                        }
-                    ))
+                if pc_control_service.abrir_app(param) is False:
+                    raise RuntimeError("O sistema não conseguiu abrir esse aplicativo")
 
             elif comando == "abrir_url" or comando == "open_url":
-                from servicos.intervention_governor import intervention_governor
-                if evento.origem == OrigemEvento.IA and not intervention_governor.permitir_abertura_automatica(param):
-                    logger.info(f"🛡️ [Agente PC] Abertura proativa de URL '{param}' bloqueada pelo Intervention Governor.")
-                    return
                 pc_control_service.abrir_url(param)
 
             elif comando in ["ligar_luz", "desligar_luz", "toggle_luz"]:
@@ -291,3 +281,10 @@ class AgentePcExecutor:
 
         except Exception as e:
             logger.error(f"[Agente PC] Falha ao executar {comando}: {e}")
+            if e_abertura(comando) and evento.metadados.get("pedido_usuario"):
+                from servicos.roteamento_pedidos import responder_pedido
+                await responder_pedido(evento, "Não consegui executar a abertura no PC.")
+        else:
+            if comando in {"abrir_app", "abrir_programa", "abrir_url", "open_url"} and evento.metadados.get("pedido_usuario"):
+                from servicos.roteamento_pedidos import responder_pedido
+                await responder_pedido(evento, "Encaminhei a abertura ao sistema do PC.")

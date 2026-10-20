@@ -1,5 +1,9 @@
 # Superpoderes e gestão de rotinas
 
+Atualização posterior: [controle de abertura automática e importância](abertura-automatica.md).
+Rotina aprovada também respeita o interruptor geral de abertura e começa em
+Só sugerir. Os resultados e pendências abaixo registram a revisão anterior.
+
 ## Problemas encontrados
 
 A consulta ao Render encontrou 48 sugestões e quatro rotinas cadastradas. O

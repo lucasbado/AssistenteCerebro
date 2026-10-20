@@ -2,6 +2,7 @@
 from copy import deepcopy
 from datetime import time
 import json
+import math
 import re
 
 PC_COMMANDS = {
@@ -23,6 +24,7 @@ def normalizar_rotina(rotina):
     r["nome"] = str(r.get("nome", "")).strip()
     r.setdefault("ativa", False)
     r.setdefault("cooldown_segundos", 3600)
+    r.setdefault("importancia_abertura", 0.0)
     for acao in r.get("acoes", []):
         alvo = str(acao.get("alvo", "")).upper()
         comando = str(acao.get("comando", ""))
@@ -49,6 +51,12 @@ def normalizar_rotina(rotina):
 def problemas_rotina(rotina):
     r = normalizar_rotina(rotina)
     problemas = []
+    try:
+        importancia = float(r["importancia_abertura"])
+        if not math.isfinite(importancia) or not 0 <= importancia <= 1:
+            raise ValueError()
+    except (TypeError, ValueError):
+        problemas.append("A importância de abertura deve estar entre zero e um.")
     if not r["nome"]:
         problemas.append("A rotina precisa de um nome.")
     g = r.get("gatilho") or {}
@@ -140,6 +148,7 @@ def assinatura_rotina(rotina):
 
 def apresentar_rotina(rotina, estado):
     r = normalizar_rotina(rotina)
+    r["controle_abertura_version"] = 1
     r["problemas"] = problemas_rotina(r)
     r["estado"] = "sugerida" if estado == "descobertas" else ("ativa" if r["ativa"] else "pausada")
     r["pode_ativar"] = not r["problemas"]
