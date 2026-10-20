@@ -1,3 +1,32 @@
+--- a/app/src/androidTest/java/com/example/assistentecell/AssistantPresentationTest.kt
++++ b/app/src/androidTest/java/com/example/assistentecell/AssistantPresentationTest.kt
+@@ -0,0 +1,26 @@
++package com.example.assistentecell
++
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import androidx.test.platform.app.InstrumentationRegistry
++import com.example.assistentecell.data.model.AlertaPayload
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++
++@RunWith(AndroidJUnit4::class)
++class AssistantPresentationTest {
++    @Test fun showUpdatedNotificationWithActionAndExpandedText() {
++        val context = InstrumentationRegistry.getInstrumentation().targetContext
++        NotificationHandler.createNotificationChannel(context)
++        NotificationHandler.showNotification(context, AlertaPayload(
++            titulo = "Uma ajuda, na hora certa",
++            texto = "A Ollie pode ajudar com a luz, os aplicativos e seus próximos passos. Toque em Falar para abrir a assistente.",
++            acao_tipo = "WAKE_OLLIE", acao_parametro = "assistente", acao_texto = "Falar",
++            correlacao_id = "ollie-visual-preview", urgencia = "NORMAL"))
++        val manager = context.getSystemService(android.app.NotificationManager::class.java)
++        val notification = manager.activeNotifications.first { it.id == "ollie-visual-preview".hashCode() }.notification
++        assertEquals("Uma ajuda, na hora certa", notification.extras.getCharSequence("android.title").toString())
++        assertTrue(notification.extras.getCharSequence("android.bigText").toString().contains("seus próximos passos"))
++        assertTrue(notification.actions.any { it.title.toString() == "Falar" })
++    }
++}
 --- a/app/src/main/AndroidManifest.xml
 +++ b/app/src/main/AndroidManifest.xml
 @@ -131,6 +131,13 @@
@@ -103,7 +132,7 @@
  
 --- a/app/src/main/java/com/example/assistentecell/assistant/OllieAssistantService.kt
 +++ b/app/src/main/java/com/example/assistentecell/assistant/OllieAssistantService.kt
-@@ -7,9 +7,14 @@
+@@ -7,9 +7,17 @@
  import android.util.Log
  
  class OllieAssistantService : VoiceInteractionService() {
@@ -114,11 +143,14 @@
          super.onReady()
 +        com.example.assistentecell.api.RetrofitClient.init(this)
 +        ready = true
++        if (getSharedPreferences("sistema_prefs", MODE_PRIVATE).getBoolean("wakeword_enabled", false)) {
++            com.example.assistentecell.voice.WakeWordService.start(this)
++        }
 +        pending?.let { pending = null; showSession(it, 0) }
          Log.d("OllieAssistant", "Assistente Ollie pronto para ação!")
      }
  
-@@ -30,11 +35,21 @@
+@@ -30,11 +38,21 @@
                      args.putString("correlacao_id", cid)
                  }
                  
@@ -143,16 +175,18 @@
  }
 --- a/app/src/main/java/com/example/assistentecell/assistant/OllieSession.kt
 +++ b/app/src/main/java/com/example/assistentecell/assistant/OllieSession.kt
-@@ -2,8 +2,6 @@
+@@ -1,9 +1,8 @@
+ package com.example.assistentecell.assistant
  
  import android.content.Context
++import android.content.Intent
  import android.os.Bundle
 -import android.os.Handler
 -import android.os.Looper
  import android.service.voice.VoiceInteractionSession
  import android.view.ContextThemeWrapper
  import android.view.Gravity
-@@ -12,173 +10,159 @@
+@@ -12,173 +11,213 @@
  import android.widget.FrameLayout
  import android.widget.TextView
  import com.example.assistentecell.R
@@ -200,6 +234,34 @@
 +    private var visible = false
 +    private var timeout: Job? = null
 +    private var request: Call? = null
++    private enum class Phase { PREPARING, LISTENING, THINKING, SPEAKING, READY, ERROR }
++    private var phase = Phase.READY
++    private var statusText: TextView? = null
++    private var responseArea: View? = null
++    private var progress: View? = null
++    private var microphone: com.google.android.material.button.MaterialButton? = null
++
++    private fun render(next: Phase) {
++        phase = next
++        statusText?.text = when (next) {
++            Phase.PREPARING -> "Preparando microfone"
++            Phase.LISTENING -> "Estou ouvindo"
++            Phase.THINKING -> "Pensando no seu pedido"
++            Phase.SPEAKING -> "Respondendo para você"
++            Phase.READY -> "Pronta para continuar"
++            Phase.ERROR -> "Vamos tentar novamente?"
++        }
++        progress?.visibility = if (next == Phase.THINKING || next == Phase.PREPARING) View.VISIBLE else View.GONE
++        microphone?.isEnabled = next != Phase.THINKING && next != Phase.PREPARING
++        microphone?.text = when (next) {
++            Phase.PREPARING -> "Preparando"
++            Phase.THINKING -> "Aguarde um instante"
++            Phase.LISTENING -> "Parar de ouvir"
++            Phase.ERROR -> "Tentar novamente"
++            else -> "Falar com a Ollie"
++        }
++        microphone?.contentDescription = microphone?.text
++    }
  
      override fun onCreate() {
          super.onCreate()
@@ -216,18 +278,15 @@
 +        voice?.stopListening(); voice?.stopSpeaking()
 +        visible = true
 +        waiting = false
++        responseArea?.visibility = View.GONE
++        userSpeech?.text = "O que vamos fazer?"
++        render(Phase.PREPARING)
          ChatBridge.updateAssistantSessionStatus(true)
 -        currentCorrelationId = args?.getString("correlacao_id")
 -        
 -        if (voiceManager == null) {
 -            voiceManager = VoiceManager(context)
-+        if (voice == null) voice = VoiceManager(context)
-+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
-+            ChatBridge.messages.collect { message ->
-+                if (!message.isFromUser && waiting && message.text != "..." &&
-+                    message.correlationId == correlation) showResponse(message.text)
-+            }
-         }
+-        }
 -        
 -        // Reset UI
 -        tvUserSpeech?.text = "Ouvindo..."
@@ -239,22 +298,34 @@
 -        Handler(Looper.getMainLooper()).postDelayed({
 -            startListening()
 -        }, 300)
-+        scope.launch { delay(300); startListening() }
-     }
- 
+-    }
+-
 -    private fun observeChat() {
 -        sessionScope.launch {
 -            ChatBridge.messages.collectLatest { message ->
 -                if (!message.isFromUser && isWaitingResponse) {
 -                    android.util.Log.d("OllieSession", "Resposta da IA capturada: ${message.text}")
 -                    showOllieResponse(message.text)
++        if (voice == null) voice = VoiceManager(context)
++        scope.launch(start = CoroutineStart.UNDISPATCHED) {
++            ChatBridge.messages.collect { message ->
++                if (!message.isFromUser && waiting && message.text != "..." &&
++                    message.correlationId == correlation) showResponse(message.text)
++            }
++        }
++        scope.launch { delay(300); startListening() }
++    }
++
 +    private fun startListening() {
 +        if (!visible || waiting) return
 +        correlation = UUID.randomUUID().toString()
-+        responseText?.visibility = View.GONE
-+        userSpeech?.text = "Preparando microfone..."
++        voice?.stopListening(); voice?.stopSpeaking()
++        responseArea?.visibility = View.GONE
++        responseText?.visibility = View.VISIBLE
++        userSpeech?.text = "Pode falar, estou aqui."
++        render(Phase.PREPARING)
 +        voice?.startListening(
-+            onReady = { userSpeech?.text = "Ouvindo..." },
++            onReady = { render(Phase.LISTENING) },
 +            onPartial = { userSpeech?.text = it },
 +            onError = { showError(it) },
 +            onResult = { text ->
@@ -263,44 +334,9 @@
 +                    send(text)
                  }
              }
-+        )
-+    }
-+
-+    private fun send(text: String) {
-+        if (!ChatBridge.isConnected.value) {
-+            showError("A Ollie está sem conexão com o servidor. Abra o app e confira a conexão.")
-+            com.example.assistentecell.ListenerDeNotificacoes.reconnect()
-+            return
-+        }
-+        val id = correlation ?: return
-+        waiting = true
-+        responseText?.text = "Aguardando a Ollie..."
-+        responseText?.visibility = View.VISIBLE
-+        scope.launch { ChatBridge.postMessage(ChatMessage(text = text, isFromUser = true, correlationId = id)) }
-+        android.util.Log.d("OllieSession", "Voice request sent correlation=$id")
-+        request = BackendChatTransport(RetrofitClient.backendHttpClient) { RetrofitClient.getBaseUrl() }
-+            .enqueue(text, "com.example.assistentecell.voice", object : Callback {
-+                override fun onFailure(call: Call, e: IOException) {
-+                    if (!call.isCanceled()) scope.launch {
-+                        if (visible && correlation == id) showError("Não consegui enviar o pedido. Confira a conexão.")
-+                    }
-+                }
-+                override fun onResponse(call: Call, response: Response) {
-+                    response.use {
-+                        val failure = BackendChatTransport.failureMessage(it.code)
-+                        if (failure != null) scope.launch {
-+                            if (visible && correlation == id) showError(failure)
-+                        }
-+                    }
-+                }
-+            }, correlationId = id, spoken = true)
-+        timeout?.cancel()
-+        timeout = scope.launch {
-+            delay(45000)
-+            if (waiting && correlation == id) showError("O servidor não respondeu a tempo. Toque no círculo para tentar novamente.")
-         }
-     }
- 
+-        }
+-    }
+-
 -    private fun showOllieResponse(text: String) {
 -        if (text == "...") return // Ignora indicador de pensamento
 -        
@@ -317,21 +353,20 @@
 -            }, 2000)
 -        }
 -        isWaitingResponse = false
-+    private fun showResponse(text: String) {
-+        waiting = false
-+        timeout?.cancel()
-+        responseText?.text = text
-+        responseText?.visibility = View.VISIBLE
-+        userSpeech?.text = "Toque no círculo para falar novamente"
-+        android.util.Log.d("OllieSession", "Voice response matched correlation=$correlation")
-+        voice?.speak(text, interactive = true)
-     }
- 
+-    }
+-
 -    private fun startListening() {
 -        if (context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
 -            hide()
--            return
--        }
++        )
++    }
++
++    private fun send(text: String) {
++        if (!ChatBridge.isConnected.value) {
++            showError("A Ollie está sem conexão com o servidor. Abra o app e confira a conexão.")
++            com.example.assistentecell.ListenerDeNotificacoes.reconnect()
+             return
+         }
 -
 -        try {
 -            voiceManager?.startListening(
@@ -344,12 +379,98 @@
 -                        sendToBrain(result)
 -                    } else {
 -                        if (!isWaitingResponse) hide()
--                    }
--                }
++        val id = correlation ?: return
++        waiting = true
++        responseArea?.visibility = View.GONE
++        render(Phase.THINKING)
++        scope.launch { ChatBridge.postMessage(ChatMessage(text = text, isFromUser = true, correlationId = id)) }
++        android.util.Log.d("OllieSession", "Voice request sent correlation=$id")
++        request = BackendChatTransport(RetrofitClient.backendHttpClient) { RetrofitClient.getBaseUrl() }
++            .enqueue(text, "com.example.assistentecell.voice", object : Callback {
++                override fun onFailure(call: Call, e: IOException) {
++                    if (!call.isCanceled()) scope.launch {
++                        if (visible && correlation == id) showError("Não consegui enviar o pedido. Confira a conexão.")
+                     }
+                 }
 -            )
 -        } catch (e: Exception) {
--            hide()
--        }
++                override fun onResponse(call: Call, response: Response) {
++                    response.use {
++                        val failure = BackendChatTransport.failureMessage(it.code)
++                        if (failure != null) scope.launch {
++                            if (visible && correlation == id) showError(failure)
++                        }
++                    }
++                }
++            }, correlationId = id, spoken = true)
++        timeout?.cancel()
++        timeout = scope.launch {
++            delay(45000)
++            if (waiting && correlation == id) showError("O servidor não respondeu a tempo. Toque no círculo para tentar novamente.")
++        }
++    }
++
++    private fun showResponse(text: String) {
++        waiting = false
++        timeout?.cancel()
++        responseText?.text = text
++        responseText?.visibility = View.VISIBLE
++        responseArea?.visibility = View.VISIBLE
++        render(Phase.SPEAKING)
++        android.util.Log.d("OllieSession", "Voice response matched correlation=$correlation")
++        val answered = correlation
++        voice?.speak(text, interactive = true) {
++            if (visible && correlation == answered) render(Phase.READY)
++        }
++    }
++
++    private fun showError(text: String) {
++        waiting = false
++        timeout?.cancel()
++        responseText?.text = text
++        responseText?.visibility = View.VISIBLE
++        responseArea?.visibility = View.VISIBLE
++        render(Phase.ERROR)
++    }
++
++    override fun onHide() {
++        visible = false
++        waiting = false
++        request?.cancel(); request = null
++        voice?.stopListening(); voice?.stopSpeaking()
++        scope.coroutineContext.cancelChildren()
++        ChatBridge.updateAssistantSessionStatus(false)
++        super.onHide()
++    }
++
++    override fun onDestroy() {
++        visible = false
++        ChatBridge.updateAssistantSessionStatus(false)
++        request?.cancel()
++        scope.cancel()
++        voice?.shutdown(); voice = null
++        super.onDestroy()
++    }
++
++    override fun onCreateContentView(): View {
++        val themed = ContextThemeWrapper(context, com.google.android.material.R.style.Theme_MaterialComponents_DayNight_NoActionBar)
++        val root = FrameLayout(themed)
++        val view = LayoutInflater.from(themed).inflate(R.layout.layout_ollie_voice_session, root, false)
++        userSpeech = view.findViewById(R.id.tv_user_speech)
++        responseText = view.findViewById(R.id.tv_ollie_response)
++        responseArea = view.findViewById(R.id.response_area)
++        statusText = view.findViewById(R.id.tv_voice_status)
++        progress = view.findViewById(R.id.progress_voice)
++        microphone = view.findViewById(R.id.ollie_orb_visual)
++        microphone?.setOnClickListener {
++            if (phase == Phase.LISTENING) { voice?.stopListening(); render(Phase.READY) } else startListening()
++        }
++        view.findViewById<View>(R.id.btn_close_assistant).setOnClickListener { hide() }
++        view.findViewById<View>(R.id.btn_open_chat).setOnClickListener {
++            context.startActivity(Intent(context, com.example.assistentecell.MainActivity::class.java)
++                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP).putExtra("target_screen", "chat"))
+             hide()
+         }
 -    }
 -
 -    private fun sendToBrain(text: String) {
@@ -370,40 +491,23 @@
 -            android.util.Log.e("OllieSession", "Falha ao enviar via WebSocket, fechando sessão.")
 -            hide()
 -        }
-+    private fun showError(text: String) {
-+        waiting = false
-+        timeout?.cancel()
-+        responseText?.text = text
-+        responseText?.visibility = View.VISIBLE
-+        userSpeech?.text = "Toque no círculo para tentar novamente"
-     }
- 
-     override fun onHide() {
-+        visible = false
-+        waiting = false
-+        request?.cancel(); request = null
-+        voice?.stopListening(); voice?.stopSpeaking()
-+        scope.coroutineContext.cancelChildren()
-+        ChatBridge.updateAssistantSessionStatus(false)
-         super.onHide()
+-    }
+-
+-    override fun onHide() {
+-        super.onHide()
 -        ChatBridge.updateAssistantSessionStatus(false)
 -        voiceManager?.stopListening()
 -        sessionScope.coroutineContext.cancelChildren()
-     }
- 
-     override fun onDestroy() {
-+        visible = false
-+        ChatBridge.updateAssistantSessionStatus(false)
-+        request?.cancel()
-+        scope.cancel()
-+        voice?.shutdown(); voice = null
-         super.onDestroy()
+-    }
+-
+-    override fun onDestroy() {
+-        super.onDestroy()
 -        sessionScope.cancel()
 -        voiceManager?.shutdown()
 -        voiceManager = null
-     }
- 
-     override fun onCreateContentView(): View {
+-    }
+-
+-    override fun onCreateContentView(): View {
 -        val themedContext = ContextThemeWrapper(context, com.google.android.material.R.style.Theme_MaterialComponents_DayNight_NoActionBar)
 -        val root = FrameLayout(themedContext)
 -        val inflater = LayoutInflater.from(themedContext)
@@ -420,24 +524,22 @@
 -        ).apply {
 -            gravity = Gravity.BOTTOM
 -            setMargins(24, 0, 24, 48)
-+        val themed = ContextThemeWrapper(context, com.google.android.material.R.style.Theme_MaterialComponents_DayNight_NoActionBar)
-+        val root = FrameLayout(themed)
-+        val view = LayoutInflater.from(themed).inflate(R.layout.layout_ollie_voice_session, root, false)
-+        userSpeech = view.findViewById(R.id.tv_user_speech)
-+        responseText = view.findViewById(R.id.tv_ollie_response)
-+        view.findViewById<View>(R.id.ollie_orb_visual).apply {
-+            contentDescription = "Falar com a Ollie"
-+            isFocusable = true
-+            setOnClickListener { startListening() }
-         }
+-        }
 -        
 -        view.layoutParams = params
++        root.setOnClickListener { hide() }
++        val margin = (16 * context.resources.displayMetrics.density).toInt()
 +        view.layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
 +            FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-+            gravity = Gravity.BOTTOM; setMargins(24, 0, 24, 48)
++            gravity = Gravity.BOTTOM; setMargins(margin, 0, margin, margin)
 +        }
          root.addView(view)
 -        
++        root.setOnApplyWindowInsetsListener { v, insets ->
++            v.setPadding(0, 0, 0, insets.systemWindowInsetBottom)
++            insets
++        }
++        render(phase)
          return root
      }
  }
@@ -1976,7 +2078,7 @@
 +}
 --- a/app/src/main/java/com/example/assistentecell/NotificationHandler.kt
 +++ b/app/src/main/java/com/example/assistentecell/NotificationHandler.kt
-@@ -1,186 +1,103 @@
+@@ -1,186 +1,95 @@
  package com.example.assistentecell
  
 -import com.example.assistentecell.data.model.AlertaPayload
@@ -1985,9 +2087,8 @@
  import android.app.PendingIntent
  import android.content.Context
  import android.content.Intent
-+import android.os.Build
- import android.widget.RemoteViews
--import android.os.Build
+-import android.widget.RemoteViews
+ import android.os.Build
  import androidx.core.app.NotificationCompat
  import androidx.core.app.NotificationManagerCompat
  import androidx.core.app.RemoteInput
@@ -2057,28 +2158,22 @@
 -        val openAppIntent = Intent(context, MainActivity::class.java).apply {
 -            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
 -            putExtra("target_screen", "chat") // Passa sinal para abrir o chat
-+        val expanded = RemoteViews(context.packageName, R.layout.layout_notificacao_expandida).apply {
-+            setTextViewText(R.id.titulo_assistente, payload.titulo)
-+            setTextViewText(R.id.texto_longo, payload.texto)
-         }
+-        }
 -        val openAppPendingIntent = PendingIntent.getActivity(
 -            context,
 -            payload.correlacao_id.hashCode(),
 -            openAppIntent,
 -            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
 -        )
-+        val compact = RemoteViews(context.packageName, R.layout.layout_notificacao_compacta).apply {
-+            setTextViewText(R.id.titulo_compacto, payload.titulo)
-+            setTextViewText(R.id.texto_compacto, payload.texto)
-+        }
 +        val builder = NotificationCompat.Builder(context, channel)
-+            .setSmallIcon(R.drawable.ic_launcher_foreground)
++            .setSmallIcon(R.drawable.ic_ollie_notification)
 +            .setContentTitle(payload.titulo).setContentText(payload.texto)
 +            .setColor(android.graphics.Color.parseColor("#9D4EDD"))
 +            .setPriority(if (urgent) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
 +            .setSilent(focus).setOnlyAlertOnce(true)
-+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
-+            .setCustomContentView(compact).setCustomBigContentView(expanded)
++            .setSubText(if (payload.tipo_ws == "CHAT_RESPONSE") "Conversa" else if (urgent) "Importante" else "Sugestão")
++            .setStyle(NotificationCompat.BigTextStyle().bigText(payload.texto).setBigContentTitle(payload.titulo))
++            .setShowWhen(true)
 +            .setContentIntent(open).setDeleteIntent(dismiss).setAutoCancel(true)
 +            .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
 +            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
@@ -3466,7 +3561,13 @@
  import androidx.compose.foundation.background
  import androidx.compose.foundation.clickable
  import androidx.compose.foundation.layout.*
-@@ -42,12 +43,80 @@
+@@ -37,17 +38,86 @@
+     val voiceRate by chatViewModel.voiceRate.collectAsState()
+     val voicePitch by chatViewModel.voicePitch.collectAsState()
+     val isWakeWordEnabled by chatViewModel.isWakeWordEnabled.collectAsState()
++    val wakeWordStatus by com.example.assistentecell.voice.WakeWordRuntime.status.collectAsState()
+ 
+     var isHabitFilterEnabled by remember { mutableStateOf(prefs.getBoolean("habit_filter_enabled", true)) }
      var isQuickReplyEnabled by remember { mutableStateOf(prefs.getBoolean("quick_reply_enabled", true)) }
      var isFocusModeActive by remember { mutableStateOf(prefs.getBoolean("focus_mode_active", false)) }
      var isAutoOpenEnabled by remember { mutableStateOf(prefs.getBoolean("auto_open_apps_enabled", false)) }
@@ -3548,7 +3649,7 @@
      var haUrl by remember { mutableStateOf(prefs.getString("ha_url", "http://homeassistant.local:8123/") ?: "http://homeassistant.local:8123/") }
      var haToken by remember { mutableStateOf(prefs.getString("ha_token", "") ?: "") }
      
-@@ -157,24 +226,39 @@
+@@ -157,24 +227,39 @@
  
      if (showUrlDialog) {
          var tempUrl by remember { mutableStateOf(serverUrl) }
@@ -3598,7 +3699,7 @@
                      com.example.assistentecell.ListenerDeNotificacoes.reconnect()
                      showUrlDialog = false
                  }) {
-@@ -269,7 +353,7 @@
+@@ -269,7 +354,7 @@
              text = {
                  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                      val options = listOf(
@@ -3607,7 +3708,16 @@
                          Triple("MEDIUM", "🟡 Média e Acima (Padrão)", "Intervém em mensagens diretas e lembretes."),
                          Triple("LOW", "🟢 Todas", "Intervém em qualquer notificação, incluindo redes sociais.")
                      )
-@@ -435,7 +519,7 @@
+@@ -378,7 +463,7 @@
+                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                     SettingItemNew(
+                         title = "Ativação por Voz (Beta)",
+-                        subtitle = if (isWakeWordEnabled) "Ouvindo 'Ei Ollie'..." else "Chamar Ollie por voz",
++                        subtitle = if (isWakeWordEnabled) wakeWordStatus else if (wakeWordStatus != "Desligada") wakeWordStatus else "Diga ‘Ei Ollie’, espere abrir e fale",
+                         icon = Icons.Outlined.Mic,
+                         showSwitch = true,
+                         checked = isWakeWordEnabled,
+@@ -435,7 +520,7 @@
                      SettingItemNew(
                          title = "Nível de Importância",
                          subtitle = when (minImportance) {
@@ -3616,7 +3726,7 @@
                              "LOW" -> "Todas as Notificações"
                              else -> "Média e Acima (Padrão)"
                          },
-@@ -445,13 +529,47 @@
+@@ -445,13 +530,47 @@
                      HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                      SettingItemNew(
                          title = "Abertura Automática de Apps",
@@ -3667,7 +3777,7 @@
                          }
                      )
                  }
-@@ -488,7 +606,7 @@
+@@ -488,7 +607,7 @@
                          showSwitch = true,
                          checked = isDevEnvironment,
                          onCheckedChange = { dev ->
@@ -3838,6 +3948,28 @@
              _isThinking.value = false
          }
      }
+@@ -104,9 +100,6 @@
+         _isVoiceEnabled.value = newValue
+         prefs.edit { putBoolean("voice_active", newValue) }
+         
+-        if (!newValue && _isWakeWordEnabled.value) {
+-            toggleWakeWord()
+-        }
+     }
+ 
+     fun toggleWakeWord() {
+@@ -115,7 +108,10 @@
+         prefs.edit { putBoolean("wakeword_enabled", newValue) }
+         
+         if (newValue) {
+-            com.example.assistentecell.voice.WakeWordService.start(getApplication())
++            if (!com.example.assistentecell.voice.WakeWordService.start(getApplication())) {
++                _isWakeWordEnabled.value = false
++                prefs.edit { putBoolean("wakeword_enabled", false) }
++            }
+         } else {
+             com.example.assistentecell.voice.WakeWordService.stop(getApplication())
+         }
 @@ -123,10 +119,13 @@
  
      fun startVoiceInput() {
@@ -4346,77 +4478,405 @@
 +}
 +
 +object VoiceReplies { val pending = VoiceReplyTracker() }
+--- a/app/src/main/java/com/example/assistentecell/voice/WakeWordPolicy.kt
++++ b/app/src/main/java/com/example/assistentecell/voice/WakeWordPolicy.kt
+@@ -0,0 +1,31 @@
++package com.example.assistentecell.voice
++
++import java.text.Normalizer
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.asStateFlow
++
++object WakeWordRuntime {
++    private val mutable = MutableStateFlow("Desligada")
++    val status = mutable.asStateFlow()
++    fun update(message: String) { mutable.value = message }
++}
++
++object WakeWordPolicy {
++    // Ollie/oli are absent from the bundled Portuguese lexicon. These sound-alikes exist.
++    val grammar = listOf("ei olhe", "ei olha", "e aí olhe", "e ai olhe", "e aí olha", "ei óleo", "[unk]")
++    private val phrases = listOf("ei ollie", "ei oli", "e ai ollie", "e ai oli", "ei olhe", "ei olha", "e ai olhe", "e ai olha", "ei oleo")
++    fun matches(text: String): Boolean {
++        val normalized = Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD)
++            .replace(Regex("\\p{M}+"), "").replace(Regex("[^a-z ]"), " ").trim().replace(Regex("\\s+"), " ")
++        return phrases.any { normalized == it || normalized.startsWith("$it ") }
++    }
++}
++
++class WakeWordGate {
++    private var last: Long? = null
++    fun accept(text: String, blocked: Boolean, now: Long): Boolean {
++        if (blocked || !WakeWordPolicy.matches(text) || last?.let { now - it < 5000 } == true) return false
++        last = now
++        return true
++    }
++}
 --- a/app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt
 +++ b/app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt
-@@ -10,6 +10,8 @@
+@@ -5,242 +5,221 @@
+ import android.content.Intent
+ import android.os.Build
+ import android.os.IBinder
++import android.os.SystemClock
+ import android.util.Log
+ import androidx.core.app.NotificationCompat
  import com.example.assistentecell.R
  import com.example.assistentecell.assistant.OllieAssistantService
++import com.example.assistentecell.websocket.ChatBridge
  import kotlinx.coroutines.*
 +import kotlinx.coroutines.flow.combine
-+import com.example.assistentecell.websocket.ChatBridge
++import org.json.JSONArray
++import org.json.JSONObject
  import org.vosk.Model
  import org.vosk.Recognizer
  import org.vosk.android.RecognitionListener
-@@ -23,18 +25,25 @@
-     private var speechService: SpeechService? = null
+ import org.vosk.android.SpeechService
+-import org.vosk.android.StorageService
+ import java.io.File
+-import java.io.IOException
+-
+-class WakeWordService : Service(), RecognitionListener {
+-
+-    private var speechService: SpeechService? = null
++
++class WakeWordService : Service() {
++    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
      private var model: Model? = null
-     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-+    private var microphoneBusy = false
+-    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
++    private var recognizer: Recognizer? = null
++    private var speech: SpeechService? = null
++    private var busy = false
++    private var pendingSession = false
 +    private var destroyed = false
++    private var generation = 0
++    private var retry: Job? = null
++    private var handoff: Job? = null
++    private var failures = 0
++    private var failed = false
++    private val gate = WakeWordGate()
  
      companion object {
-         private const val CHANNEL_ID = "WAKE_WORD_CHANNEL"
-         private const val NOTIFICATION_ID = 1001
-         
-         fun start(context: Context) {
-+            if (context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
-             val intent = Intent(context, WakeWordService::class.java)
-+            try {
-             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                 context.startForegroundService(intent)
-             } else {
-                 context.startService(intent)
-             }
-+            } catch (e: Exception) {
-+                Log.e("WakeWordService", "Ativação por voz indisponível: ${e.javaClass.simpleName}")
+-        private const val CHANNEL_ID = "WAKE_WORD_CHANNEL"
+-        private const val NOTIFICATION_ID = 1001
+-        
+-        fun start(context: Context) {
+-            val intent = Intent(context, WakeWordService::class.java)
+-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-                context.startForegroundService(intent)
+-            } else {
+-                context.startService(intent)
+-            }
+-        }
+-        
++        private const val CHANNEL = "WAKE_WORD_CHANNEL"
++        private const val MODEL = "model/vosk-model-small-pt-0.3"
++        fun start(context: Context): Boolean {
++            if (context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
++                WakeWordRuntime.update("Permita o microfone para ativar por voz")
++                return false
 +            }
-         }
-         
-         fun stop(context: Context) {
-@@ -47,6 +56,13 @@
-         super.onCreate()
-         createNotificationChannel()
-         startForeground(NOTIFICATION_ID, createNotification())
-+        serviceScope.launch {
-+            combine(VoiceActivity.busy, ChatBridge.isAssistantSessionActive) { voice, session -> voice || session }
-+                .collect { busy ->
-+                    microphoneBusy = busy
-+                    if (busy) speechService?.stop() else startListening()
-+                }
++            return try {
++                val intent = Intent(context, WakeWordService::class.java)
++                if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
++                true
++            } catch (e: Exception) {
++                WakeWordRuntime.update("Abra o app para iniciar a escuta")
++                Log.w("WakeWordService", "Wake startup failed: ${e.javaClass.simpleName}")
++                false
++            }
 +        }
-         
-         initModel()
-     }
-@@ -56,6 +72,7 @@
-         
-         StorageService.unpack(this, "model/vosk-model-small-pt-0.3", "model",
-             { model: Model ->
-+                if (destroyed) { model.close(); return@unpack }
-                 this.model = model
-                 Log.e("WakeWordService", "🚀 VOSK PRONTO via StorageService! Iniciando escuta...")
-                 startListening()
-@@ -125,6 +142,7 @@
+         fun stop(context: Context) {
+-            val intent = Intent(context, WakeWordService::class.java)
+-            context.stopService(intent)
++            context.stopService(Intent(context, WakeWordService::class.java))
++            WakeWordRuntime.update("Desligada")
+         }
      }
  
-     private fun startListening() {
-+        if (destroyed || microphoneBusy) return
-         if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-             Log.e("WakeWordService", "❌ Permissão de áudio não concedida!")
+     override fun onCreate() {
+         super.onCreate()
+-        createNotificationChannel()
+-        startForeground(NOTIFICATION_ID, createNotification())
+-        
+-        initModel()
+-    }
+-
+-    private fun initModel() {
+-        Log.e("WakeWordService", "📦 Iniciando descompactação automática do modelo...")
+-        
+-        StorageService.unpack(this, "model/vosk-model-small-pt-0.3", "model",
+-            { model: Model ->
+-                this.model = model
+-                Log.e("WakeWordService", "🚀 VOSK PRONTO via StorageService! Iniciando escuta...")
++        WakeWordRuntime.update("Preparando reconhecimento no celular...")
++        try {
++            val manager = getSystemService(NotificationManager::class.java)
++            if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL, "Ativação por voz", NotificationManager.IMPORTANCE_LOW))
++            startForeground(1001, notification(WakeWordRuntime.status.value))
++        } catch (e: Exception) {
++            failed = true
++            WakeWordRuntime.update("Abra o app e confira a permissão do microfone")
++            Log.w("WakeWordService", "Foreground microphone unavailable: ${e.javaClass.simpleName}")
++            stopSelf()
++            return
++        }
++        scope.launch {
++            WakeWordRuntime.status.collect { status ->
++                getSystemService(NotificationManager::class.java).notify(1001, notification(status))
++            }
++        }
++        scope.launch {
++            combine(VoiceActivity.busy, ChatBridge.isAssistantSessionActive) { voice, session -> voice || session }.collect { active ->
++                busy = active
++                if (active) {
++                    pendingSession = false
++                    releaseRecognition()
++                    WakeWordRuntime.update("Pausada enquanto você fala com a Ollie")
++                } else startListening()
++            }
++        }
++        scope.launch {
++            var allocated: Model? = null
++            try {
++                val loaded = withContext(Dispatchers.IO) {
++                    val target = File(filesDir, "vosk-model")
++                    val marker = File(target, ".ollie-version")
++                    val version = "ollie-pt-0.3-internal-v1"
++                    if (!marker.exists() || marker.readText() != version) {
++                        copyAssets(MODEL, target)
++                        marker.writeText(version)
++                    }
++                    Model(target.absolutePath).also { allocated = it }
++                }
++                if (destroyed) { loaded.close(); return@launch }
++                model = loaded
++                allocated = null
++                Log.i("WakeWordService", "Wake model ready")
+                 startListening()
+-            },
+-            { exception: IOException ->
+-                Log.e("WakeWordService", "❌ Erro ao descompactar modelo: ${exception.message}")
+-                // Fallback para descompactação manual se necessário
+-                initModelManual()
+-            })
+-    }
+-
+-    private fun initModelManual() {
+-        Log.e("WakeWordService", "📦 Iniciando descompactação manual (Fallback)...")
+-        serviceScope.launch(Dispatchers.IO) {
+-            try {
+-                val targetDir = File(filesDir, "vosk-model")
+-                if (!targetDir.exists()) targetDir.mkdirs()
+-
+-                // 🔍 Copia recursivamente os arquivos do asset
+-                val modelPath = "model/vosk-model-small-pt-0.3"
+-                copyAssetFolder(modelPath, targetDir)
+-                
+-                Log.e("WakeWordService", "✅ Modelo copiado para: ${targetDir.absolutePath}")
+-                
+-                // Inicializa o modelo no thread principal
+-                withContext(Dispatchers.Main) {
+-                    try {
+-                        model = Model(targetDir.absolutePath)
+-                        Log.e("WakeWordService", "🚀 VOSK PRONTO! Iniciando escuta...")
+-                        startListening()
+-                    } catch (e: Exception) {
+-                        Log.e("WakeWordService", "❌ Erro ao criar Model: ${e.message}")
+-                    }
+-                }
+-            } catch (e: Exception) {
+-                Log.e("WakeWordService", "❌ Erro na descompactação manual: ${e.message}")
+-            }
+-        }
+-    }
+-
+-    private fun copyAssetFolder(assetPath: String, targetDir: File) {
+-        val assets = assets.list(assetPath) ?: return
+-        if (assets.isEmpty()) {
+-            // É um arquivo
+-            copyFile(assetPath, targetDir)
++            } catch (cancelled: CancellationException) { allocated?.close(); throw cancelled }
++            catch (e: Exception) {
++                allocated?.close()
++                failed = true
++                WakeWordRuntime.update("Não consegui preparar a escuta. Desative e ative novamente.")
++                Log.w("WakeWordService", "Model setup failed: ${e.javaClass.simpleName}")
++                stopSelf()
++            }
++        }
++    }
++
++    private fun notification(message: String): Notification {
++        val open = PendingIntent.getActivity(this, 0, Intent(this, com.example.assistentecell.MainActivity::class.java),
++            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
++        return NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_ollie_notification)
++            .setContentTitle("Ollie por perto").setContentText(message)
++            .setContentIntent(open).setOngoing(true).setSilent(true).setOnlyAlertOnce(true).build()
++    }
++
++    private fun copyAssets(path: String, target: File) {
++        val children = assets.list(path).orEmpty()
++        if (children.isEmpty()) {
++            target.parentFile?.mkdirs()
++            assets.open(path).use { input -> target.outputStream().use { input.copyTo(it) } }
+         } else {
+-            // É uma pasta
+-            if (!targetDir.exists()) targetDir.mkdirs()
+-            for (asset in assets) {
+-                copyAssetFolder("$assetPath/$asset", File(targetDir, asset))
+-            }
+-        }
+-    }
+-
+-    private fun copyFile(assetPath: String, targetFile: File) {
++            target.mkdirs()
++            children.forEach { copyAssets("$path/$it", File(target, it)) }
++        }
++    }
++
++    private fun releaseRecognition() {
++        ++generation
++        retry?.cancel(); retry = null
++        speech?.cancel(); speech?.shutdown(); speech = null
++        recognizer?.close(); recognizer = null
++    }
++
++    private fun startListening() {
++        if (destroyed || busy || pendingSession || model == null || speech != null) return
++        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
++            WakeWordRuntime.update("Permita o microfone para ativar por voz")
++            return
++        }
++        val current = ++generation
+         try {
+-            val inputStream = assets.open(assetPath)
+-            val outputStream = java.io.FileOutputStream(targetFile)
+-            inputStream.use { input ->
+-                outputStream.use { output ->
+-                    input.copyTo(output)
+-                }
+-            }
++            recognizer = Recognizer(model, 16000f).apply { setGrammar(JSONArray(WakeWordPolicy.grammar).toString()) }
++            speech = SpeechService(recognizer, 16000f)
++            val listener = object : RecognitionListener {
++                override fun onPartialResult(hypothesis: String?) {}
++                override fun onResult(hypothesis: String?) { if (current == generation) checkWake(hypothesis) }
++                override fun onFinalResult(hypothesis: String?) { if (current == generation) checkWake(hypothesis) }
++                override fun onError(exception: Exception?) { if (current == generation) recover() }
++                override fun onTimeout() { if (current == generation) recover() }
++            }
++            check(speech!!.startListening(listener))
++            failures = 0
++            WakeWordRuntime.update("Ouvindo Ei Ollie no celular")
++            Log.i("WakeWordService", "Wake listening active")
+         } catch (e: Exception) {
+-            Log.e("WakeWordService", "Erro ao copiar arquivo $assetPath: ${e.message}")
+-        }
+-    }
+-
+-    private fun startListening() {
+-        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+-            Log.e("WakeWordService", "❌ Permissão de áudio não concedida!")
++            Log.w("WakeWordService", "Wake microphone failed: ${e.javaClass.simpleName}")
++            recover()
++        }
++    }
++
++    private fun recover() {
++        releaseRecognition()
++        if (destroyed || busy || pendingSession) return
++        failures = (failures + 1).coerceAtMost(4)
++        WakeWordRuntime.update("Retomando microfone...")
++        retry = scope.launch { delay(1000L shl failures); startListening() }
++    }
++
++    private fun checkWake(hypothesis: String?) {
++        val text = try { JSONObject(hypothesis ?: "{}").optString("text") } catch (_: Exception) { "" }
++        if (!gate.accept(text, busy || pendingSession || destroyed, SystemClock.elapsedRealtime())) return
++        Log.i("WakeWordService", "Wake phrase detected")
++        pendingSession = true
++        releaseRecognition()
++        WakeWordRuntime.update("Chamando a Ollie...")
++        try {
++            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
++            if (Build.VERSION.SDK_INT >= 26) vibrator.vibrate(android.os.VibrationEffect.createOneShot(60, -1)) else vibrator.vibrate(60)
++            startService(Intent(this, OllieAssistantService::class.java).setAction(Intent.ACTION_ASSIST))
++        } catch (e: Exception) {
++            pendingSession = false
++            recover()
              return
-@@ -199,14 +217,11 @@
-             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-             putExtra("v_source", "wake_word") // Identificador opcional
          }
+-
+-        model?.let {
+-            try {
+-                // 🛡️ SEGURANÇA: Limpa serviço anterior antes de criar novo
+-                speechService?.stop()
+-                speechService?.shutdown()
+-                speechService = null
+-
+-                val recognizer = Recognizer(it, 16000.0f)
+-                recognizer.setGrammar("[\"e aí ollie\", \"e ai ollie\", \"e aí oli\", \"e ai oli\", \"ollie\", \"oli\", \"[unknown]\"]")
+-                
+-                speechService = SpeechService(recognizer, 16000.0f)
+-                speechService?.startListening(this)
+-                Log.e("WakeWordService", "🎤 SERVIÇO ATIVO: Ouvindo gatilho 'E aí Ollie'...")
+-            } catch (e: Exception) {
+-                Log.e("WakeWordService", "⚠️ Falha ao iniciar microfone: ${e.message}. Tentando em 5s...")
+-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ startListening() }, 5000)
+-            }
+-        }
+-    }
+-
+-    override fun onResult(hypothesis: String?) {
+-        Log.d("WakeWordService", "Resultado: $hypothesis")
+-        // 🔍 FILTRO ULTRA-RESTRITIVO: Ativa apenas com a frase complexa "E aí Ollie"
+-        val text = hypothesis?.lowercase() ?: ""
+-        
+-        if (text.contains("\"e aí ollie\"") || text.contains("\"e ai ollie\"") || 
+-            text.contains("\"e aí oli\"") || text.contains("\"e ai oli\"")) {
+-            triggerAssistant()
+-        }
+-    }
+-
+-    override fun onFinalResult(hypothesis: String?) {
+-        val text = hypothesis?.lowercase() ?: ""
+-        if (text.contains("\"e aí ollie\"") || text.contains("\"e ai ollie\"") || 
+-            text.contains("\"e aí oli\"") || text.contains("\"e ai oli\"")) {
+-            triggerAssistant()
+-        }
+-    }
+-
+-    override fun onPartialResult(hypothesis: String?) {
+-        // Log.d("WakeWordService", "Parcial: $hypothesis")
+-    }
+-
+-    override fun onError(exception: Exception?) {
+-        Log.e("WakeWordService", "Erro no Vosk: ${exception?.message}")
+-    }
+-
+-    override fun onTimeout() {}
+-
+-    private fun triggerAssistant() {
+-        Log.d("WakeWordService", "✨ Wake Word detectada! Abrindo Ollie...")
+-        
+-        // 1. Feedback tátil (vibração curta)
+-        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-            vibrator.vibrate(android.os.VibrationEffect.createOneShot(70, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+-        } else {
+-            vibrator.vibrate(70)
+-        }
+-
+-        // 2. Pausa o reconhecimento para não dar conflito com o microfone da sessão
+-        speechService?.stop()
+-        
+-        // 3. Dispara a Assistência (Exatamente como o botão de Home/Gesto/Configurações)
+-        val intent = Intent(this, OllieAssistantService::class.java).apply {
+-            action = Intent.ACTION_ASSIST
+-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+-            putExtra("v_source", "wake_word") // Identificador opcional
+-        }
 -        startService(intent)
 -        
 -        // 4. Reinicia a escuta após a sessão fechar (ou timeout de 8 segundos)
@@ -4425,25 +4885,58 @@
 -                startListening() 
 -            }
 -        }, 8000)
-+        try { startService(intent) } catch (e: Exception) {
-+            Log.e("WakeWordService", "Falha ao abrir assistente: ${e.javaClass.simpleName}")
-+        }
-+        
-+        // The session/activity flows resume wake-word capture after interaction ends.
+-    }
+-
+-    private fun createNotification(): Notification {
+-        return NotificationCompat.Builder(this, CHANNEL_ID)
+-            .setContentTitle("Ollie está atenta")
+-            .setContentText("Diga 'Ei Ollie' para falar comigo")
+-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+-            .setPriority(NotificationCompat.PRIORITY_LOW)
+-            .setOngoing(true)
+-            .build()
+-    }
+-
+-    private fun createNotificationChannel() {
+-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-            val channel = NotificationChannel(
+-                CHANNEL_ID,
+-                "Ativação por Voz",
+-                NotificationManager.IMPORTANCE_LOW
+-            )
+-            val manager = getSystemService(NotificationManager::class.java)
+-            manager.createNotificationChannel(channel)
++        handoff?.cancel()
++        handoff = scope.launch {
++            delay(4000)
++            if (pendingSession && !ChatBridge.isAssistantSessionActive.value) {
++                pendingSession = false
++                WakeWordRuntime.update("Assistente não abriu. Confira o assistente padrão.")
++                startListening()
++            }
+         }
      }
  
-     private fun createNotification(): Notification {
-@@ -238,9 +253,12 @@
+     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
++        if (!getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE).getBoolean("wakeword_enabled", false)) {
++            stopSelf()
++            return START_NOT_STICKY
++        }
+         return START_STICKY
+     }
+-
      override fun onBind(intent: Intent?): IBinder? = null
- 
+-
      override fun onDestroy() {
 +        destroyed = true
-+        serviceScope.cancel()
++        releaseRecognition()
++        scope.cancel()
++        model?.close(); model = null
++        if (!failed) WakeWordRuntime.update("Desligada")
          super.onDestroy()
-         speechService?.stop()
-         speechService?.shutdown()
-+        model?.close()
-         Log.d("WakeWordService", "🛑 Ativação por voz desativada.")
+-        speechService?.stop()
+-        speechService?.shutdown()
+-        Log.d("WakeWordService", "🛑 Ativação por voz desativada.")
      }
  }
 --- a/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
@@ -4456,6 +4949,159 @@
      val timestamp: Long = System.currentTimeMillis()
  )
  
+--- a/app/src/main/res/drawable/bg_ollie_dock.xml
++++ b/app/src/main/res/drawable/bg_ollie_dock.xml
+@@ -0,0 +1,5 @@
++<shape xmlns:android="http://schemas.android.com/apk/res/android">
++    <gradient android:startColor="#17243B" android:endColor="#0C1322" android:angle="270" />
++    <corners android:radius="28dp" />
++    <stroke android:width="1dp" android:color="#35445D" />
++</shape>
+--- a/app/src/main/res/drawable/bg_ollie_response.xml
++++ b/app/src/main/res/drawable/bg_ollie_response.xml
+@@ -0,0 +1,4 @@
++<shape xmlns:android="http://schemas.android.com/apk/res/android">
++    <solid android:color="#17243A" />
++    <corners android:radius="18dp" />
++</shape>
+--- a/app/src/main/res/drawable/ic_ollie_mic.xml
++++ b/app/src/main/res/drawable/ic_ollie_mic.xml
+@@ -0,0 +1,3 @@
++<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
++    <path android:fillColor="#FFFFFFFF" android:pathData="M12,14a3,3 0,0 0,3 -3V5a3,3 0,0 0,-6 0v6a3,3 0,0 0,3 3zM17,11a5,5 0,0 1,-10 0H5a7,7 0,0 0,6 6.92V21h2v-3.08A7,7 0,0 0,19 11z" />
++</vector>
+--- a/app/src/main/res/drawable/ic_ollie_notification.xml
++++ b/app/src/main/res/drawable/ic_ollie_notification.xml
+@@ -0,0 +1,3 @@
++<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
++    <path android:fillColor="#FFFFFFFF" android:pathData="M12,2 L14.7,9.3 L22,12 L14.7,14.7 L12,22 L9.3,14.7 L2,12 L9.3,9.3 Z" />
++</vector>
+--- a/app/src/main/res/layout/layout_ollie_voice_session.xml
++++ b/app/src/main/res/layout/layout_ollie_voice_session.xml
+@@ -1,73 +1,57 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
++<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+     xmlns:app="http://schemas.android.com/apk/res-auto"
+-    xmlns:tools="http://schemas.android.com/tools"
+-    android:layout_width="match_parent"
+-    android:layout_height="wrap_content"
+-    android:layout_margin="24dp"
+-    app:cardBackgroundColor="@android:color/transparent"
+-    app:cardCornerRadius="32dp"
+-    app:cardElevation="24dp"
+-    app:cardPreventCornerOverlap="false">
++    android:layout_width="match_parent" android:layout_height="wrap_content"
++    android:orientation="vertical" android:background="@drawable/bg_ollie_dock"
++    android:padding="22dp" android:clickable="true" android:focusable="true">
+ 
+-    <androidx.constraintlayout.widget.ConstraintLayout
+-        android:id="@+id/voice_container"
+-        android:layout_width="match_parent"
+-        android:layout_height="wrap_content"
+-        android:background="@drawable/bg_notification_bento"
+-        android:padding="24dp">
++    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
++        android:orientation="horizontal" android:gravity="center_vertical">
++        <ImageView android:layout_width="32dp" android:layout_height="32dp"
++            android:src="@drawable/ic_ollie_notification" android:tint="#6ADFEB" android:importantForAccessibility="no" />
++        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
++            android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp">
++            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
++                android:text="Ollie" android:textColor="#F5F7FF" android:textSize="20sp" android:fontFamily="sans-serif-medium" />
++            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
++                android:text="Aqui para ajudar" android:textColor="#A5B5CD" android:textSize="12sp" />
++        </LinearLayout>
++        <ImageButton android:id="@+id/btn_close_assistant" android:layout_width="48dp" android:layout_height="48dp"
++            android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_menu_close_clear_cancel"
++            android:tint="#BDCADE" android:contentDescription="Fechar assistente" />
++    </LinearLayout>
+ 
+-        <!-- Ollie Orb Indicator -->
+-        <View
+-            android:id="@+id/ollie_orb_visual"
+-            android:layout_width="64dp"
+-            android:layout_height="64dp"
+-            android:background="@drawable/bg_pulse_dot"
+-            app:layout_constraintEnd_toEndOf="parent"
+-            app:layout_constraintStart_toStartOf="parent"
+-            app:layout_constraintTop_toTopOf="parent" />
++    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
++        android:layout_marginTop="22dp" android:orientation="horizontal" android:gravity="center_vertical">
++        <TextView android:id="@+id/tv_voice_status" android:layout_width="0dp" android:layout_height="wrap_content"
++            android:layout_weight="1" android:text="Pode falar" android:textColor="#6ADFEB" android:textSize="13sp"
++            android:fontFamily="sans-serif-medium" android:accessibilityLiveRegion="polite" />
++        <ProgressBar android:id="@+id/progress_voice" style="?android:attr/progressBarStyleSmall"
++            android:layout_width="20dp" android:layout_height="20dp" android:indeterminateTint="#6ADFEB" android:visibility="gone" />
++    </LinearLayout>
+ 
+-        <!-- User Transcription Area -->
+-        <TextView
+-            android:id="@+id/tv_user_speech"
+-            android:layout_width="0dp"
+-            android:layout_height="wrap_content"
+-            android:layout_marginTop="20dp"
+-            android:textAlignment="center"
+-            android:textColor="#00E5FF"
+-            android:textSize="18sp"
+-            android:textStyle="italic"
+-            app:layout_constraintEnd_toEndOf="parent"
+-            app:layout_constraintStart_toStartOf="parent"
+-            app:layout_constraintTop_toBottomOf="@id/ollie_orb_visual"
+-            tools:text="O que eu estou ouvindo..." />
++    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="18dp"
++        android:text="VOCÊ" android:textColor="#7E94B2" android:textSize="10sp" android:letterSpacing="0.15" />
++    <TextView android:id="@+id/tv_user_speech" android:layout_width="match_parent" android:layout_height="wrap_content"
++        android:layout_marginTop="6dp" android:minHeight="56dp" android:text="O que vamos fazer?" android:textColor="#EFF4FF"
++        android:textSize="20sp" android:fontFamily="sans-serif" android:maxLines="4" android:ellipsize="end" />
+ 
+-        <!-- Ollie Response Area -->
+-        <TextView
+-            android:id="@+id/tv_ollie_response"
+-            android:layout_width="0dp"
+-            android:layout_height="wrap_content"
+-            android:layout_marginTop="12dp"
+-            android:textAlignment="center"
+-            android:textColor="#FFFFFF"
+-            android:textSize="16sp"
+-            android:visibility="gone"
+-            app:layout_constraintEnd_toEndOf="parent"
+-            app:layout_constraintStart_toStartOf="parent"
+-            app:layout_constraintTop_toBottomOf="@id/tv_user_speech"
+-            tools:text="Resposta da Ollie aparecendo aqui..."
+-            tools:visibility="visible" />
++    <ScrollView android:id="@+id/response_area" android:layout_width="match_parent" android:layout_height="150dp"
++        android:layout_marginTop="16dp" android:background="@drawable/bg_ollie_response" android:fillViewport="false"
++        android:visibility="gone" android:padding="16dp">
++        <TextView android:id="@+id/tv_ollie_response" android:layout_width="match_parent" android:layout_height="wrap_content"
++            android:textColor="#DAE5F7" android:textSize="16sp" android:lineSpacingExtra="4dp" android:textIsSelectable="true" />
++    </ScrollView>
+ 
+-        <!-- Visualizer Bar (Simulated pulse) -->
+-        <View
+-            android:id="@+id/voice_visualizer_bar"
+-            android:layout_width="120dp"
+-            android:layout_height="2dp"
+-            android:layout_marginTop="24dp"
+-            android:background="@drawable/bg_gradient_divider"
+-            app:layout_constraintEnd_toEndOf="parent"
+-            app:layout_constraintStart_toStartOf="parent"
+-            app:layout_constraintTop_toBottomOf="@id/tv_ollie_response" />
+-
+-    </androidx.constraintlayout.widget.ConstraintLayout>
+-</com.google.android.material.card.MaterialCardView>
++    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
++        android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="20dp">
++        <com.google.android.material.button.MaterialButton android:id="@+id/ollie_orb_visual"
++            android:layout_width="0dp" android:layout_height="56dp" android:layout_weight="1"
++            android:text="Falar com a Ollie" android:textAllCaps="false" android:textSize="14sp" android:textColor="#082733"
++            android:backgroundTint="#6ADFEB" android:contentDescription="Falar com a Ollie"
++            app:cornerRadius="28dp" app:icon="@drawable/ic_ollie_mic" app:iconTint="#082733" app:iconGravity="textStart" />
++        <com.google.android.material.button.MaterialButton android:id="@+id/btn_open_chat" style="@style/Widget.MaterialComponents.Button.TextButton"
++            android:layout_width="wrap_content" android:layout_height="56dp" android:layout_marginStart="10dp"
++            android:text="Conversa" android:textAllCaps="false" android:textColor="#BDCADE" android:contentDescription="Abrir conversa completa" />
++    </LinearLayout>
++</LinearLayout>
 --- a/app/src/test/java/com/example/assistentecell/AppOpeningPolicyTest.kt
 +++ b/app/src/test/java/com/example/assistentecell/AppOpeningPolicyTest.kt
 @@ -0,0 +1,55 @@
@@ -5077,5 +5723,32 @@
 +        replies.expect("second")
 +        assertTrue(replies.consume("second"))
 +        assertTrue(replies.consume("first"))
++    }
++}
+--- a/app/src/test/java/com/example/assistentecell/WakeWordPolicyTest.kt
++++ b/app/src/test/java/com/example/assistentecell/WakeWordPolicyTest.kt
+@@ -0,0 +1,24 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.voice.WakeWordGate
++import com.example.assistentecell.voice.WakeWordPolicy
++import org.junit.Assert.*
++import org.junit.Test
++
++class WakeWordPolicyTest {
++    @Test fun recognizesDisplayedPhraseAndPortugueseModelSoundAlikes() {
++        listOf("Ei, Ollie!", "e aí oli", "ei olhe", "e aí olha", "ei óleo").forEach { assertTrue(it, WakeWordPolicy.matches(it)) }
++        listOf("Ollie", "olha", "ei", "e aí", "[unk]", "preciso olhar a luz").forEach { assertFalse(it, WakeWordPolicy.matches(it)) }
++    }
++    @Test fun grammarUsesExistingPortugueseWordsInsteadOfUnknownNames() {
++        assertTrue(WakeWordPolicy.grammar.contains("[unk]"))
++        assertFalse(WakeWordPolicy.grammar.any { it.contains("ollie") || it.contains("[unknown]") })
++    }
++    @Test fun pauseAndCooldownPreventDoubleActivationOrWakeDuringSpeech() {
++        val gate = WakeWordGate()
++        assertFalse(gate.accept("ei olhe", true, 10000))
++        assertTrue(gate.accept("ei olhe", false, 10001))
++        assertFalse(gate.accept("ei olhe", false, 10002))
++        assertTrue(gate.accept("ei olhe", false, 15001))
 +    }
 +}

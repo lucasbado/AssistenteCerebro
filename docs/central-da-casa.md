@@ -1,6 +1,7 @@
 # A Ollie como central da casa
 
 Roteamento por dispositivo e resposta em voz no PC: [Comandos por origem](roteamento-dispositivos.md).
+Revisão atual de sites, notificações, dock e wake word: [alterações e verificações pendentes](revisao-sites-dock-wakeword.md).
 
 A conversa acontece com a Ollie. Ela identifica o pedido, encontra o dispositivo
 cadastrado e coordena a execução. O Home Assistant comunica com a lâmpada e os

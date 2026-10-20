@@ -388,6 +388,11 @@ class PcControlService:
 
     def abrir_app(self, app_key):
         if not app_key: return False
+        from servicos.sites_pc import resolver_site_pc
+        site = resolver_site_pc(app_key)
+        if site:
+            self.abrir_url(site)
+            return True
         if os.path.isfile(app_key):
             self.executar_comando_direto(app_key)
             return True

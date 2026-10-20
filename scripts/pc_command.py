@@ -37,9 +37,15 @@ def executar(comando, parametro, service=None):
         service.inicializar()
         service.executar_macro(parametro or comando)
     elif comando in {"abrir_app", "abrir_programa"} | apps:
-        if service.abrir_app(parametro or comando) is False:
+        from servicos.sites_pc import resolver_site_pc
+        site = resolver_site_pc(parametro or comando)
+        if site:
+            service.abrir_url(site)
+        elif service.abrir_app(parametro or comando) is False:
             raise RuntimeError("Aplicativo não pôde ser aberto")
     elif comando in {"abrir_url", "open_url"}:
+        from servicos.sites_pc import resolver_site_pc
+        parametro = resolver_site_pc(parametro) or parametro
         parsed = urlparse(parametro)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("URL HTTP(S) inválida")

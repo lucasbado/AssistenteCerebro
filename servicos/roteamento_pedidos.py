@@ -47,6 +47,16 @@ def resolver_abertura(evento, comando, parametro):
     from servicos.intervention_governor import APP_ALIASES
     if command in APP_ALIASES:
         parametro, command = command, "abrir_app"
+    nome = str(parametro).strip().lower()
+    nome = ALIASES.get(nome, nome)
+    if nome in APPS and command not in {"pesquisa_google", "web_search", "pesquisar", "abrir_notificacao", "abrir_mensagem", "read_message"}:
+        cmd, param = APPS[nome][0 if destino == "PC" else 1]
+        return destino, cmd, param
+    from servicos.sites_pc import resolver_site_pc, url_explicita
+    if command in {"abrir_app", "open_app", "abrir_programa", "abrir_app_mobile", "launch_app", "open_url", "abrir_url", "abrir_url_mobile"}:
+        url = resolver_site_pc(parametro) if destino == "PC" else url_explicita(parametro)
+        if url:
+            return destino, "abrir_url" if destino == "PC" else "OPEN_URL", url
     if command in {"open_url", "abrir_url", "abrir_url_mobile"}:
         return destino, "abrir_url" if destino == "PC" else "OPEN_URL", parametro
     if command in {"pesquisa_google", "web_search", "pesquisar"}:
@@ -55,11 +65,6 @@ def resolver_abertura(evento, comando, parametro):
         if destino != "MOBILE":
             raise ValueError("Essa mensagem só pode ser aberta no celular. Diga ‘no celular’ para abrir lá.")
         return destino, command.upper(), parametro
-    nome = str(parametro).strip().lower()
-    nome = ALIASES.get(nome, nome)
-    if nome in APPS:
-        cmd, param = APPS[nome][0 if destino == "PC" else 1]
-        return destino, cmd, param
     if destino == "MOBILE" and (nome.endswith(".exe") or nome in APP_ALIASES - {"spotify", "chrome"}):
         raise ValueError("Esse aplicativo é de PC. Diga ‘no PC’ para abrir lá.")
     return destino, "abrir_app" if destino == "PC" else "OPEN_APP", parametro
@@ -70,12 +75,16 @@ def interpretar_abertura(texto):
     if not pedido_explicito_de_abertura(texto):
         return None
     t = normalizar(texto)
-    nomes = "youtube|you tube|spotify|whatsapp|telegram|instagram|tiktok|tik tok|chrome"
     prefixo = r"(?:ollie[, ]+)?(?:por favor[, ]+)?(?:pode |poderia |quero que voce |quero )?"
     suffix = r"(?: (?:no|pelo|pro|para o) (?:meu |seu |este |esse )?(?:pc|computador|desktop|notebook|celular|telefone|smartphone|android))?(?: por favor)?[.!?]*"
-    match = re.fullmatch(prefixo + r"(?:abre|abra|abrir|inicie|inicia|iniciar) (?:o |a )?(" + nomes + r")" + suffix, t)
+    match = re.fullmatch(prefixo + r"(?:abre|abra|abrir|inicie|inicia|iniciar) (?:o |a )?(?:(?:site|app|aplicativo) (?:do |da )?)?(.+?)" + suffix, t)
     if match:
-        return {"execucao_direta": [{"alvo": "ORIGEM", "comando": "abrir_app", "parametro": match[1]}],
+        if len(match[1]) > 160 or re.search(r"\b(?:e|depois|tambem|quando|porque|se)\b", match[1]):
+            return None
+        # Preserve URL path/query casing; normalization is for the verb and destination only.
+        raw = re.search(r"https?://\S+", str(texto), re.I)
+        parametro = raw.group().rstrip(".,") if raw else match[1]
+        return {"execucao_direta": [{"alvo": "ORIGEM", "comando": "abrir_app", "parametro": parametro}],
                 "mensagem_dinamica": "", "tipo_interacao": "NOTIFICAR"}
     return None
 
