@@ -18,13 +18,21 @@ import urllib.request
 
 if __package__:
     from .execucao import run_logged
+    from .treino_compat import improve_training_source
 else:
     from execucao import run_logged
+    from treino_compat import improve_training_source
 
 WORK = Path('/content/ollie-wakeword')
 OWW_REV = '368c03716d1e92591906a84949bc477f3a834455'
 PIPER_REV = '213d4d5'
-DATA_BASE = 'https://huggingface.co/datasets/davidscripka/openwakeword_features/resolve/main/'
+MIT_REV = 'b824a1ef2821f112fda0b9cb26e4278c62b425bb'
+AUDIOSET_REV = '5a2fa42a1506470d275a47ff8e1fdac5b364e6ef'
+FEATURES_REV = '985bf1b47e7f19c07741af82bfe32d5a9dc56096'
+FEATURE_FILES = {
+    'openwakeword_features_ACAV100M_2000_hrs_16bit.npy': (17280000128, (5625000, 16, 96), 'float16'),
+    'validation_set_features.npy': (184836608, (481345, 96), 'float32'),
+}
 
 
 def configure_runtime():
@@ -113,7 +121,8 @@ def onnx_training_source(source):
 def prepare_training_script():
     source = WORK / 'openwakeword/openwakeword/train.py'
     script = WORK / 'train_onnx.py'
-    script.write_text(onnx_training_source(source.read_text(encoding='utf-8')), encoding='utf-8')
+    compatible = improve_training_source(source.read_text(encoding='utf-8'))
+    script.write_text(onnx_training_source(compatible), encoding='utf-8')
     return script
 
 
@@ -164,7 +173,7 @@ def preview(phrase):
 
 
 def data():
-    from huggingface_hub import snapshot_download
+    from huggingface_hub import snapshot_download, hf_hub_download
     import soundfile as sf
     from scipy.signal import resample_poly
     from math import gcd
@@ -173,11 +182,17 @@ def data():
     assets.mkdir(exist_ok=True)
     rir = snapshot_download(repo_id='davidscripka/MIT_environmental_impulse_responses',
                             repo_type='dataset', allow_patterns=['16khz/*.wav'],
-                            local_dir=str(assets / 'mit'))
+                            revision=MIT_REV, token=False, local_dir=str(assets / 'mit'))
     if not list((Path(rir) / '16khz').glob('*.wav')):
         raise RuntimeError('Nenhuma resposta de ambiente foi baixada.')
-    archive = assets / 'bal_train09.tar'
-    download('https://huggingface.co/datasets/agkphysics/AudioSet/resolve/main/data/bal_train09.tar', archive)
+    # O main do AudioSet foi convertido para Parquet. Esta revisão mantém o TAR
+    # usado pelo treino original e evita alterar o formato ou baixar o corpus inteiro.
+    print('Baixando AudioSet TAR da revisão fixada (retoma downloads interrompidos)...', flush=True)
+    archive = Path(hf_hub_download(repo_id='agkphysics/AudioSet', repo_type='dataset',
+                   filename='data/bal_train09.tar', revision=AUDIOSET_REV, token=False,
+                   local_dir=str(assets / 'audioset-download')))
+    if archive.stat().st_size != 968540160:
+        raise RuntimeError('Tamanho inesperado no pacote AudioSet; o download está incompleto.')
     extracted = assets / 'audioset'
     marker = extracted / '.extraido'
     if not marker.exists():
@@ -200,20 +215,35 @@ def data():
             if rate != 16000:
                 factor = gcd(rate, 16000)
                 samples = resample_poly(samples, 16000 // factor, rate // factor)
-            sf.write(target, np.clip(samples, -1, 1), 16000, subtype='PCM_16')
+            temporary = target.with_suffix('.parcial')
+            sf.write(temporary, np.clip(samples, -1, 1), 16000, subtype='PCM_16', format='WAV')
+            temporary.replace(target)
         if index % 100 == 0:
             print(f'Áudios de ambiente: {index + 1}/{len(paths)}', flush=True)
-    for name in ('openwakeword_features_ACAV100M_2000_hrs_16bit.npy', 'validation_set_features.npy'):
-        download(DATA_BASE + name, assets / name)
+    feature_info = {}
+    for name, (expected_bytes, expected_shape, expected_dtype) in FEATURE_FILES.items():
+        print(f'Preparando {name}: {expected_bytes / 1e9:.2f} GB; o download pode levar alguns minutos.', flush=True)
+        downloaded = Path(hf_hub_download(repo_id='davidscripka/openwakeword_features',
+                          repo_type='dataset', revision=FEATURES_REV, filename=name,
+                          local_dir=str(assets), token=False))
+        if downloaded.stat().st_size != expected_bytes:
+            raise RuntimeError(f'Download incompleto: {name}')
         # Checa o cabeçalho, sem carregar os dados inteiros em RAM.
-        np.load(assets / name, mmap_mode='r', allow_pickle=False)
-    (WORK / 'dados-prontos.json').write_text(json.dumps({'fundos': len(paths)}))
+        array = np.load(downloaded, mmap_mode='r', allow_pickle=False)
+        if array.shape != expected_shape or str(array.dtype) != expected_dtype:
+            raise RuntimeError(f'Formato inesperado no conjunto de features: {name}')
+        feature_info[name] = {'bytes': expected_bytes, 'shape': list(array.shape), 'dtype': str(array.dtype)}
+    manifest = {'fundos': len(paths), 'rir': len(list((Path(rir) / '16khz').glob('*.wav'))),
+                'audioset_revision': AUDIOSET_REV, 'mit_revision': MIT_REV,
+                'features_revision': FEATURES_REV, 'features': feature_info}
+    (WORK / 'dados-prontos.json').write_text(json.dumps(manifest, indent=2))
     print('Dados prontos para o treinamento.')
 
 
 def train(phrase, examples, steps):
     import yaml
     import onnxruntime as ort
+    import torch
     preview_state = json.loads((WORK / 'previa.json').read_text())
     if preview_state['frase'] != phrase:
         raise RuntimeError('A frase mudou. Gere e ouça a nova prévia primeiro.')
@@ -230,6 +260,8 @@ def train(phrase, examples, steps):
                   background_paths=[str(WORK / 'dados/fundos_16k')], background_paths_duplication_rate=[1],
                   false_positive_validation_data_path=str(WORK / 'dados/validation_set_features.npy'),
                   feature_data_files={'ACAV100M_sample': str(WORK / 'dados/openwakeword_features_ACAV100M_2000_hrs_16bit.npy')})
+    if not torch.cuda.is_available():
+        config.update(tts_batch_size=14, augmentation_batch_size=8)
     config_path = output / 'config.yml'
     config_path.write_text(yaml.safe_dump(config), encoding='utf-8')
     training_script = prepare_training_script()
@@ -242,6 +274,7 @@ def train(phrase, examples, steps):
     manifest = {'modelo': str(model), 'frase': phrase, 'exemplos': examples, 'passos': steps,
                 'sha256': hashlib.sha256(model.read_bytes()).hexdigest(), 'openwakeword_commit': OWW_REV,
                 'script_treino_sha256': hashlib.sha256(training_script.read_bytes()).hexdigest(),
+                'dados': json.loads((WORK / 'dados-prontos.json').read_text()),
                 'validacao': 'Exportação técnica. Reconhecimento da voz real ainda não avaliado.'}
     (WORK / 'ultimo_modelo.json').write_text(json.dumps(manifest, indent=2))
     print(f'Modelo exportado: {model}. Agora teste sua pronúncia no PC.')

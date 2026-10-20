@@ -1,0 +1,104 @@
+name: Treinar wake word de ponta a ponta
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/wakeword/**'
+      - '.github/workflows/wakeword-treino-completo.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wakeword-treino-completo-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  treino-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONUNBUFFERED: '1'
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Definir workspace temporario e verificar disco
+        shell: bash
+        run: |
+          echo "OLLIE_WAKEWORD_WORK=$RUNNER_TEMP/ollie-wakeword" >> "$GITHUB_ENV"
+          df -h "$RUNNER_TEMP"
+          python - <<'PY'
+          import os, shutil
+          free = shutil.disk_usage(os.environ['RUNNER_TEMP']).free
+          if free < 28_000_000_000:
+              raise RuntimeError(f'Workspace precisa de 28 GB livres; disponivel: {free / 1e9:.1f} GB')
+          PY
+      - name: 1 - Preparar ambiente e conferir imports
+        shell: bash
+        run: |
+          mkdir -p "$OLLIE_WAKEWORD_WORK"
+          cp tools/wakeword/requirements-treino.txt "$OLLIE_WAKEWORD_WORK/requirements-treino.txt"
+          python tools/wakeword/colab_ollie.py preparar --workspace "$OLLIE_WAKEWORD_WORK" --cpu
+      - name: 2 - Gerar previa hey ollie
+        run: python tools/wakeword/colab_ollie.py previa --workspace "$OLLIE_WAKEWORD_WORK" --frase 'hey ollie'
+      - name: 3 - Preparar todos os dados reais
+        run: python tools/wakeword/colab_ollie.py dados --workspace "$OLLIE_WAKEWORD_WORK"
+      - name: 4 - Gerar positivos e adversariais, aumentar e treinar
+        run: python tools/wakeword/colab_ollie.py treinar --workspace "$OLLIE_WAKEWORD_WORK" --frase 'hey ollie' --exemplos 1000 --passos 10000
+      - name: 5 - Conferir exportacao e registrar resultado
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, shutil
+          from pathlib import Path
+          import numpy as np
+          import onnx
+          import onnxruntime as ort
+          root = Path(os.environ['OLLIE_WAKEWORD_WORK'])
+          report = json.loads((root / 'ultimo_modelo.json').read_text())
+          model = Path(report['modelo'])
+          onnx.checker.check_model(onnx.load(str(model)))
+          session = ort.InferenceSession(str(model), providers=['CPUExecutionProvider'])
+          shape = session.get_inputs()[0].shape
+          input_shape = [1 if isinstance(n, str) or n is None else n for n in shape]
+          prediction = session.run(None, {session.get_inputs()[0].name: np.zeros(input_shape, dtype=np.float32)})[0]
+          assert np.isfinite(prediction).all()
+          assert hashlib.sha256(model.read_bytes()).hexdigest() == report['sha256']
+          report['verificacao_exportacao'] = {'onnx_checker': 'ok', 'inferencia_ort': prediction.tolist(), 'bytes': model.stat().st_size}
+          output = root / 'exportacao'
+          output.mkdir()
+          shutil.copy2(model, output / model.name)
+          shutil.copy2(root / 'dados-prontos.json', output / 'dados-prontos.json')
+          preview = json.loads((root / 'previa.json').read_text())
+          shutil.copy2(preview['audio'], output / 'chamada.wav')
+          (output / 'relatorio.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
+          rendered = json.dumps(report, ensure_ascii=False, indent=2)
+          print('OLLIE_TREINO_COMPLETO_INICIO')
+          print(rendered)
+          print('OLLIE_TREINO_COMPLETO_FIM')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('## Treino completo real\n\n```json\n' + rendered + '\n```\n')
+          PY
+      - name: Guardar modelo, previa e relatorio
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hey-ollie-treino-completo
+          path: ${{ env.OLLIE_WAKEWORD_WORK }}/exportacao/
+          retention-days: 3
+          if-no-files-found: error
+      - name: Guardar logs se alguma etapa falhar
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: logs-treino-completo
+          path: ${{ env.OLLIE_WAKEWORD_WORK }}/logs/
+          retention-days: 1
