@@ -82,7 +82,7 @@ def test_temporal_deduplica_abas_e_usa_horario_local():
     assert _get_time_slot(AGORA.replace(hour=1)) == "NOITE"
 
 
-async def test_descoberta_usa_historico_persistido_e_respeita_rejeicao(banco_teste, tmp_path):
+async def test_descoberta_usa_historico_persistido_e_respeita_rejeicao(banco_teste, catalogo_teste):
     from banco.models import EventoEpisodicoDB
     agora = datetime.now(timezone.utc)
     async with banco_teste() as session:
@@ -91,11 +91,13 @@ async def test_descoberta_usa_historico_persistido_e_respeita_rejeicao(banco_tes
                                         tipo=e.tipo, origem=e.origem, payload=e.payload))
         await session.commit()
     servico = RoutineDiscoveryService()
-    servico.routines_path = str(tmp_path / "active.json")
-    servico.rejected_path = str(tmp_path / "rejected.json")
+    servico.catalogo = catalogo_teste
     sugestoes = await servico.discover_suggestions()
     assert any(s["conteudo"]["skill_id"] == "automacao_cross" for s in sugestoes)
-    salvar_json(servico.rejected_path, [s["conteudo"] for s in sugestoes])
+    materializadas = [await RoutineGeneratorService()._materialize_routine(s["conteudo"]) for s in sugestoes]
+    await catalogo_teste.adicionar_sugestoes(materializadas)
+    for rotina in await catalogo_teste.listar("descobertas"):
+        await catalogo_teste.rejeitar(rotina["nome"])
     assert await servico.discover_suggestions() == []
 
 
@@ -132,21 +134,15 @@ async def test_materializacao_preserva_caminho_com_dois_pontos_e_evidencia():
     assert rotina["evidencia"]["dias_distintos"] == 6 and rotina["ativa"] is False
 
 
-async def test_aprovacao_recarrega_executor_sem_reiniciar_e_sem_duplicar(tmp_path, monkeypatch):
+async def test_aprovacao_recarrega_executor_sem_reiniciar_e_sem_duplicar(catalogo_teste, monkeypatch):
     import api.router_capabilities as api
     import agentes.agente_rotina as modulo
-    caminho = str(tmp_path / "rotinas.json")
-    pendentes = str(tmp_path / "pendentes.json")
-    monkeypatch.setattr(api, "ROUTINES_PATH", caminho)
-    monkeypatch.setattr(api, "DISCOVERED_PATH", pendentes)
-    monkeypatch.setattr(modulo, "ACTIVE_PATH", caminho)
     publicar = AsyncMock()
     monkeypatch.setattr(modulo.kernel, "publicar", publicar)
-    salvar_json(caminho, [])
     rotina = {"nome": "Agenda", "ativa": False, "gatilho": {"tipo": "APP_OPENED", "pacote": "com.trabalho"},
               "acoes": [{"alvo": "IA", "comando": "NOTIFICAR", "parametro": "Abrir agenda?"}],
               "justificativa": "Uso observado", "evidencia": {"dias_distintos": 6}}
-    salvar_json(pendentes, [rotina])
+    await catalogo_teste.adicionar_sugestoes([rotina])
     agente = AgenteRotina()
     await agente.processar(evento())
     publicar.assert_not_awaited()
@@ -154,7 +150,7 @@ async def test_aprovacao_recarrega_executor_sem_reiniciar_e_sem_duplicar(tmp_pat
     await asyncio.gather(*(agente.processar(evento()) for _ in range(5)))
     publicar.assert_awaited_once()
     assert agente.routines[0]["justificativa"] == "Uso observado"
-    salvar_json(caminho, [])
+    await api.delete_routine(req=api.RoutineNameRequest(nome="Agenda"))
     await agente.processar(evento())
     assert agente.routines == []
 
@@ -241,48 +237,40 @@ async def test_foco_nao_abre_app_por_associacao_antiga_nem_inventa_musica(monkey
     publicar.assert_not_awaited()
 
 
-async def test_geracao_concorrente_nao_duplica_sugestoes(tmp_path, monkeypatch):
+async def test_geracao_concorrente_nao_duplica_sugestoes(catalogo_teste, monkeypatch):
     import servicos.routine_generator_service as modulo
     servico = RoutineGeneratorService()
-    servico.active_path = str(tmp_path / "ativas.json")
-    servico.discovered_path = str(tmp_path / "pendentes.json")
-    servico.rejected_path = str(tmp_path / "rejeitadas.json")
+    servico.catalogo = catalogo_teste
     sugestoes = RoutineDiscoveryService().analisar(historico(pc=True), agora=AGORA)
     monkeypatch.setattr(modulo.routine_discovery_service, "discover_suggestions", AsyncMock(return_value=sugestoes))
     quantidades = await asyncio.gather(servico.run_batch_generation(), servico.run_batch_generation())
     assert quantidades == [len(sugestoes), 0]
-    salvas = json.loads((tmp_path / "pendentes.json").read_text(encoding="utf-8"))
+    salvas = await catalogo_teste.listar("descobertas")
     assert len(salvas) == len(sugestoes)
     assert all(not r["ativa"] for r in salvas)
 
 
-async def test_rejeitar_impede_regeneracao(tmp_path, monkeypatch):
+async def test_rejeitar_impede_regeneracao(catalogo_teste):
     import api.router_capabilities as api
-    caminho = str(tmp_path / "pendentes.json")
-    rejeitadas = str(tmp_path / "rejeitadas.json")
-    monkeypatch.setattr(api, "DISCOVERED_PATH", caminho)
-    monkeypatch.setattr(api, "REJECTED_PATH", rejeitadas)
-    salvar_json(caminho, [{"nome": "Minha sugestão"}])
-    await api.reject_routine(req=api.RoutineNameRequest(nome="Minha sugestão"))
+    rotina = {"nome": "Minha sugestao", "gatilho": {"tipo": "APP_OPENED", "pacote": "com.a"},
+              "acoes": [{"alvo": "IA", "comando": "NOTIFICAR", "parametro": "Agenda?"}]}
+    await catalogo_teste.adicionar_sugestoes([rotina])
+    await api.reject_routine(req=api.RoutineNameRequest(nome="Minha sugestao"))
     servico = RoutineGeneratorService()
-    servico.active_path = str(tmp_path / "ativas.json")
-    servico.discovered_path = caminho
-    servico.rejected_path = rejeitadas
-    assert "minha sugestão" in servico._get_all_existing_names()
+    servico.catalogo = catalogo_teste
+    assert "minha sugestao" in await servico._get_all_existing_names()
     assert await api.list_discovered() == []
 
 
-async def test_rotina_pc_aprovada_emite_comando_uma_vez_e_ignora_replay(tmp_path, monkeypatch):
+async def test_rotina_pc_aprovada_emite_comando_uma_vez_e_ignora_replay(catalogo_teste, monkeypatch):
     import agentes.agente_rotina as modulo
     from api.websocket import central_alertas
-    caminho = str(tmp_path / "ativas.json")
-    monkeypatch.setattr(modulo, "ACTIVE_PATH", caminho)
     monkeypatch.setattr(central_alertas, "pc_master", object())
     publicar = AsyncMock()
     monkeypatch.setattr(modulo.kernel, "publicar", publicar)
-    salvar_json(caminho, [{"nome": "Editor", "ativa": True, "uma_vez_por_dia": True,
+    await catalogo_teste.adicionar({"nome": "Editor", "ativa": True, "uma_vez_por_dia": True,
         "gatilho": {"tipo": "TIME_RANGE", "inicio": "00:00", "fim": "23:59", "evento": "PC_ACTIVITY"},
-        "acoes": [{"alvo": "PC", "comando": "abrir_app", "parametro": "code.exe"}]}])
+        "acoes": [{"alvo": "PC", "comando": "abrir_app", "parametro": "code.exe"}]})
     agente = AgenteRotina()
     ts = datetime.now(timezone.utc)
     await agente.processar(evento(CategoriaEvento.PC_ACTIVITY, timestamp=ts - timedelta(hours=1), payload={"processo": "chrome.exe"}))

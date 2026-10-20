@@ -1,0 +1,31 @@
+# TRECHO para acrescentar à lista binary_sensor existente, não um firmware completo.
+# GPIO25/GPIO26 são sugestões: confirme a ligação dos DOIS TTP223 novos antes de gravar.
+# Preserve GPIO4 (relé), GPIO13 (vidro PC) e GPIO14 (mídia).
+binary_sensor:
+  - platform: gpio
+    pin: GPIO25
+    name: "Botão Ollie"
+    id: botao_ollie
+    filters:
+      - delayed_on_off: 20ms
+    on_press:
+      - homeassistant.event:
+          event: esphome.ollie_botao
+          data:
+            dispositivo: esphome-web-903934
+            botao: ollie
+            gesto: toque
+
+  - platform: gpio
+    pin: GPIO26
+    name: "Botão Cenários"
+    id: botao_cenarios
+    filters:
+      - delayed_on_off: 20ms
+    on_press:
+      - homeassistant.event:
+          event: esphome.ollie_botao
+          data:
+            dispositivo: esphome-web-903934
+            botao: cenarios
+            gesto: toque

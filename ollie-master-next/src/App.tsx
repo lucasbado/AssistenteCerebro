@@ -35,6 +35,8 @@ interface HardwareUpdate {
   cpu: number;
   ram: number;
   processes: any[];
+  audio_state: Record<string, unknown>;
+  mic_mute: number;
 }
 
 interface WindowUpdate {
@@ -92,6 +94,11 @@ export default function App() {
   const policyRef = useRef(policy);
   policyRef.current = policy;
   const reconnectRef = useRef<() => void>(() => {});
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const commandResultsRef = useRef(new Map<string, 'executando' | 'concluido' | 'erro'>());
+  const scenarioBusyRef = useRef(false);
+  const lastCommandRef = useRef<{ id: string; comando: string; status: string } | null>(null);
+  const houseResultsRef = useRef(new Map<string, { entity_id: string; state: string }>());
 
   const [discoveredRoutines, setDiscoveredRoutines] = useState<any[]>([]);
 
@@ -176,23 +183,72 @@ export default function App() {
     setLogs(prev => [...prev.slice(-99), { t: new Date().toLocaleTimeString(), m, c }]);
   };
 
-  const handleCommand = async (data: any) => {
+  const handleCommand = async (data: any, socket?: WebSocket | null) => {
+    const id = String(data.id_comando || '');
+    const previous = id ? commandResultsRef.current.get(id) : undefined;
+    const finish = (status: 'concluido' | 'erro') => {
+      if (id) {
+        lastCommandRef.current = { id, comando: String(data.comando || data.acao || ''), status };
+        commandResultsRef.current.set(id, status);
+        if (commandResultsRef.current.size > 200) {
+          commandResultsRef.current.delete(commandResultsRef.current.keys().next().value!);
+        }
+        if (socket?.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ tipo_ws: 'COMANDO_RESULTADO', id_comando: id, status,
+            resultado: houseResultsRef.current.get(id) }));
+        }
+      }
+    };
+    if (previous) {
+      if (previous !== 'executando') finish(previous);
+      return;
+    }
+    if (id) commandResultsRef.current.set(id, 'executando');
     try {
       const cmd = data.comando || data.acao || 'CUSTOM';
-      const param = String(data.url ?? data.parametro ?? data.app ?? data.query ?? data.macro ?? data.valor ?? "");
+      let param = String(data.url ?? data.parametro ?? data.app ?? data.query ?? data.macro ?? data.valor ?? "");
+      if (cmd === 'volume_canal' && data.canal != null) {
+        param = `${data.canal},${data.valor ?? data.parametro ?? ''}`;
+      }
 
       // 🛡️ CHECK INTERVENTION POLICY (Super Poderes / Auto-Open)
       if (data.origem === "IA" && !policyRef.current.auto_open_enabled && (cmd === "open_url" || cmd === "abrir_url" || cmd === "abrir_app" || cmd === "abrir_programa")) {
         addLog(`🛡️ Intervention blocked by policy (Auto-Open OFF): ${cmd} (${param})`, "text-neon-orange");
+        finish('erro');
         return;
       }
 
       addLog(`⚡ Executing local PC command: ${cmd} (${param})`, "text-neon-cyan");
 
-      await invoke("execute_pc_command", { comando: cmd, parametro: param });
+      if (cmd === 'wake_ollie') {
+        await invoke('activate_window');
+        chatInputRef.current?.focus();
+        setMood('idle');
+        addLog('Ollie pronta. Digite seu comando.', 'text-neon-cyan');
+      } else if (cmd === 'executar_cenario') {
+        if (scenarioBusyRef.current) throw new Error('Já há um cenário em execução.');
+        scenarioBusyRef.current = true;
+        try {
+          await invoke('execute_pc_command', { comando: cmd, parametro: param });
+        } finally {
+          scenarioBusyRef.current = false;
+        }
+      } else {
+        const raw = await invoke<string>("execute_pc_command", { comando: cmd, parametro: param });
+        if (cmd === 'casa_acao') {
+          const result = JSON.parse(raw);
+          if (typeof result.entity_id !== 'string' || !['on', 'off'].includes(result.state)) {
+            throw new Error('O Home Assistant não confirmou o estado da luz.');
+          }
+          if (houseResultsRef.current.size >= 200) houseResultsRef.current.clear();
+          houseResultsRef.current.set(id, { entity_id: result.entity_id, state: result.state });
+        }
+      }
       addLog(`✅ Executed successfully: ${cmd}`, "text-neon-cyan");
+      finish('concluido');
     } catch (err) {
       addLog(`Execution Error: ${err}`, "text-red-400");
+      finish('erro');
     }
   };
 
@@ -247,7 +303,10 @@ export default function App() {
             cpu: event.payload.cpu,
             ram: event.payload.ram,
             online: true,
-            processes: event.payload.processes
+            processes: event.payload.processes,
+            audio_state: event.payload.audio_state,
+            mic_mute: event.payload.mic_mute,
+            ultimo_comando: lastCommandRef.current
           }
         }));
       }
@@ -292,7 +351,7 @@ export default function App() {
           if (!isComponentMounted) { ws.close(); return; }
           setIsConnected(true);
           addLog("📡 Sincronização com Cloud concluída.", "text-neon-cyan");
-          ws.send(JSON.stringify({ tipo_ws: "REGISTRO", id: "PC_MASTER" }));
+          ws.send(JSON.stringify({ tipo_ws: "REGISTRO", id: "PC_MASTER", capacidades: ["CASA"] }));
         };
 
         ws.onmessage = (event) => {
@@ -302,12 +361,12 @@ export default function App() {
 
           if (data.tipo_ws === "CHAT_RESPONSE") {
             addLog(`🤖 OLLIE: ${data.texto}`, "text-neon-purple text-[13px] font-bold");
-            setMood("thinking");
+            setMood("idle");
           }
 
-          if (data.comando) {
+          if (data.comando && data.tipo_ws !== 'COMANDO_ACEITO') {
             addLog(`⚡ EXEC_CMD: ${data.comando.toUpperCase()}`, "text-neon-cyan");
-            handleCommand(data);
+            void handleCommand(data, ws);
           }
 
           if (data.mood) setMood(data.mood);
@@ -559,6 +618,7 @@ export default function App() {
               <input
                 className="flex-1 bg-transparent border-none outline-none px-4 py-2 text-sm font-mono placeholder:text-gray-600"
                 placeholder="Neural Interface: Type command..."
+                ref={chatInputRef}
                 value={chatText}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && sendChat()}

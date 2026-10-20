@@ -1,5 +1,10 @@
 # Revisão de rotinas, abertura de apps e notificações
 
+Esta é a revisão da primeira etapa. O gerenciamento e a persistência em arquivos
+descritos abaixo foram substituídos pelo catálogo transacional da revisão de
+[Superpoderes e rotinas](superpoderes-rotinas.md), que também documenta a migração
+e o deploy manual ainda necessário no Render.
+
 Revisão de 19/10/2026. O foco foi o caminho sensor → aprendizado → descoberta →
 aprovação → execução → notificação e sua apresentação na timeline. Não foi uma
 auditoria completa de segurança nem uma validação no Android.

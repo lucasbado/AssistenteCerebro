@@ -1,0 +1,7 @@
+{
+  "luz_quarto": {
+    "nome": "luz do quarto",
+    "entity_id": "light.yeelink_color5_027d_light",
+    "apelidos": ["luz", "luzes", "lampada", "lampadas", "luzinha", "iluminacao", "quarto", "luz do quarto", "luzes do quarto", "lampada do quarto", "iluminacao do quarto"]
+  }
+}

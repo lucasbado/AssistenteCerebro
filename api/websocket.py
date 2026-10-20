@@ -4,8 +4,11 @@ api/websocket.py
 import logging
 import json
 import asyncio
+import time
+import uuid
 from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from servicos.confirmacao_pc import ConfirmacoesPC
 
 logger = logging.getLogger("WebSocket")
 router = APIRouter()
@@ -16,6 +19,64 @@ class GerenciadorNotificacoes:
         self._buffer_mensagens: list[dict] = []
         self.pc_master: WebSocket = None # Referência para o PC ligado
         self.mobile_client: WebSocket = None
+        self.confirmacoes = ConfirmacoesPC()
+        self._ultimo_status_pc = None
+        self._capacidades = {}
+        self._pedidos_casa = {}
+
+    async def executar_casa(self, identificador, acao, entity_id, timeout=20):
+        if len(self._pedidos_casa) >= 32:
+            return {"status": "ocupado"}
+        ponte = next((ws for ws in (self.pc_master, self.mobile_client) if ws is not None
+                      and ws.client_state.value == 1 and "CASA" in self._capacidades.get(ws, set())), None)
+        if ponte is None:
+            return {"status": "sem_ponte"}
+        futuro = asyncio.get_running_loop().create_future()
+        self._pedidos_casa[identificador] = (ponte, entity_id, futuro)
+        if ponte is self.pc_master:
+            msg = {"tipo_ws": "COMANDO_PC", "comando": "casa_acao", "id_comando": identificador,
+                   "parametro": json.dumps({"acao": acao, "entity_id": entity_id})}
+        else:
+            msg = {"tipo_ws": "COMANDO_CASA", "id_comando": identificador,
+                   "acao": acao, "entity_id": entity_id}
+        try:
+            if not await self._enviar_direto(ponte, msg):
+                return {"status": "sem_confirmacao"}
+            return await asyncio.wait_for(futuro, timeout)
+        except asyncio.TimeoutError:
+            return {"status": "sem_confirmacao"}
+        finally:
+            self._pedidos_casa.pop(identificador, None)
+
+    def confirmar_casa(self, websocket, msg):
+        pedido = self._pedidos_casa.get(str(msg.get("id_comando", "")))
+        if pedido is None or pedido[0] is not websocket or pedido[2].done():
+            return
+        resultado = msg.get("resultado")
+        valido = (isinstance(resultado, dict) and resultado.get("entity_id") == pedido[1]
+                  and resultado.get("state") in {"on", "off"} and msg.get("status") == "concluido")
+        pedido[2].set_result({"status": "concluido" if valido else "erro",
+                              "resultado": {"entity_id": pedido[1], "state": resultado["state"]} if valido else {}})
+
+    def estado_conexoes(self):
+        def conectado(ws):
+            return ws is not None and ws.client_state.value == 1
+        return {"pc": {"conectado": conectado(self.pc_master),
+                       "segundos_sem_status": None if self._ultimo_status_pc is None else
+                       round(time.monotonic() - self._ultimo_status_pc, 1)},
+                "mobile": {"conectado": conectado(self.mobile_client)}}
+
+    async def enviar_comando_pc(self, mensagem):
+        msg = dict(mensagem)
+        identificador = str(msg.get("id_comando") or uuid.uuid4())
+        if len(identificador) > 128:
+            raise ValueError("Identificador de comando inválido")
+        if not self.confirmacoes.registrar(identificador, str(msg.get("comando", ""))):
+            return self.confirmacoes.consultar(identificador)
+        msg.update(tipo_ws="COMANDO_PC", id_comando=identificador)
+        if not self.pc_master or not await self._enviar_direto(self.pc_master, msg):
+            self.confirmacoes.atualizar(identificador, "pc_offline")
+        return self.confirmacoes.consultar(identificador)
 
     async def conectar(self, websocket: WebSocket):
         protocolos = websocket.headers.get("sec-websocket-protocol", "").split(",")
@@ -33,10 +94,15 @@ class GerenciadorNotificacoes:
         except: pass
 
     def desconectar(self, websocket: WebSocket):
+        self._capacidades.pop(websocket, None)
+        for ponte, _, futuro in tuple(self._pedidos_casa.values()):
+            if ponte is websocket and not futuro.done():
+                futuro.set_result({"status": "sem_confirmacao"})
         if websocket in self.conexoes_ativas:
             self.conexoes_ativas.remove(websocket)
         if self.pc_master == websocket:
             self.pc_master = None
+            self._ultimo_status_pc = None
             logger.warning("🔌 [WS] PC Master desconectado.")
         if self.mobile_client == websocket:
             self.mobile_client = None
@@ -85,6 +151,12 @@ class GerenciadorNotificacoes:
             dados_para_envio['timestamp'] = ts.isoformat() if isinstance(ts, datetime) else str(ts)
         dados_para_envio['correlacao_id'] = str(payload.get('correlacao_id', ''))
         dados_para_envio['id'] = str(payload.get('id', ''))
+
+        # Respostas do chat do desktop voltam ao desktop, mesmo com celular conectado.
+        if tipo_ws == "CHAT_RESPONSE" and str(payload.get("pacote", "")).startswith("pc."):
+            if self.pc_master:
+                return await self._enviar_direto(self.pc_master, dados_para_envio)
+            return False
 
         # ROTEAMENTO RESTRITO:
         # 1. MOBILE: Prioridade para comandos de sistema/luz e chat
@@ -183,11 +255,18 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 # Roteamento de comandos entre dispositivos (Relé)
                 if tipo == "COMANDO_PC" or msg.get("destino") == "PC_MASTER":
-                    if central_alertas.pc_master:
-                        logger.info(f"⚡ [WS RELAY] Encaminhando comando para PC Master: {msg.get('comando')}")
-                        await central_alertas._enviar_direto(central_alertas.pc_master, msg)
-                    else:
-                        logger.warning("⚠️ [WS RELAY] Comando para PC recebido, mas PC Master está offline.")
+                    resultado = await central_alertas.enviar_comando_pc(msg)
+                    await websocket.send_json({"tipo_ws": "COMANDO_ACEITO", **resultado})
+
+                elif tipo == "COMANDO_RESULTADO":
+                    # Somente o PC registrado pode confirmar uma execução local.
+                    if websocket is central_alertas.pc_master:
+                        central_alertas.confirmacoes.atualizar(str(msg.get("id_comando", "")),
+                                                               msg.get("status"))
+                        central_alertas.confirmar_casa(websocket, msg)
+
+                elif tipo == "CASA_RESULTADO":
+                    central_alertas.confirmar_casa(websocket, msg)
                 
                 elif msg.get("destino") == "MOBILE":
                     if central_alertas.mobile_client:
@@ -198,6 +277,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 elif tipo == "REGISTRO":
                     cliente_id = msg.get("id")
+                    capacidades = msg.get("capacidades", [])
+                    if cliente_id in {"PC_MASTER", "MOBILE"}:
+                        central_alertas._capacidades[websocket] = {"CASA"} if isinstance(capacidades, list) and "CASA" in capacidades else set()
                     if cliente_id == "PC_MASTER":
                         # 🛡️ ANTI-DUPLICIDADE: Se for a mesma conexão, ignora. 
                         # Se for nova, substitui a antiga para garantir que o link master seja único.
@@ -252,6 +334,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         acao=TipoAcao.NORMAL,
                         origem=OrigemEvento.USUARIO,
                         pacote=msg.get("pacote", "com.example.assistentecell"),
+                        **({"correlacao_id": msg["correlacao_id"]} if isinstance(msg.get("correlacao_id"), str) and 0 < len(msg["correlacao_id"]) <= 128 else {}),
                         prioridade=PrioridadeEvento.ALTA,
                         payload={"texto": msg.get("texto")}
                     ))
@@ -273,6 +356,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     if not central_alertas.pc_master:
                         central_alertas.pc_master = websocket
                         logger.info("🖥️ [WS] PC Master auto-registrado via Status.")
+                    if websocket is not central_alertas.pc_master:
+                        continue
+                    central_alertas._ultimo_status_pc = time.monotonic()
                     
                     # 🧠 CONSCIÊNCIA: Atualiza a consciência situacional com os dados do PC
                     from servicos.consciencia import consciencia
@@ -282,6 +368,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             "is_online": stats.get("online", True),
                             "cpu": stats.get("cpu", 0),
                             "ram": stats.get("ram", 0),
+                            "audio_state": stats.get("audio_state", {}),
+                            "mic_mute": stats.get("mic_mute"),
                             "apps_disponiveis": stats.get("apps_disponiveis", [])
                         }
                     })

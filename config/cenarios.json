@@ -1,0 +1,6 @@
+{
+  "diagnostico": {
+    "ativo": true,
+    "passos": [{"comando": "python", "script": "diagnostico.py", "timeout_segundos": 10}]
+  }
+}

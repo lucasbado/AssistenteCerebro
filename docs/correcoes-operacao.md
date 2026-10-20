@@ -56,6 +56,41 @@ evento. O kernel respeita a prioridade definida pelo produtor, limita eventos
 concorrentes e contabiliza erros dos listeners separadamente. O encerramento
 cancela e aguarda as tarefas antes de fechar o banco.
 
+## Modelos da Groq e respostas do chat
+
+O backend começa por `openai/gpt-oss-120b`, com fallback para
+`openai/gpt-oss-20b`. Os modelos Llama antigos deixaram de estar disponíveis para
+planos free/developer em 16/08/2026, conforme o
+[aviso oficial da Groq](https://console.groq.com/docs/deprecations).
+
+Para escolher a ordem no ambiente do Render, configure opcionalmente:
+
+```dotenv
+GROQ_MODEL=openai/gpt-oss-120b
+GROQ_FALLBACK_MODELS=openai/gpt-oss-20b
+```
+
+O segundo campo aceita modelos separados por vírgula. Vazio desativa fallbacks.
+Os valores padrão já são usados quando essas variáveis não existem. Não altere
+`GROQ_API_KEY` nem `OLLIE_API_TOKEN` para resolver um `model_not_found`.
+
+Erros 404/modelo indisponível não são repetidos sem `response_format`; o modelo
+fica fora das tentativas por uma hora naquela instância. Só uma recusa explícita
+do formato `json_object` permite nova tentativa sem esse parâmetro, mantendo a
+instrução JSON no prompt. Erros de chave/autenticação não percorrem a lista inteira.
+Retentativas automáticas do SDK foram desativadas para não multiplicar a cadeia.
+
+O chat Android agora usa `RetrofitClient.backendHttpClient`, assim como os sensores
+e o WebSocket. Antes, seu cliente separado não enviava o token em `POST /eventos`,
+mesmo quando o listener já estava conectado. A interface passa a diferenciar
+mensagem aceita de respostas 401/403 e outros erros HTTP, encerrando o indicador
+de espera na recusa. O envio inclui um pacote de chat e usa a URL atual do servidor.
+
+Foram executados 52 testes Python e 13 testes unitários Android. Os testes de
+modelos simulam a Groq; não fizeram inferências pagas nem comprovam disponibilidade
+futura de um modelo na conta. O APK corrigido foi compilado e atualizado no celular
+conectado. A mudança de modelos precisa de um novo deploy do backend no Render.
+
 ## Verificação local
 
 ```powershell

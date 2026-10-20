@@ -4,6 +4,14 @@ from datetime import datetime, timezone
 
 Base = declarative_base()
 
+
+class CatalogoRotinasDB(Base):
+    """Estado persistente das sugestões, aprovações e rejeições do usuário."""
+    __tablename__ = "catalogo_rotinas"
+    id = Column(Integer, primary_key=True)
+    versao = Column(Integer, nullable=False, default=1)
+    dados = Column(JSON, nullable=False)
+
 class EventoEpisodicoDB(Base):
     """
     MEMÓRIA EPISÓDICA (O histórico permanente do cérebro).

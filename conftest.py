@@ -21,3 +21,19 @@ async def banco_teste(tmp_path, monkeypatch):
         yield factory
     finally:
         await engine.dispose()
+
+
+@pytest.fixture
+async def catalogo_teste(banco_teste, monkeypatch):
+    import servicos.catalogo_rotinas as modulo
+    from servicos.routine_discovery_service import routine_discovery_service
+    from servicos.routine_generator_service import routine_generator_service
+    from api import router_capabilities
+    from agentes import agente_rotina
+    catalogo = modulo.CatalogoRotinas(caminhos={})
+    monkeypatch.setattr(modulo, "AsyncSessionLocal", banco_teste)
+    monkeypatch.setattr(router_capabilities, "catalogo_rotinas", catalogo)
+    monkeypatch.setattr(agente_rotina, "catalogo_rotinas", catalogo)
+    monkeypatch.setattr(routine_discovery_service, "catalogo", catalogo)
+    monkeypatch.setattr(routine_generator_service, "catalogo", catalogo)
+    yield catalogo

@@ -1,0 +1,850 @@
+{
+  "versao": 1,
+  "exportado_em": "2026-10-20T03:12:42.019000+00:00",
+  "ativas": [
+    {
+      "nome": "Modo Trabalho Automático",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.microsoft.teams"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "voicemeeter",
+          "parametro": "Strip[0].Mute=1"
+        },
+        {
+          "alvo": "PC",
+          "comando": "abrir_app",
+          "parametro": "vscode"
+        },
+        {
+          "alvo": "MOBILE",
+          "comando": "SISTEMA_COMANDO",
+          "parametro": "ATIVAR_FOCO"
+        }
+      ],
+      "ativa": true
+    },
+    {
+      "nome": "Boas-vindas Manhã",
+      "gatilho": {
+        "tipo": "TIME_RANGE",
+        "inicio": "08:00",
+        "fim": "10:00",
+        "evento": "PC_LOGIN"
+      },
+      "acoes": [
+        {
+          "alvo": "IA",
+          "comando": "NOTIFICAR",
+          "parametro": "Bom dia! Seu PC está pronto. Deseja abrir sua agenda?"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Sincronização Ollie: Notepad",
+      "gatilho": {
+        "tipo": "PC_ACTIVITY",
+        "processo": "notepad.exe"
+      },
+      "acoes": [
+        {
+          "alvo": "IA",
+          "comando": "NOTIFICAR",
+          "parametro": "Notei que você abriu o Bloco de Notas. Precisa que eu salve algo na sua memória?"
+        }
+      ],
+      "ativa": true
+    },
+    {
+      "nome": "Nu2Insta",
+      "justificativa": "Abre o Instagram automaticamente após usar o Nu Production, facilitando a transição para redes sociais enquanto o usuário ainda está no celular.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": true
+    }
+  ],
+  "descobertas": [
+    {
+      "nome": "SketchBoost",
+      "justificativa": "Abre o Sketchbook automaticamente ao invocar o Google Assistente, facilitando a transição da busca criativa para o desenho",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launch_app",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome-Opera",
+      "justificativa": "Abre o Opera no PC sempre que o Chrome é iniciado no Android, facilitando a transição de navegação entre dispositivos",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "opera.exe",
+          "parametro": ""
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "SketchAssist",
+      "justificativa": "Ao abrir o Assistente Google, o usuário costuma iniciar o Sketchbook para rabiscar ideias rapidamente, facilitando a transição da busca à criação.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launch_app",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "AfterNuToInsta",
+      "justificativa": "Abre o Instagram automaticamente logo após usar o Nu Production, facilitando a transição para redes sociais",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome→Opera",
+      "justificativa": "Abre o Opera automaticamente logo após iniciar o Chrome, facilitando a transição entre navegadores.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "start",
+          "parametro": "opera.exe"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Desenho Instantâneo",
+      "justificativa": "Ao abrir o Google Assistente, o usuário costuma iniciar rapidamente o Sketchbook para rabiscar ideias; a rotina automatiza essa transição, economizando tempo.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launch_app",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "InstagrâMídia",
+      "justificativa": "Ao detectar que o usuário abre o Nu Production, abre automaticamente o Instagram para que ele possa compartilhar ou conferir conteúdo relacionado ao que acabou de produzir",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome2Opera",
+      "justificativa": "Ao abrir o Chrome no Android, costuma iniciar o Opera no PC para continuar a navegação sem interrupções",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "start",
+          "parametro": "opera.exe"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Desenho Instantâneo",
+      "justificativa": "Ao abrir o Google Assistente, costuma‑se buscar ideias rápidas; abrir o Sketchbook imediatamente facilita transformar a inspiração em esboço sem atrasos.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "ABRIR_APP",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome→Opera",
+      "justificativa": "Abre o Opera automaticamente logo após o Chrome, agilizando a troca de navegadores para tarefas específicas.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "run",
+          "parametro": "opera.exe"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "SketchBoost",
+      "justificativa": "Abre o Sketchbook imediatamente após usar o Google Assistente para facilitar a transição criativa",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launch_app",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "ProdInstante",
+      "justificativa": "Abre o Instagram logo após usar o Nu Production, facilitando acesso rápido ao conteúdo visual enquanto continua a produção",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome→Opera",
+      "justificativa": "Abre o Opera automaticamente logo após iniciar o Chrome, facilitando a transição entre navegadores para tarefas específicas ou para dividir sessões de trabalho",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "start",
+          "parametro": "opera.exe"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Desenho Instantâneo",
+      "justificativa": "Abre o Sketchbook logo após iniciar o Google Assistente, facilitando a captura rápida de ideias surgidas durante consultas de voz.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launch_app",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "ProdInstagr",
+      "justificativa": "Abre o Instagram logo após usar o Nu Production para facilitar a transição entre trabalho e lazer",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome→Opera",
+      "justificativa": "Detecta que ao abrir o Chrome o usuário costuma iniciar o Opera; automatiza a abertura para economizar tempo",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "start",
+          "parametro": "opera.exe"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Sketch após Assist",
+      "justificativa": "Abre o Sketchbook automaticamente logo depois de usar o Google Assistente, facilitando a continuação da criatividade",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launchApp",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "InstagraPost",
+      "justificativa": "Automatiza a abertura do Instagram logo após o Nu Production, economizando tempo e garantindo que o conteúdo seja postado rapidamente.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "open_app",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Abrir Opera Após Chrome",
+      "justificativa": "Automatiza a abertura do Opera sempre que o Chrome é iniciado, economizando tempo e mantendo o fluxo de trabalho.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "opera.exe",
+          "parametro": ""
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "SketchBoost",
+      "justificativa": "Abre o Sketchbook automaticamente ao invocar o Google Assistente, facilitando a transição criativa",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launch_app",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "ProdutorSocial",
+      "justificativa": "Ao detectar que o usuário abre o app Nu Production, abre automaticamente o Instagram para que ele possa compartilhar rapidamente o conteúdo produzido",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "ChromeToOpera",
+      "justificativa": "Automatiza a abertura do Opera sempre que o Chrome é iniciado, economizando tempo e mantendo o fluxo de trabalho.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "opera.exe",
+          "parametro": ""
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Sketch Rápido",
+      "justificativa": "Abre o Sketchbook automaticamente logo após iniciar o Google Assistente, facilitando a captura de ideias visuais surgidas durante a conversa.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launch_app",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "ProdutorSocial",
+      "justificativa": "Ao abrir o Nu Production, o usuário costuma buscar inspiração no Instagram; a rotina automatiza essa transição para otimizar o fluxo criativo.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome2Opera",
+      "justificativa": "Ao abrir o Chrome, costuma abrir o Opera para multitarefa ou teste de navegadores",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "EXECUTE",
+          "parametro": "opera.exe"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "SketchBoost",
+      "justificativa": "Abre o Sketchbook automaticamente após usar o Assistente Google, facilitando a transição da ideia para o desenho",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launch_app",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Produtor Insta",
+      "justificativa": "Ao abrir o Nu Production, costuma-se buscar inspiração no Instagram; abrir o Instagram automaticamente agiliza o fluxo criativo.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome→Opera",
+      "justificativa": "Abre o Opera automaticamente logo após iniciar o Chrome, facilitando a transição entre navegadores para tarefas específicas.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "run",
+          "parametro": "opera.exe"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Sketch após Busca",
+      "justificativa": "Abre o Sketchbook automaticamente quando o usuário finaliza a busca no Assistente Google, facilitando a transição criativa",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launch_app",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "InstagrâMente",
+      "justificativa": "Ao detectar que o usuário abre o Nu Production, abre automaticamente o Instagram para que ele continue navegando nas redes sociais sem precisar procurar o app novamente.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome→Opera Boost",
+      "justificativa": "Detecta a abertura do Chrome no Android e inicia o Opera no PC, automatizando o fluxo que costuma acontecer manualmente",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "run",
+          "parametro": "opera.exe"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Desenho Instantâneo",
+      "justificativa": "Abre o Sketchbook logo após iniciar o Google Assistente, facilitando a captura rápida de ideias visuais.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launch_app",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Produtor Insta",
+      "justificativa": "Ao abrir o Nu Production, costuma-se buscar inspiração visual no Instagram; a rotina automatiza essa transição para economizar tempo",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome→Opera",
+      "justificativa": "Abre o Opera automaticamente logo após iniciar o Chrome, facilitando a transição para tarefas que exigem esse navegador",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "C:\\Program Files\\Opera\\launcher.exe",
+          "parametro": ""
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Desenho Instantâneo",
+      "justificativa": "Ao abrir o Google Assistente costuma‑se buscar ideias ou referências; esta rotina inicia automaticamente o Sketchbook para que você registre rapidamente seus esboços criativos.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launch_app",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "AfterNuToInsta",
+      "justificativa": "Abre o Instagram automaticamente logo após usar o Nu Production, facilitando a transição para redes sociais",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome→Opera Sync",
+      "justificativa": "Detecta a abertura do Chrome no Android e inicia o Opera no PC para continuar a navegação sem interrupções.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "opera.exe",
+          "parametro": ""
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "SketchStart",
+      "justificativa": "Abre o Sketchbook logo após usar o Google Assistente para facilitar a transição criativa",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "launch_app",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome to Opera Switch",
+      "justificativa": "Ao abrir o Chrome, a rotina inicia automaticamente o Opera no PC, permitindo alternar rapidamente entre navegadores e otimizar o fluxo de trabalho.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "start",
+          "parametro": "opera.exe"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "SketchAssist",
+      "justificativa": "Ao abrir o Google Assistente, o usuário costuma iniciar rapidamente o Sketchbook para esboçar ideias; a rotina automatiza essa transição.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "LAUNCH_APP",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Produtor Insta",
+      "justificativa": "Ao abrir o Nu Production, abre Instagram para compartilhar rapidamente o conteúdo.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome→Opera",
+      "justificativa": "Ao abrir o Chrome no Android, o usuário costuma iniciar o Opera no PC para comparar navegadores, então a rotina automatiza a abertura do opera.exe",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "start",
+          "parametro": "opera.exe"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Desenho Instantâneo",
+      "justificativa": "Ao abrir o Google Assistente, o usuário costuma iniciar rapidamente o Sketchbook para rabiscar ideias; a rotina automatiza essa transição, economizando tempo.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "LAUNCH_APP",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Produtor InstaBoost",
+      "justificativa": "Ao abrir o Nu Production, costuma-se buscar inspiração no Instagram; a rotina abre o Instagram automaticamente para facilitar o fluxo criativo.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "Chrome2Opera",
+      "justificativa": "Ao detectar a abertura do Chrome no Android, a rotina inicia automaticamente o Opera no PC, facilitando a transição de navegação entre dispositivos sem interrupções",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "EXECUTE",
+          "parametro": "opera.exe"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "SketchAssist",
+      "justificativa": "Ao abrir o Google Assistente, costuma-se buscar inspiração ou referências que são rapidamente esboçadas no Sketchbook. Esta rotina automatiza a transição, economizando tempo e mantendo o fluxo criativo.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.google.android.googlequicksearchbox"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.adsk.sketchbook"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "AfterNuToInsta",
+      "justificativa": "Abre o Instagram imediatamente após o usuário encerrar o Nu Production, facilitando o compartilhamento de conteúdo ou navegação rápida entre os apps que costuma usar em sequência.",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.nu.production"
+      },
+      "acoes": [
+        {
+          "alvo": "MOBILE",
+          "comando": "OPEN_APP",
+          "parametro": "com.instagram.android"
+        }
+      ],
+      "ativa": false
+    },
+    {
+      "nome": "ChromeParaOpera",
+      "justificativa": "Detecta a abertura do Chrome no Android e inicia o Opera no PC, automatizando a sequência habitual de uso dos navegadores",
+      "gatilho": {
+        "tipo": "APP_OPENED",
+        "pacote": "com.android.chrome"
+      },
+      "acoes": [
+        {
+          "alvo": "PC",
+          "comando": "run",
+          "parametro": "opera.exe"
+        }
+      ],
+      "ativa": false
+    }
+  ],
+  "rejeitadas": []
+}

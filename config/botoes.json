@@ -1,0 +1,5 @@
+[
+  {"dispositivo": "esphome-web-903934", "botao": "ollie", "gesto": "toque", "acao": "wake"},
+  {"dispositivo": "esphome-web-903934", "botao": "cenarios", "gesto": "toque",
+   "acao": "cenario", "cenario": "diagnostico"}
+]

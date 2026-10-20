@@ -41,9 +41,10 @@ e a [orientação para abrir uma Activity por notificação](https://developer.a
 
 ## Validação executada
 
-- Backend: **43 testes passando** em SQLite temporário, sem executar hardware.
-- Android: **11 testes unitários passando**, incluindo casos para deduplicação,
-  filtro de sugestões, transições de apps e o crash de autenticação descrito abaixo.
+- Backend: **52 testes passando**, com banco temporário, Groq simulada e sem
+  executar hardware.
+- Android: **13 testes unitários passando**, incluindo casos para deduplicação,
+  filtro de sugestões, transições de apps, autenticação e envio do chat.
 - `:app:testDebugUnitTest :app:assembleDebug`: **BUILD SUCCESSFUL**, em modo
   offline, utilizando as dependências já presentes na máquina.
 - APK: `D:\Programacao\Projetos\AssistenteCell\app\build\outputs\apk\debug\app-debug.apk`.
@@ -87,6 +88,23 @@ retornou `403 Forbidden`; uma comparação local, sem exibir credenciais, identi
 que `backend_api_token` estava ausente nas preferências do app naquele momento.
 É necessário preencher e salvar o token no aplicativo e manter o mesmo valor
 na variável `OLLIE_API_TOKEN` do servidor.
+
+## Correção dos 401 no envio de chat
+
+O cliente do listener já estava autenticado, mas `ChatViewModel` criava outro
+`OkHttpClient` sem o interceptor do backend. Isso permitia conectar o WebSocket
+e receber eventos enquanto os `POST /eventos` enviados pelo chat eram recusados.
+O log do chat ainda marcava qualquer resposta HTTP como sucesso.
+
+O envio passou para `BackendChatTransport`, recebendo o cliente autenticado
+compartilhado e a URL atual do servidor. Inclui categoria, pacote do chat e texto
+no contrato aceito pelo gateway. Respostas não bem-sucedidas encerram o indicador
+de espera e informam a recusa; só status 2xx são tratados como aceitação.
+Há testes com requisições interceptadas localmente para conferir o cabeçalho,
+payload, mudanças de URL e a distinção entre 202, 401 e 503.
+
+Os avisos de modelo da Groq são um problema separado, corrigido no backend e
+documentado em [correções de operação](correcoes-operacao.md#modelos-da-groq-e-respostas-do-chat).
 
 ## Como validar no celular
 

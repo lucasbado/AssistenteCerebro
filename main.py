@@ -29,6 +29,8 @@ from agentes.agente_rotina import AgenteRotina
 from agentes.agente_bem_estar import AgenteBemEstar
 from agentes.agente_pc_executor import AgentePcExecutor
 from agentes.agente_pc_profiler import AgentePcProfiler
+from agentes.agente_botoes import AgenteBotoes
+from agentes.agente_casa import AgenteCasa
 
 # Serviços
 from servicos.agente_contexto_sistema import AgenteContextoSistema
@@ -88,6 +90,12 @@ async def lifespan(app: FastAPI):
         "pc_profiler": AgentePcProfiler()
     }
     agentes_inst["clima"] = AgenteClima(memoria_trabalho=agentes_inst["memoria_trabalho"])
+    agentes_inst["botoes"] = AgenteBotoes()
+    agentes_inst["casa"] = AgenteCasa()
+    kernel.registrar(lambda e: e.categoria == CategoriaEvento.CASA_ACAO_SOLICITADA,
+                     agentes_inst["casa"].processar)
+    kernel.registrar(lambda e: e.categoria == CategoriaEvento.BOTAO_ACIONADO,
+                     agentes_inst["botoes"].processar)
     app.state.agente_memoria_trabalho = agentes_inst["memoria_trabalho"]
 
     # Registro no Kernel - Inteligência Seletiva (Economia de Tokens)
@@ -131,7 +139,7 @@ async def lifespan(app: FastAPI):
     # 🌟 NOVO: Profiler de PC
     kernel.registrar(lambda e: e.categoria == CategoriaEvento.SISTEMA_COMANDO_PC, agentes_inst["pc_profiler"].processar)
     
-    # O executor do PC é o único responsável pelo envio de comandos remotos.
+    # O adaptador WebSocket atende os executores de PC e casa, fora do kernel.
     from api.websocket import central_alertas
 
     # Hardware

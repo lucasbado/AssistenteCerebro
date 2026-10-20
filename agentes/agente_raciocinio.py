@@ -91,6 +91,14 @@ class AgenteRaciocinio:
             exec_direta_raw = self._buscar_campo(resultado, "execucao_direta")
             msg_ia = self._buscar_campo(resultado, "mensagem_dinamica")
             tipo_interacao = resultado.get("tipo_interacao", "NOTIFICAR")
+            from servicos.controle_casa import ACOES
+            acoes_extraidas = exec_direta_raw if isinstance(exec_direta_raw, list) else [exec_direta_raw]
+            tem_casa = any(isinstance(item, dict) and
+                           str(item.get("comando") or item.get("action") or "").lower().strip() in ACOES
+                           for item in acoes_extraidas)
+            if tem_casa and tipo_interacao != "SUGERIR":
+                # O agente da casa responde após confirmação; a LLM não antecipa sucesso.
+                msg_ia = None
 
             # 📝 LOG COGNITIVO
             self._registrar_log_cognitivo(texto_u, habitos_contexto, resultado)
@@ -134,6 +142,13 @@ class AgenteRaciocinio:
                 param = str(exec_direta.get("parametro") or exec_direta.get("param") or exec_direta.get("value") or "").strip()
 
                 if not comando: continue
+                if comando in ACOES:
+                    if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+                        await kernel.publicar(evento.clonar(
+                            categoria=CategoriaEvento.CASA_ACAO_SOLICITADA,
+                            acao=TipoAcao.NORMAL,
+                            payload={"acao": ACOES[comando], "alvo": param}))
+                    continue
                 
                 # 🚀 SUPORTE A MÚLTIPLOS ALVOS (Ex: "PC|MOBILE")
                 alvos = [a.strip() for a in alvo.split("|")]
@@ -291,34 +306,15 @@ class AgenteRaciocinio:
         t = texto.lower().strip()
 
         # 💡 COMANDOS DE ILUMINAÇÃO
-        if any(kw in t for kw in ["luz", "lampada", "lâmpada"]):
-            is_off = any(kw in t for kw in ["desliga", "apaga", "desligar", "apagar", "off"])
-            is_on = any(kw in t for kw in ["liga", "acende", "ligar", "acender", "on"])
-            
-            entity_param = "quarto"
-            if "malu" in t: entity_param = "malu"
-            elif "sala" in t: entity_param = "sala"
+        from servicos.controle_casa import controle_casa
+        pedido = controle_casa.interpretar(texto)
+        if pedido:
+            comandos = {"ligar": "ligar_luz", "desligar": "desligar_luz",
+                        "alternar": "toggle_luz", "consultar": "consultar_luz"}
+            return {"execucao_direta": [{"alvo": "CASA", "comando": comandos[pedido["acao"]],
+                                        "parametro": pedido["alvo"]}],
+                    "mensagem_dinamica": "", "tipo_interacao": "NOTIFICAR"}
 
-            if is_off:
-                return {
-                    "execucao_direta": [{"alvo": "MOBILE", "comando": "TURN_OFF_LIGHT", "parametro": entity_param}],
-                    "mensagem_dinamica": f"Desligando a luz do {entity_param}.",
-                    "tipo_interacao": "NOTIFICAR"
-                }
-            elif is_on:
-                return {
-                    "execucao_direta": [{"alvo": "MOBILE", "comando": "TURN_ON_LIGHT", "parametro": entity_param}],
-                    "mensagem_dinamica": f"Ligando a luz do {entity_param}.",
-                    "tipo_interacao": "NOTIFICAR"
-                }
-            else:
-                return {
-                    "execucao_direta": [{"alvo": "MOBILE", "comando": "TOGGLE_LIGHT", "parametro": entity_param}],
-                    "mensagem_dinamica": f"Alternando a luz do {entity_param}.",
-                    "tipo_interacao": "NOTIFICAR"
-                }
-
-        # 🎙️ MIC / MUTE
         if any(kw in t for kw in ["mutar mic", "muta mic", "desmutar mic", "desmuta mic", "mutar microfone"]):
             return {
                 "execucao_direta": [{"alvo": "PC", "comando": "mutar_mic", "parametro": ""}],

@@ -8,6 +8,19 @@ from urllib.parse import urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 def executar(comando, parametro, service=None):
+    if comando == "casa_acao":
+        from servicos.home_assistant_service import home_assistant_service
+        pedido = json.loads(parametro)
+        return asyncio.run(home_assistant_service.controlar_luz_confirmada(pedido["acao"], pedido["entity_id"]))
+    if comando == "ha_status":
+        from servicos.home_assistant_service import home_assistant_service
+        resultado = asyncio.run(home_assistant_service.verificar_conexao())
+        if not resultado["conectado"]:
+            raise RuntimeError("Home Assistant não está acessível/autenticado neste PC")
+        return resultado
+    if comando == "executar_cenario":
+        from servicos.cenarios import ServicoCenarios
+        return ServicoCenarios().executar(parametro)
     if service is None:
         from servicos.pc_control_service import pc_control_service
         service = pc_control_service
@@ -24,7 +37,8 @@ def executar(comando, parametro, service=None):
         service.inicializar()
         service.executar_macro(parametro or comando)
     elif comando in {"abrir_app", "abrir_programa"} | apps:
-        service.abrir_app(parametro or comando)
+        if service.abrir_app(parametro or comando) is False:
+            raise RuntimeError("Aplicativo não pôde ser aberto")
     elif comando in {"abrir_url", "open_url"}:
         parsed = urlparse(parametro)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -42,7 +56,8 @@ def executar(comando, parametro, service=None):
         if not 0 <= valor <= 100:
             raise ValueError("Volume deve estar entre 0 e 100")
         service.inicializar()
-        service.set_system_volume(valor)
+        if service.set_system_volume(valor) is False:
+            raise RuntimeError("Controle de volume indisponível")
     elif comando == "voicemeeter":
         chave, valor = parametro.split("=", 1)
         service.inicializar()
@@ -66,6 +81,8 @@ def executar(comando, parametro, service=None):
 
 if __name__ == "__main__":
     try:
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).resolve().parents[1] / ".env")
         comando, parametro = sys.argv[1:3]
         resultado = executar(comando, parametro)
         print(json.dumps(resultado, ensure_ascii=True, default=str))

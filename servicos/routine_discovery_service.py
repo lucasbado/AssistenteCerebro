@@ -1,12 +1,11 @@
 """Descobre padrões a partir de observações datadas, sem usar scores inflados."""
-import json
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from banco.database import AsyncSessionLocal
 from banco.models import EventoEpisodicoDB
-from servicos.routine_paths import ACTIVE_PATH, REJECTED_PATH
+from servicos.catalogo_rotinas import catalogo_rotinas
 from servicos.tempo import horario_local, periodo_do_dia, utc
 from servicos.atividade import processo_pc
 
@@ -16,18 +15,10 @@ class RoutineDiscoveryService:
     MIN_DAYS = 3
 
     def __init__(self):
-        self.routines_path = ACTIVE_PATH
-        self.rejected_path = REJECTED_PATH
+        self.catalogo = catalogo_rotinas
 
-    def _get_existing_routine_names(self):
-        nomes = set()
-        for caminho in (self.routines_path, self.rejected_path):
-            try:
-                with open(caminho, encoding="utf-8") as arquivo:
-                    nomes.update(r["nome"].strip().casefold() for r in json.load(arquivo))
-            except FileNotFoundError:
-                pass
-        return nomes
+    async def _get_existing_routine_names(self):
+        return {r["nome"].strip().casefold() for r in await self.catalogo.existentes()}
 
     async def discover_suggestions(self, min_confidence=0.8):
         if not 0 <= min_confidence <= 1:
@@ -41,7 +32,7 @@ class RoutineDiscoveryService:
                 EventoEpisodicoDB.origem.in_(["ANDROID", "PC"]),
             ).order_by(EventoEpisodicoDB.timestamp))
             observacoes = resultado.scalars().all()
-        existentes = self._get_existing_routine_names()
+        existentes = await self._get_existing_routine_names()
         return [s for s in self.analisar(observacoes, min_confidence, agora)
                 if s["conteudo"]["nome"].strip().casefold() not in existentes]
 

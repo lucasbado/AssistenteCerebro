@@ -357,9 +357,10 @@ class PcControlService:
 
     def mutar_mic(self):
         self._garantir_vm()
-        if self.vm:
-            curr = int(self.vm.get('Strip[0].Mute'))
-            self.vm.set('Strip[0].Mute', 0 if curr == 1 else 1)
+        if not self.vm:
+            raise RuntimeError("Voicemeeter indisponível")
+        curr = int(self.vm.get('Strip[0].Mute'))
+        self.vm.set('Strip[0].Mute', 0 if curr == 1 else 1)
 
     def ciclar_saida(self, canal=3):
         self._garantir_vm()
@@ -387,6 +388,9 @@ class PcControlService:
 
     def abrir_app(self, app_key):
         if not app_key: return False
+        if os.path.isfile(app_key):
+            self.executar_comando_direto(app_key)
+            return True
         chave = str(app_key).lower().strip()
         if self.trazer_janela_para_frente(chave): return True
         if not self.indexed_apps:
@@ -401,7 +405,7 @@ class PcControlService:
             self.app_paths[chave] = path
             return True
         self.executar_comando_direto(app_key)
-        return False
+        return True
 
     def executar_comando_direto(self, alvo):
         try:
@@ -458,9 +462,10 @@ class PcControlService:
 
     def executar_macro(self, macro_key):
         keys = self.macros.get(macro_key)
-        if not keys or not pyautogui:
-            logger.error(f"❌ Macro '{macro_key}' indisponível. PyAutoGUI: {pyautogui is not None}")
-            return
+        if not keys:
+            raise ValueError("Macro de teclado não cadastrada")
+        if not pyautogui:
+            raise RuntimeError("Controle de teclado indisponível neste PC")
         try:
             logger.info(f"⌨️ [Hardware] Executando: {keys}")
             if macro_key in ["alt_tab", "win_tab"]:
@@ -474,6 +479,7 @@ class PcControlService:
                 pyautogui.hotkey(*keys)
         except Exception as e:
             logger.error(f"❌ Erro macro: {e}")
+            raise RuntimeError("Não foi possível executar a macro de teclado") from e
 
     def set_system_volume(self, percent: int):
         if not AudioUtilities: return False

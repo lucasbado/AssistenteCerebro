@@ -1,15 +1,15 @@
 """Executor de rotinas aprovadas, com recarga e proteção contra repetição."""
 import asyncio
-import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from core.evento import EventoCanonico
 from core.kernel import kernel
 from core.tipos import CategoriaEvento, OrigemEvento, TipoAcao
 from servicos.atividade import processo_pc
-from servicos.routine_paths import ACTIVE_PATH, salvar_json
+from servicos.catalogo_rotinas import catalogo_rotinas
+from servicos.contrato_rotinas import validar_rotina
 from servicos.tempo import horario_local, utc
 
 logger = logging.getLogger("AgenteRotina")
@@ -17,34 +17,9 @@ logger = logging.getLogger("AgenteRotina")
 
 class AgenteRotina:
     def __init__(self):
-        self.config_path = ACTIVE_PATH
+        self.catalogo = catalogo_rotinas
         self.routines = []
-        self._versao = None
-        self._execucoes = {}
         self._lock = asyncio.Lock()
-        self._carregar_rotinas()
-
-    def _carregar_rotinas(self):
-        try:
-            stat = os.stat(self.config_path)
-            versao = (stat.st_mtime_ns, stat.st_size)
-            if versao == self._versao:
-                return
-            with open(self.config_path, encoding="utf-8") as arquivo:
-                rotinas = json.load(arquivo)
-            if not isinstance(rotinas, list):
-                raise ValueError("O arquivo de rotinas deve conter uma lista.")
-            self.routines = rotinas
-            self._versao = versao
-        except FileNotFoundError:
-            self.routines = []
-            self._versao = None
-        except (ValueError, OSError):
-            logger.exception("Falha ao recarregar rotinas; mantendo a última versão válida")
-
-    def _salvar_rotinas(self):
-        salvar_json(self.config_path, self.routines)
-        self._versao = None
 
     async def processar(self, evento: EventoCanonico):
         if evento.payload.get("tipo") == "REFLEXAO_ROTINA":
@@ -57,27 +32,28 @@ class AgenteRotina:
         if abs((datetime.now(timezone.utc) - utc(evento.timestamp)).total_seconds()) > 300:
             return
         async with self._lock:
-            self._carregar_rotinas()
+            self.routines = await self.catalogo.listar("ativas")
             if evento.payload.get("comando") == "criar_rotina":
                 rotina = evento.payload.get("rotina")
-                if rotina and not any(r.get("nome") == rotina.get("nome") for r in self.routines):
-                    self.routines.append(dict(rotina))
-                    self._salvar_rotinas()
+                if rotina:
+                    await self.catalogo.adicionar(rotina)
                 return
             agora = utc(evento.timestamp)
-            self._execucoes = {k: ts for k, ts in self._execucoes.items() if agora - ts < timedelta(days=2)}
             for rotina in self.routines:
                 try:
-                    if not rotina.get("ativa", True) or not self._validar_gatilho(rotina.get("gatilho", {}), evento):
+                    if not rotina.get("ativa", False):
                         continue
-                    chave = json.dumps([rotina.get("gatilho"), rotina.get("acoes")], sort_keys=True)
-                    ultima = self._execucoes.get(chave)
-                    cooldown = max(60, float(rotina.get("cooldown_segundos", 3600)))
-                    if ultima and ((agora - ultima).total_seconds() < cooldown or
-                            (rotina.get("uma_vez_por_dia") and horario_local(ultima).date() == horario_local(agora).date())):
+                    rotina = validar_rotina(rotina)
+                    if not self._validar_gatilho(rotina.get("gatilho", {}), evento):
                         continue
-                    if await self._executar_acoes(rotina.get("acoes", []), evento, rotina.get("nome", "Rotina")):
-                        self._execucoes[chave] = agora
+                    reserva = await self.catalogo.reservar_execucao(rotina, agora)
+                    if reserva is None:
+                        continue
+                    encaminhada = False
+                    try:
+                        encaminhada = await self._executar_acoes(rotina.get("acoes", []), evento, rotina.get("nome", "Rotina"))
+                    finally:
+                        await self.catalogo.concluir_reserva(reserva, encaminhada)
                 except (ValueError, TypeError, KeyError):
                     logger.exception("Rotina inválida: %s", rotina.get("nome"))
 
@@ -108,15 +84,18 @@ class AgenteRotina:
         return False
 
     async def _executar_acoes(self, acoes, evento_origem, nome="Rotina"):
+        from api.websocket import central_alertas
+        nuvem = os.getenv("RENDER", "false").lower() in {"true", "1", "yes"} or os.name != "nt"
+        destinos = {acao.get("alvo") for acao in acoes}
+        if (("PC" in destinos and nuvem and not central_alertas.pc_master) or
+                ("MOBILE" in destinos and not central_alertas.mobile_client)):
+            logger.info("Rotina %s aguarda os dispositivos necessários; nenhuma ação foi encaminhada", nome)
+            return False
         executou = False
         for acao in acoes:
             try:
                 alvo, comando, param = acao.get("alvo"), acao.get("comando"), acao.get("parametro")
                 if alvo == "PC":
-                    from api.websocket import central_alertas
-                    nuvem = os.getenv("RENDER", "false").lower() in {"true", "1", "yes"} or os.name != "nt"
-                    if nuvem and not central_alertas.pc_master:
-                        continue
                     if comando == "abrir_app" and evento_origem.categoria == CategoriaEvento.PC_ACTIVITY and processo_pc(evento_origem.payload) == str(param).lower():
                         continue
                     await kernel.publicar(evento_origem.clonar(
@@ -132,10 +111,13 @@ class AgenteRotina:
                         categoria=CategoriaEvento.INTENCAO_NOTIFICACAO, acao=TipoAcao.INTENCAO_INTERACAO,
                         origem=OrigemEvento.IA, pacote="sistema.rotina", payload=payload,
                         metadados={"tipo_destino": "NOTIFICACAO", "rotina_aprovada": nome}))
+                elif alvo == "CASA":
+                    from servicos.controle_casa import ACOES
+                    await kernel.publicar(evento_origem.clonar(
+                        categoria=CategoriaEvento.CASA_ACAO_SOLICITADA, origem=OrigemEvento.SISTEMA,
+                        payload={"acao": ACOES[comando.lower()], "alvo": param},
+                        metadados={"rotina_aprovada": nome}))
                 elif alvo == "MOBILE":
-                    from api.websocket import central_alertas
-                    if not central_alertas.mobile_client:
-                        continue
                     await central_alertas._enviar_direto(central_alertas.mobile_client,
                         {"tipo_ws": "COMANDO_SISTEMA", "acao": comando, "parametro": param})
                 else:

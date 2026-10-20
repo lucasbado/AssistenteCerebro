@@ -20,6 +20,12 @@ class AgenteReflexo:
     async def processar(self, evento: EventoCanonico):
         # 🌟 NOVO: Comandos diretos do usuário são sempre complexos (merecem LLM)
         if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+            from servicos.controle_casa import controle_casa
+            pedido_casa = controle_casa.interpretar(evento.payload.get("texto", ""))
+            if pedido_casa:
+                await kernel.publicar(evento.clonar(
+                    categoria=CategoriaEvento.CASA_ACAO_SOLICITADA, payload=pedido_casa))
+                return
             logger.info(f"💬 [Reflexo] Comando do usuário recebido. Elevando para complexo.")
             await kernel.publicar(evento.clonar(acao=TipoAcao.EVENTO_COMPLEXO))
             return

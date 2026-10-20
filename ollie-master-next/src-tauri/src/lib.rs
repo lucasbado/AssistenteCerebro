@@ -140,6 +140,14 @@ async fn maximize_window(app_handle: AppHandle) {
 }
 
 #[tauri::command]
+async fn activate_window(app_handle: AppHandle) -> Result<(), String> {
+    let window = app_handle.get_webview_window("main").ok_or("Janela principal indisponível")?;
+    window.show().map_err(|e| e.to_string())?;
+    window.unminimize().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_cloud_url() -> String {
     load_config();
     let env = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "production".to_string());
@@ -183,6 +191,7 @@ pub fn run() {
             close_window,
             minimize_window,
             maximize_window,
+            activate_window,
             get_cloud_url,
             get_api_url,
             get_auth_token,

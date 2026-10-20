@@ -101,6 +101,346 @@
              .addConverterFactory(GsonConverterFactory.create(GsonBuilder().setLenient().create()))
              .build()
  
+--- a/app/src/main/java/com/example/assistentecell/assistant/OllieAssistantService.kt
++++ b/app/src/main/java/com/example/assistentecell/assistant/OllieAssistantService.kt
+@@ -7,9 +7,14 @@
+ import android.util.Log
+ 
+ class OllieAssistantService : VoiceInteractionService() {
++    private var ready = false
++    private var pending: Bundle? = null
+ 
+     override fun onReady() {
+         super.onReady()
++        com.example.assistentecell.api.RetrofitClient.init(this)
++        ready = true
++        pending?.let { pending = null; showSession(it, 0) }
+         Log.d("OllieAssistant", "Assistente Ollie pronto para ação!")
+     }
+ 
+@@ -30,11 +35,21 @@
+                     args.putString("correlacao_id", cid)
+                 }
+                 
+-                showSession(args, 0)
++                if (ready) showSession(args, 0) else pending = args
+             } catch (e: Exception) {
+                 Log.e("OllieAssistant", "Erro ao abrir sessão da Ollie: ${e.message}")
+             }
+         }
+         return START_STICKY
+     }
++
++    override fun onLaunchVoiceAssistFromKeyguard() {
++        if (ready) showSession(Bundle(), 0) else pending = Bundle()
++    }
++
++    override fun onShutdown() {
++        ready = false
++        pending = null
++        super.onShutdown()
++    }
+ }
+--- a/app/src/main/java/com/example/assistentecell/assistant/OllieSession.kt
++++ b/app/src/main/java/com/example/assistentecell/assistant/OllieSession.kt
+@@ -2,8 +2,6 @@
+ 
+ import android.content.Context
+ import android.os.Bundle
+-import android.os.Handler
+-import android.os.Looper
+ import android.service.voice.VoiceInteractionSession
+ import android.view.ContextThemeWrapper
+ import android.view.Gravity
+@@ -12,173 +10,159 @@
+ import android.widget.FrameLayout
+ import android.widget.TextView
+ import com.example.assistentecell.R
++import com.example.assistentecell.api.RetrofitClient
++import com.example.assistentecell.network.BackendChatTransport
+ import com.example.assistentecell.voice.VoiceManager
+-import com.example.assistentecell.api.RetrofitClient
+ import com.example.assistentecell.websocket.ChatBridge
++import com.example.assistentecell.websocket.ChatMessage
+ import kotlinx.coroutines.*
+-import kotlinx.coroutines.flow.collectLatest
+-import okhttp3.*
+-import okhttp3.Request as OkHttpRequest
+-import okhttp3.MediaType.Companion.toMediaTypeOrNull
+-import okhttp3.RequestBody.Companion.toRequestBody
+-import org.json.JSONObject
++import okhttp3.Call
++import okhttp3.Callback
++import okhttp3.Response
+ import java.io.IOException
+-import java.util.concurrent.TimeUnit
++import java.util.UUID
+ 
+ class OllieSession(context: Context) : VoiceInteractionSession(context) {
+-
+-    private var voiceManager: VoiceManager? = null
+-    private val client = OkHttpClient.Builder()
+-        .connectTimeout(10, TimeUnit.SECONDS)
+-        .build()
+-
+-    private var currentCorrelationId: String? = null
+-    private val sessionScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+-    
+-    private var tvUserSpeech: TextView? = null
+-    private var tvOllieResponse: TextView? = null
+-    private var orbVisual: View? = null
+-    
+-    private var isWaitingResponse = false
++    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
++    private var voice: VoiceManager? = null
++    private var userSpeech: TextView? = null
++    private var responseText: TextView? = null
++    private var correlation: String? = null
++    private var waiting = false
++    private var visible = false
++    private var timeout: Job? = null
++    private var request: Call? = null
+ 
+     override fun onCreate() {
+         super.onCreate()
++        RetrofitClient.init(context)
+         context.setTheme(com.google.android.material.R.style.Theme_MaterialComponents_DayNight_NoActionBar)
+     }
+ 
+     override fun onShow(args: Bundle?, showFlags: Int) {
+         super.onShow(args, showFlags)
+-        android.util.Log.d("OllieSession", "Sessão da Ollie mostrada!")
+-        
++        scope.coroutineContext.cancelChildren()
++        request?.cancel()
++        voice?.stopListening(); voice?.stopSpeaking()
++        visible = true
++        waiting = false
+         ChatBridge.updateAssistantSessionStatus(true)
+-        currentCorrelationId = args?.getString("correlacao_id")
+-        
+-        if (voiceManager == null) {
+-            voiceManager = VoiceManager(context)
++        if (voice == null) voice = VoiceManager(context)
++        scope.launch(start = CoroutineStart.UNDISPATCHED) {
++            ChatBridge.messages.collect { message ->
++                if (!message.isFromUser && waiting && message.text != "..." &&
++                    message.correlationId == correlation) showResponse(message.text)
++            }
+         }
+-        
+-        // Reset UI
+-        tvUserSpeech?.text = "Ouvindo..."
+-        tvOllieResponse?.visibility = View.GONE
+-        isWaitingResponse = false
+-        
+-        observeChat()
+-        
+-        Handler(Looper.getMainLooper()).postDelayed({
+-            startListening()
+-        }, 300)
++        scope.launch { delay(300); startListening() }
+     }
+ 
+-    private fun observeChat() {
+-        sessionScope.launch {
+-            ChatBridge.messages.collectLatest { message ->
+-                if (!message.isFromUser && isWaitingResponse) {
+-                    android.util.Log.d("OllieSession", "Resposta da IA capturada: ${message.text}")
+-                    showOllieResponse(message.text)
++    private fun startListening() {
++        if (!visible || waiting) return
++        correlation = UUID.randomUUID().toString()
++        responseText?.visibility = View.GONE
++        userSpeech?.text = "Preparando microfone..."
++        voice?.startListening(
++            onReady = { userSpeech?.text = "Ouvindo..." },
++            onPartial = { userSpeech?.text = it },
++            onError = { showError(it) },
++            onResult = { text ->
++                if (visible && text.isNotBlank()) {
++                    userSpeech?.text = text
++                    send(text)
+                 }
+             }
++        )
++    }
++
++    private fun send(text: String) {
++        if (!ChatBridge.isConnected.value) {
++            showError("A Ollie está sem conexão com o servidor. Abra o app e confira a conexão.")
++            com.example.assistentecell.ListenerDeNotificacoes.reconnect()
++            return
++        }
++        val id = correlation ?: return
++        waiting = true
++        responseText?.text = "Aguardando a Ollie..."
++        responseText?.visibility = View.VISIBLE
++        scope.launch { ChatBridge.postMessage(ChatMessage(text = text, isFromUser = true, correlationId = id)) }
++        android.util.Log.d("OllieSession", "Voice request sent correlation=$id")
++        request = BackendChatTransport(RetrofitClient.backendHttpClient) { RetrofitClient.getBaseUrl() }
++            .enqueue(text, "com.example.assistentecell.voice", object : Callback {
++                override fun onFailure(call: Call, e: IOException) {
++                    if (!call.isCanceled()) scope.launch {
++                        if (visible && correlation == id) showError("Não consegui enviar o pedido. Confira a conexão.")
++                    }
++                }
++                override fun onResponse(call: Call, response: Response) {
++                    response.use {
++                        val failure = BackendChatTransport.failureMessage(it.code)
++                        if (failure != null) scope.launch {
++                            if (visible && correlation == id) showError(failure)
++                        }
++                    }
++                }
++            }, correlationId = id)
++        timeout?.cancel()
++        timeout = scope.launch {
++            delay(45000)
++            if (waiting && correlation == id) showError("O servidor não respondeu a tempo. Toque no círculo para tentar novamente.")
+         }
+     }
+ 
+-    private fun showOllieResponse(text: String) {
+-        if (text == "...") return // Ignora indicador de pensamento
+-        
+-        tvOllieResponse?.text = text
+-        tvOllieResponse?.visibility = View.VISIBLE
+-        
+-        // Ollie fala a resposta
+-        voiceManager?.speak(text) {
+-            // Quando terminar de falar, aguarda 2s e fecha a sessão
+-            Handler(Looper.getMainLooper()).postDelayed({
+-                if (!isWaitingResponse) { // Evita fechar se uma nova resposta chegou
+-                     hide()
+-                }
+-            }, 2000)
+-        }
+-        isWaitingResponse = false
++    private fun showResponse(text: String) {
++        waiting = false
++        timeout?.cancel()
++        responseText?.text = text
++        responseText?.visibility = View.VISIBLE
++        userSpeech?.text = "Toque no círculo para falar novamente"
++        android.util.Log.d("OllieSession", "Voice response matched correlation=$correlation")
++        voice?.speak(text, interactive = true)
+     }
+ 
+-    private fun startListening() {
+-        if (context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+-            hide()
+-            return
+-        }
+-
+-        try {
+-            voiceManager?.startListening(
+-                onPartial = { partial ->
+-                    tvUserSpeech?.text = partial
+-                },
+-                onResult = { result ->
+-                    if (result.isNotBlank()) {
+-                        tvUserSpeech?.text = result
+-                        sendToBrain(result)
+-                    } else {
+-                        if (!isWaitingResponse) hide()
+-                    }
+-                }
+-            )
+-        } catch (e: Exception) {
+-            hide()
+-        }
+-    }
+-
+-    private fun sendToBrain(text: String) {
+-        android.util.Log.d("OllieSession", "Enviando comando de voz via WebSocket: $text")
+-        isWaitingResponse = true
+-        
+-        val json = JSONObject().apply {
+-            put("tipo_ws", "CHAT_MESSAGE")
+-            put("texto", text)
+-            put("origem", "ANDROID_VOICE_ASSIST")
+-            if (currentCorrelationId != null) {
+-                put("correlacao_id", currentCorrelationId)
+-            }
+-        }
+-
+-        val enviado = com.example.assistentecell.ListenerDeNotificacoes.enviarMensagemWebSocket(json.toString())
+-        if (!enviado) {
+-            android.util.Log.e("OllieSession", "Falha ao enviar via WebSocket, fechando sessão.")
+-            hide()
+-        }
++    private fun showError(text: String) {
++        waiting = false
++        timeout?.cancel()
++        responseText?.text = text
++        responseText?.visibility = View.VISIBLE
++        userSpeech?.text = "Toque no círculo para tentar novamente"
+     }
+ 
+     override fun onHide() {
++        visible = false
++        waiting = false
++        request?.cancel(); request = null
++        voice?.stopListening(); voice?.stopSpeaking()
++        scope.coroutineContext.cancelChildren()
++        ChatBridge.updateAssistantSessionStatus(false)
+         super.onHide()
+-        ChatBridge.updateAssistantSessionStatus(false)
+-        voiceManager?.stopListening()
+-        sessionScope.coroutineContext.cancelChildren()
+     }
+ 
+     override fun onDestroy() {
++        visible = false
++        ChatBridge.updateAssistantSessionStatus(false)
++        request?.cancel()
++        scope.cancel()
++        voice?.shutdown(); voice = null
+         super.onDestroy()
+-        sessionScope.cancel()
+-        voiceManager?.shutdown()
+-        voiceManager = null
+     }
+ 
+     override fun onCreateContentView(): View {
+-        val themedContext = ContextThemeWrapper(context, com.google.android.material.R.style.Theme_MaterialComponents_DayNight_NoActionBar)
+-        val root = FrameLayout(themedContext)
+-        val inflater = LayoutInflater.from(themedContext)
+-        
+-        val view = inflater.inflate(R.layout.layout_ollie_voice_session, root, false)
+-        
+-        tvUserSpeech = view.findViewById(R.id.tv_user_speech)
+-        tvOllieResponse = view.findViewById(R.id.tv_ollie_response)
+-        orbVisual = view.findViewById(R.id.ollie_orb_visual)
+-        
+-        val params = FrameLayout.LayoutParams(
+-            FrameLayout.LayoutParams.MATCH_PARENT,
+-            FrameLayout.LayoutParams.WRAP_CONTENT
+-        ).apply {
+-            gravity = Gravity.BOTTOM
+-            setMargins(24, 0, 24, 48)
++        val themed = ContextThemeWrapper(context, com.google.android.material.R.style.Theme_MaterialComponents_DayNight_NoActionBar)
++        val root = FrameLayout(themed)
++        val view = LayoutInflater.from(themed).inflate(R.layout.layout_ollie_voice_session, root, false)
++        userSpeech = view.findViewById(R.id.tv_user_speech)
++        responseText = view.findViewById(R.id.tv_ollie_response)
++        view.findViewById<View>(R.id.ollie_orb_visual).apply {
++            contentDescription = "Falar com a Ollie"
++            isFocusable = true
++            setOnClickListener { startListening() }
+         }
+-        
+-        view.layoutParams = params
++        view.layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
++            FrameLayout.LayoutParams.WRAP_CONTENT).apply {
++            gravity = Gravity.BOTTOM; setMargins(24, 0, 24, 48)
++        }
+         root.addView(view)
+-        
+         return root
+     }
+ }
 --- a/app/src/main/java/com/example/assistentecell/AssistenteOverlayService.kt
 +++ b/app/src/main/java/com/example/assistentecell/AssistenteOverlayService.kt
 @@ -308,7 +308,7 @@
@@ -117,6 +457,99 @@
          overlayView?.let { if (it.isAttachedToWindow) windowManager.removeView(it) }
      }
 -}+}
+--- a/app/src/main/java/com/example/assistentecell/automation/RoutineDescription.kt
++++ b/app/src/main/java/com/example/assistentecell/automation/RoutineDescription.kt
+@@ -0,0 +1,42 @@
++package com.example.assistentecell.automation
++
++import com.example.assistentecell.data.model.ApiRoutine
++import com.example.assistentecell.data.model.RoutineAction
++
++/** Presentation of the real trigger/actions, including old server records. */
++object RoutineDescription {
++    fun trigger(routine: ApiRoutine, label: (String) -> String = { it }): String {
++        val g = routine.gatilho ?: return "Gatilho não informado"
++        return when (g.tipo) {
++            "APP_OPENED" -> "Ao abrir ${label(g.pacote.orEmpty())} no celular"
++            "PC_ACTIVITY" -> "Ao usar ${label(g.processo.orEmpty())} no PC"
++            "TIME_RANGE" -> "Entre ${g.inicio} e ${g.fim}" + if (g.evento == "PC_ACTIVITY") ", enquanto usa o PC" else ""
++            else -> "Gatilho precisa de revisão"
++        }
++    }
++
++    fun action(action: RoutineAction, label: (String) -> String = { it }): String {
++        val command = action.comando.uppercase()
++        val value = action.parametro
++        return when {
++            action.alvo == "IA" -> "Avisar: $value" + (action.acao_texto?.let { " (botão: $it)" } ?: "")
++            command in setOf("OPEN_APP", "ABRIR_APP", "ABRIR_APP_MOBILE", "LAUNCH_APP") ->
++                "Abrir ${label(value)} ${if (action.alvo == "PC") "no PC" else "no celular"}"
++            action.alvo == "PC" && command.endsWith(".EXE") && value.isBlank() -> "Abrir ${label(action.comando)} no PC"
++            action.alvo == "CASA" -> "${action.comando.replace('_', ' ')}: $value"
++            else -> "${action.alvo}: ${action.comando.replace('_', ' ')}${if (value.isBlank()) "" else " — $value"}"
++        }
++    }
++
++    fun fromLegacy(rule: com.example.assistentecell.data.model.AutomationRule): ApiRoutine {
++        val command = rule.actionParameter
++        val pcApps = setOf("vscode", "android_studio", "spotify", "discord", "lol", "pasta_jogos")
++        val action = if (rule.actionType == "PC_COMMAND") {
++            if (command in pcApps) RoutineAction("PC", "abrir_app", command)
++            else RoutineAction("PC", if (command == "dormir_pc") "hibernar_pc" else command)
++        } else RoutineAction("MOBILE", "OPEN_APP", command)
++        return ApiRoutine(nome = rule.nome ?: "Ao abrir ${rule.triggerPackage}",
++            gatilho = com.example.assistentecell.data.model.RoutineTrigger("APP_OPENED", pacote = rule.triggerPackage),
++            acoes = listOf(action), ativa = false)
++    }
++}
+--- a/app/src/main/java/com/example/assistentecell/command/HouseCommandExecutor.kt
++++ b/app/src/main/java/com/example/assistentecell/command/HouseCommandExecutor.kt
+@@ -0,0 +1,45 @@
++package com.example.assistentecell.command
++
++import android.content.Context
++import com.example.assistentecell.api.RetrofitClient
++import com.example.assistentecell.network.HouseCommand
++import kotlinx.coroutines.*
++import org.json.JSONObject
++import java.io.IOException
++
++/** Ponte de execução: recebe uma entidade exata e devolve o estado confirmado à Ollie. */
++object HouseCommandExecutor {
++    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
++    private val results = linkedMapOf<String, Deferred<JSONObject>>()
++
++    fun execute(context: Context, message: JSONObject, reply: (String) -> Boolean) {
++        val command = runCatching { HouseCommand.parse(message.toString()) }.getOrElse { return }
++        scope.launch {
++            val pending = synchronized(results) {
++                results[command.id] ?: scope.async {
++                    try {
++                        val state = withTimeout(15000) { executeLight(context.applicationContext, command) }
++                        JSONObject().put("tipo_ws", "CASA_RESULTADO").put("id_comando", command.id)
++                            .put("status", "concluido")
++                            .put("resultado", JSONObject().put("entity_id", command.entityId).put("state", state))
++                    } catch (_: Exception) {
++                        JSONObject().put("tipo_ws", "CASA_RESULTADO").put("id_comando", command.id).put("status", "erro")
++                    }
++                }.also { job ->
++                    if (results.size >= 200) results.entries.removeAll { it.value.isCompleted }
++                    results[command.id] = job
++                }
++            }
++            val result = pending.await()
++            android.util.Log.i("OllieCasa", "id=${command.id} status=${result.optString("status")}")
++            reply(result.toString())
++        }
++    }
++
++    private suspend fun executeLight(context: Context, command: HouseCommand): String {
++        val token = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE).getString("ha_token", "").orEmpty()
++        if (token.isBlank()) throw IOException("Home Assistant não configurado")
++        return com.example.assistentecell.data.HomeAssistantLightController(RetrofitClient.haApiService)
++            .execute(token, command.action, command.entityId).state
++    }
++}
 --- a/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
 +++ b/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
 @@ -52,17 +52,17 @@
@@ -140,8 +573,14 @@
          // Tenta pegar 'acao', 'acao_tipo' ou 'comando' para compatibilidade total
          val type = (when {
              json.has("acao") -> json.optString("acao")
-@@ -95,14 +95,7 @@
+@@ -93,16 +93,13 @@
+             }
+ 
              when (type) {
++                "WAKE_OLLIE", "ATIVAR_ASSISTENTE" -> {
++                    context.startService(Intent(context, com.example.assistentecell.assistant.OllieAssistantService::class.java)
++                        .setAction(Intent.ACTION_ASSIST))
++                }
                  // --- COMANDOS JÁ EXISTENTES (Alinhados com o Backend) ---
                  "OPEN_APP", "ABRIR_APP", "ABRIR_APP_MOBILE", "ABRIR_PROGRAMA" -> {
 -                    val paramLower = parameter.lowercase().trim()
@@ -156,7 +595,7 @@
                  }
                  "LOCK", "BLOQUEAR", "BLOQUEAR_PC", "LOCK_PC", "TRAVAR_PC" -> PCCommandSender.enviarComando("bloquear_pc", context)
                  "SUSPEND", "SUSPENDER", "DORMIR", "DORMIR_PC", "HIBERNAR", "HIBERNAR_PC", "HIBERNATE" -> PCCommandSender.enviarComando("hibernar_pc", context)
-@@ -117,7 +110,7 @@
+@@ -117,7 +114,7 @@
                              val normalized = parameter.replace("'", "\"")
                              val innerJson = JSONObject(normalized)
                              Log.d(TAG, "🔄 Execução recursiva de comando proativo...")
@@ -165,7 +604,88 @@
                          } catch (e: Exception) {
                              Log.e(TAG, "Falha no comando recursivo: ${e.message}")
                              PCCommandSender.enviarComando(parameter, context)
-@@ -313,10 +306,10 @@
+@@ -229,56 +226,30 @@
+     }
+ 
+     private fun executeLightCommand(context: Context, type: String, parameter: String) {
+-        val agora = System.currentTimeMillis()
+-        val cmdKey = "$type:$parameter"
+-        if (cmdKey == lastSmartHomeCommand && (agora - lastSmartHomeTime) < THROTTLE_MS) {
+-            Log.d(TAG, "🛡️ Bloqueando comando duplicado: $cmdKey")
+-            return
+-        }
+-        lastSmartHomeCommand = cmdKey
+-        lastSmartHomeTime = agora
+-
+-        val haRepo = com.example.assistentecell.api.RetrofitClient.haRepository
+-        val token = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE).getString("ha_token", "") ?: ""
+-
+-        val paramLower = parameter.lowercase()
+-        val words = paramLower.split("_", " ")
+-        var entityId: String? = null
+-        for (word in words) {
+-            if (word.length > 2 && word != "luz" && word != "lampada" && word != "quarto" && word != "sala") {
+-                entityId = com.example.assistentecell.data.SmartHomeCache.findEntityId(word)
+-                if (entityId != null) break
+-            }
+-        }
+-
+-        val finalEntityId = if (parameter.startsWith("light.")) parameter else (entityId ?: when {
+-            paramLower.contains("malu") -> "light.luz_malu"
+-            paramLower.contains("sala") -> "light.luz_sala"
+-            else -> "light.luz_quarto"
+-        })
+-
+-        Log.d(TAG, "🏠 Executando Smart Home Light ($type) | Entity: $finalEntityId | Param: $parameter")
+-
+-        val scope = CoroutineScope(Dispatchers.IO)
+-        scope.launch {
+-            val tLower = type.lowercase()
+-            val pcCmd = when {
+-                tLower.contains("off") || paramLower.contains("off") || paramLower.contains("desligar") || paramLower.contains("apagar") -> "desligar_luz"
+-                tLower.contains("on") || paramLower.contains("on") || paramLower.contains("ligar") || paramLower.contains("acender") -> "ligar_luz"
+-                else -> "toggle_luz"
+-            }
+-
+-            // 1. Tenta acionar via API direta do Home Assistant se o token estiver salvo no celular
+-            if (token.isNotEmpty()) {
+-                when (pcCmd) {
+-                    "desligar_luz" -> haRepo.turnOff(token, finalEntityId)
+-                    "ligar_luz" -> haRepo.turnOn(token, finalEntityId)
+-                    else -> haRepo.toggleLight(token, finalEntityId)
+-                }
+-            }
+-
+-            // 2. Envia também para o PC Master como redundância (caso o token esteja no config do PC)
+-            PCCommandSender.enviarComando(pcCmd, context, app = finalEntityId)
++        CoroutineScope(Dispatchers.IO).launch {
++            try {
++                val token = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
++                    .getString("ha_token", "").orEmpty()
++                val repo = com.example.assistentecell.api.RetrofitClient.haRepository
++                val entities = repo.getLights(token).getOrThrow()
++                val light = com.example.assistentecell.data.HouseLightResolver.resolve(parameter, entities)
++                val result = when (type.uppercase()) {
++                    "TURN_OFF_LIGHT", "DESLIGAR_LUZ" -> repo.turnOff(token, light.entityId)
++                    "TURN_ON_LIGHT", "LIGAR_LUZ" -> repo.turnOn(token, light.entityId)
++                    else -> repo.toggleLight(token, light.entityId)
++                }.getOrThrow().single()
++                android.os.Handler(android.os.Looper.getMainLooper()).post {
++                    android.widget.Toast.makeText(context,
++                        if (result.state == "off") "Luz apagada." else "Luz acesa.", android.widget.Toast.LENGTH_SHORT).show()
++                }
++            } catch (e: kotlinx.coroutines.CancellationException) {
++                throw e
++            } catch (e: Exception) {
++                android.os.Handler(android.os.Looper.getMainLooper()).post {
++                    android.widget.Toast.makeText(context,
++                        e.message ?: "Nao consegui confirmar a luz.", android.widget.Toast.LENGTH_LONG).show()
++                }
++            }
+         }
+     }
+ 
+@@ -313,10 +284,10 @@
          }
      }
  
@@ -178,7 +698,7 @@
              Log.w(TAG, "🚫 Abertura automática de app bloqueada por preferência do usuário: $nameOrPackage")
              return
          }
-@@ -340,8 +333,8 @@
+@@ -340,8 +311,8 @@
              context.startActivity(launchIntent)
              Log.d(TAG, "✅ App local $nameOrPackage aberto com sucesso")
          } else {
@@ -189,7 +709,7 @@
          }
      }
  
-@@ -349,28 +342,10 @@
+@@ -349,28 +320,10 @@
          val pm = context.packageManager
          val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
          
@@ -242,6 +762,132 @@
          }
      }
 -}+}
+--- a/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
++++ b/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
+@@ -25,16 +25,32 @@
+ 
+     // --- Rotinas e Capacidades ---
+     @GET("api/v1/capabilities/discovered")
+-    suspend fun getDiscoveredRoutines(): List<ApiSuggestedRule>
++    suspend fun getDiscoveredRoutines(): List<ApiRoutine>
+ 
+-    @POST("api/v1/capabilities/approve/{nome}")
+-    suspend fun approveRoutine(@retrofit2.http.Path("nome") nome: String): Any
++    @POST("api/v1/capabilities/approve")
++    suspend fun approveRoutine(@Body name: RoutineName): RoutineMutation
+ 
+-    @DELETE("api/v1/capabilities/discovered/{nome}")
+-    suspend fun rejectRoutine(@retrofit2.http.Path("nome") nome: String): Any
++    @retrofit2.http.HTTP(method = "DELETE", path = "api/v1/capabilities/discovered", hasBody = true)
++    suspend fun rejectRoutine(@Body name: RoutineName): RoutineMutation
++
++    @GET("api/v1/capabilities/routines")
++    suspend fun getRoutines(): List<ApiRoutine>
++
++    @retrofit2.http.PATCH("api/v1/capabilities/routines")
++    suspend fun setRoutineState(@Body state: RoutineState): RoutineMutation
++
++    @retrofit2.http.HTTP(method = "DELETE", path = "api/v1/capabilities/routines", hasBody = true)
++    suspend fun deleteRoutine(@Body name: RoutineName): RoutineMutation
++
++    // Compatibility with servers published before name-in-body deletion.
++    @DELETE("api/v1/capabilities/routines/{nome}")
++    suspend fun deleteRoutineLegacy(@retrofit2.http.Path("nome") nome: String): RoutineMutation
++
++    @POST("api/v1/capabilities/routines")
++    suspend fun createRoutine(@Body routine: ApiRoutine): RoutineMutation
+ 
+     @POST("api/v1/capabilities/discover/run")
+-    suspend fun triggerDiscovery(): Any
++    suspend fun triggerDiscovery(): RoutineMutation
+ 
+     @GET("api/v1/pc/pc-apps")
+     suspend fun getPcApps(): Map<String, List<Map<String, String>>>
+--- a/app/src/main/java/com/example/assistentecell/data/HomeAssistantLightController.kt
++++ b/app/src/main/java/com/example/assistentecell/data/HomeAssistantLightController.kt
+@@ -0,0 +1,54 @@
++package com.example.assistentecell.data
++
++import com.example.assistentecell.data.api.HomeAssistantApiService
++import com.example.assistentecell.data.model.HAEntity
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.withTimeout
++import kotlinx.coroutines.sync.Mutex
++import kotlinx.coroutines.sync.withLock
++import java.io.IOException
++import java.util.concurrent.ConcurrentHashMap
++
++/** Estado e ação confirmados, compartilhados pelo botão e pela ponte da Ollie. */
++class HomeAssistantLightController(private val api: HomeAssistantApiService) {
++    companion object { private val locks = ConcurrentHashMap<String, Mutex>() }
++
++    suspend fun execute(token: String, action: String, entityId: String,
++                        attributes: Map<String, Any> = emptyMap()): HAEntity {
++        require(entityId.matches(Regex("light\\.[a-z0-9_]+"))) { "Entidade de luz inválida." }
++        require(action in setOf("ligar", "desligar", "alternar", "consultar")) { "Ação de luz inválida." }
++        if (token.isBlank()) throw IOException("Configure o acesso ao Home Assistant.")
++        return locks.getOrPut(entityId) { Mutex() }.withLock {
++            withTimeout(12000) {
++                suspend fun read(): HAEntity {
++                    val response = api.getEntityState("Bearer $token", entityId)
++                    if (!response.isSuccessful) throw IOException("Não consegui consultar essa luz (HTTP ${response.code()}).")
++                    val light = response.body() ?: throw IOException("O Home Assistant não informou a luz.")
++                    if (light.entityId != entityId) throw IOException("O Home Assistant respondeu por outra luz.")
++                    if (light.state !in setOf("on", "off")) throw IOException("Essa luz está indisponível no Home Assistant.")
++                    return light
++                }
++                var current = read()
++                val expected = when (action) {
++                    "ligar" -> "on"
++                    "desligar" -> "off"
++                    "alternar" -> if (current.state == "on") "off" else "on"
++                    else -> current.state
++                }
++                if (action != "consultar" && (current.state != expected || attributes.isNotEmpty())) {
++                    val response = api.callService("Bearer $token", "light",
++                        if (expected == "on") "turn_on" else "turn_off",
++                        attributes + mapOf("entity_id" to entityId))
++                    if (!response.isSuccessful) throw IOException("Não consegui controlar a luz (HTTP ${response.code()}).")
++                    repeat(5) {
++                        current = read()
++                        if (current.state == expected) return@withTimeout current
++                        delay(300)
++                    }
++                    throw IOException("O Home Assistant aceitou o pedido, mas a luz não confirmou a mudança.")
++                }
++                current
++            }
++        }
++    }
++}
+--- a/app/src/main/java/com/example/assistentecell/data/HouseLightResolver.kt
++++ b/app/src/main/java/com/example/assistentecell/data/HouseLightResolver.kt
+@@ -0,0 +1,25 @@
++package com.example.assistentecell.data
++
++import com.example.assistentecell.data.model.HAEntity
++import java.text.Normalizer
++import java.util.Locale
++
++/** Resolve apenas entre dispositivos recebidos do HA; nunca inventa entity_id. */
++object HouseLightResolver {
++    fun resolve(query: String, entities: List<HAEntity>): HAEntity {
++        val lights = entities.filter { it.entityId.startsWith("light.") }
++        val exact = lights.singleOrNull { it.entityId == query }
++        if (exact != null) return exact
++        if (query.startsWith("light.")) throw IllegalArgumentException("Essa luz não existe no Home Assistant.")
++        fun words(value: String): Set<String> = Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
++            .replace(Regex("\\p{M}+"), "").split(Regex("[^a-z0-9]+"))
++            .filter { it.isNotBlank() && it !in setOf("luz", "luzes", "light", "lampada", "lampadas", "do", "da", "de", "a", "as") }.toSet()
++        val requested = words(query)
++        if (requested.isEmpty()) throw IllegalArgumentException("Informe qual luz você quer controlar.")
++        val matches = lights.filter { light ->
++            requested.all { it in words(light.attributes["friendly_name"] as? String ?: "") }
++        }
++        if (matches.size != 1) throw IllegalArgumentException("Não encontrei uma única luz com esse nome. Escolha a luz na tela inicial.")
++        return matches.single()
++    }
++}
 --- a/app/src/main/java/com/example/assistentecell/data/model/AlertaPayload.kt
 +++ b/app/src/main/java/com/example/assistentecell/data/model/AlertaPayload.kt
 @@ -6,5 +6,7 @@
@@ -253,6 +899,197 @@
 +    val id: String? = null,
 +    val urgencia: String = "NORMAL"
  )
+--- a/app/src/main/java/com/example/assistentecell/data/model/RoutineModels.kt
++++ b/app/src/main/java/com/example/assistentecell/data/model/RoutineModels.kt
+@@ -0,0 +1,27 @@
++package com.example.assistentecell.data.model
++
++data class RoutineTrigger(
++    val tipo: String = "", val pacote: String? = null, val processo: String? = null,
++    val inicio: String? = null, val fim: String? = null, val evento: String? = null
++)
++
++data class RoutineAction(
++    val alvo: String = "", val comando: String = "", val parametro: String = "",
++    val acao_tipo: String? = null, val acao_parametro: String? = null, val acao_texto: String? = null
++)
++
++data class ApiRoutine(
++    val nome: String = "", val justificativa: String? = null,
++    val gatilho: RoutineTrigger? = null, val acoes: List<RoutineAction> = emptyList(),
++    val ativa: Boolean = false, val cooldown_segundos: Int = 3600,
++    val uma_vez_por_dia: Boolean = false, val evidencia: RoutineEvidence? = null,
++    val problemas: List<String> = emptyList(), val pode_ativar: Boolean? = null
++)
++
++data class RoutineEvidence(
++    val amostras: Int = 0, val oportunidades: Int = 0,
++    val dias_distintos: Int = 0, val confianca: Double = 0.0
++)
++data class RoutineName(val nome: String)
++data class RoutineState(val nome: String, val ativa: Boolean)
++data class RoutineMutation(val status: String = "", val message: String = "", val geradas: Int? = null)
+--- a/app/src/main/java/com/example/assistentecell/data/repository/CognitiveRepository.kt
++++ b/app/src/main/java/com/example/assistentecell/data/repository/CognitiveRepository.kt
+@@ -58,41 +58,29 @@
+         }
+     }
+ 
+-    suspend fun getDiscoveredRoutines(): Result<List<ApiSuggestedRule>> = withContext(Dispatchers.IO) {
+-        try {
+-            val response = apiService.getDiscoveredRoutines()
+-            Result.success(response)
+-        } catch (e: Exception) {
+-            Result.failure(e)
++    private suspend fun <T> routineRequest(block: suspend () -> T): Result<T> = withContext(Dispatchers.IO) {
++        try { Result.success(block()) }
++        catch (e: kotlinx.coroutines.CancellationException) { throw e }
++        catch (e: retrofit2.HttpException) {
++            Result.failure(java.io.IOException(com.example.assistentecell.network.RoutineErrors.message(e.code(), e.response()?.errorBody()?.string())))
++        }
++        catch (_: Exception) { Result.failure(java.io.IOException("Nao consegui acessar suas rotinas. Confira a conexao com o servidor.")) }
++    }
++
++    suspend fun getDiscoveredRoutines() = routineRequest { apiService.getDiscoveredRoutines() }
++    suspend fun getRoutines() = routineRequest { apiService.getRoutines() }
++    suspend fun approveRoutine(nome: String) = routineRequest { apiService.approveRoutine(RoutineName(nome)) }
++    suspend fun rejectRoutine(nome: String) = routineRequest { apiService.rejectRoutine(RoutineName(nome)) }
++    suspend fun setRoutineState(nome: String, ativa: Boolean) = routineRequest { apiService.setRoutineState(RoutineState(nome, ativa)) }
++    suspend fun deleteRoutine(nome: String) = routineRequest {
++        try { apiService.deleteRoutine(RoutineName(nome)) }
++        catch (e: retrofit2.HttpException) {
++            if (e.code() !in setOf(404, 405)) throw e
++            apiService.deleteRoutineLegacy(nome)
+         }
+     }
+-
+-    suspend fun approveRoutine(nome: String): Result<Any> = withContext(Dispatchers.IO) {
+-        try {
+-            val response = apiService.approveRoutine(nome)
+-            Result.success(response)
+-        } catch (e: Exception) {
+-            Result.failure(e)
+-        }
+-    }
+-
+-    suspend fun rejectRoutine(nome: String): Result<Any> = withContext(Dispatchers.IO) {
+-        try {
+-            val response = apiService.rejectRoutine(nome)
+-            Result.success(response)
+-        } catch (e: Exception) {
+-            Result.failure(e)
+-        }
+-    }
+-
+-    suspend fun triggerDiscovery(): Result<Any> = withContext(Dispatchers.IO) {
+-        try {
+-            val response = apiService.triggerDiscovery()
+-            Result.success(response)
+-        } catch (e: Exception) {
+-            Result.failure(e)
+-        }
+-    }
++    suspend fun createRoutine(routine: ApiRoutine) = routineRequest { apiService.createRoutine(routine) }
++    suspend fun triggerDiscovery() = routineRequest { apiService.triggerDiscovery() }
+ 
+     suspend fun getPcApps(): Result<List<Map<String, String>>> = withContext(Dispatchers.IO) {
+         try {
+--- a/app/src/main/java/com/example/assistentecell/data/repository/HomeAssistantRepository.kt
++++ b/app/src/main/java/com/example/assistentecell/data/repository/HomeAssistantRepository.kt
+@@ -22,74 +22,31 @@
+         }
+     }
+ 
+-    suspend fun toggleLight(token: String, entityId: String): Result<List<HAEntity>> = withContext(Dispatchers.IO) {
++    private suspend fun executeLight(token: String, entityId: String, action: String,
++                                     attributes: Map<String, Any> = emptyMap()): Result<List<HAEntity>> = withContext(Dispatchers.IO) {
+         try {
+-            Log.d("HA_REPO", "🏠 Enviando TOGGLE para: $entityId")
+-            val response = apiService.callService(
+-                "Bearer $token",
+-                "light",
+-                "toggle",
+-                mapOf("entity_id" to entityId)
+-            )
+-            if (response.isSuccessful) {
+-                Log.d("HA_REPO", "✅ Sucesso ao alternar luz")
+-                Result.success(response.body() ?: emptyList())
+-            } else {
+-                Log.e("HA_REPO", "❌ Erro HA: ${response.code()} - ${response.errorBody()?.string()}")
+-                Result.failure(Exception("Erro ao alternar luz: ${response.code()}"))
+-            }
++            val light = com.example.assistentecell.data.HomeAssistantLightController(apiService)
++                .execute(token, action, entityId, attributes)
++            Log.i("HA_REPO", "Light confirmed: ${light.entityId} state=${light.state}")
++            Result.success(listOf(light))
++        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
++            Result.failure(java.io.IOException("Não recebi a confirmação da luz a tempo."))
++        } catch (e: kotlinx.coroutines.CancellationException) {
++            throw e
+         } catch (e: Exception) {
+-            Log.e("HA_REPO", "💥 Exceção HA: ${e.message}")
+-            Result.failure(e)
+-        }
+-    }
+-    
+-    suspend fun turnOn(token: String, entityId: String, attributes: Map<String, Any>? = null): Result<List<HAEntity>> = withContext(Dispatchers.IO) {
+-        try {
+-            Log.d("HA_REPO", "🏠 Enviando TURN_ON para: $entityId com attrs: $attributes")
+-            val body = mutableMapOf<String, Any>("entity_id" to entityId)
+-            attributes?.let { body.putAll(it) }
+-            
+-            val response = apiService.callService(
+-                "Bearer $token",
+-                "light",
+-                "turn_on",
+-                body
+-            )
+-            if (response.isSuccessful) {
+-                Log.d("HA_REPO", "✅ Sucesso ao ligar luz")
+-                Result.success(response.body() ?: emptyList())
+-            } else {
+-                Log.e("HA_REPO", "❌ Erro HA ON: ${response.code()} - ${response.errorBody()?.string()}")
+-                Result.failure(Exception("Erro ao ligar luz: ${response.code()}"))
+-            }
+-        } catch (e: Exception) {
+-            Log.e("HA_REPO", "💥 Exceção HA ON: ${e.message}")
++            Log.w("HA_REPO", "Light not confirmed: ${e.javaClass.simpleName}")
+             Result.failure(e)
+         }
+     }
+ 
+-    suspend fun turnOff(token: String, entityId: String): Result<List<HAEntity>> = withContext(Dispatchers.IO) {
+-        try {
+-            Log.d("HA_REPO", "🏠 Enviando TURN_OFF para: $entityId")
+-            val response = apiService.callService(
+-                "Bearer $token",
+-                "light",
+-                "turn_off",
+-                mapOf("entity_id" to entityId)
+-            )
+-            if (response.isSuccessful) {
+-                Log.d("HA_REPO", "✅ Sucesso ao desligar luz")
+-                Result.success(response.body() ?: emptyList())
+-            } else {
+-                Log.e("HA_REPO", "❌ Erro HA OFF: ${response.code()} - ${response.errorBody()?.string()}")
+-                Result.failure(Exception("Erro ao desligar luz: ${response.code()}"))
+-            }
+-        } catch (e: Exception) {
+-            Log.e("HA_REPO", "💥 Exceção HA OFF: ${e.message}")
+-            Result.failure(e)
+-        }
+-    }
++    suspend fun toggleLight(token: String, entityId: String): Result<List<HAEntity>> =
++        executeLight(token, entityId, "alternar")
++
++    suspend fun turnOn(token: String, entityId: String, attributes: Map<String, Any>? = null): Result<List<HAEntity>> =
++        executeLight(token, entityId, "ligar", attributes ?: emptyMap())
++
++    suspend fun turnOff(token: String, entityId: String): Result<List<HAEntity>> =
++        executeLight(token, entityId, "desligar")
+ 
+     suspend fun setBrightness(token: String, entityId: String, brightness: Int): Result<List<HAEntity>> {
+         return turnOn(token, entityId, mapOf("brightness" to brightness))
 --- a/app/src/main/java/com/example/assistentecell/FeedbackReceiver.kt
 +++ b/app/src/main/java/com/example/assistentecell/FeedbackReceiver.kt
 @@ -3,113 +3,62 @@
@@ -474,7 +1311,17 @@
          handlerReconexao.removeCallbacksAndMessages(null)
          if (isConectando) {
              Log.d("AGENTE_WS", "⏳ Já existe uma tentativa de conexão em curso. Ignorando.")
-@@ -387,32 +399,10 @@
+@@ -368,6 +380,9 @@
+                     put("tipo_ws", "REGISTRO")
+                     put("id", "MOBILE")
+                     put("connection_id", currentConnId)
++                    if (!getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE).getString("ha_token", "").isNullOrBlank()) {
++                        put("capacidades", JSONArray().put("CASA"))
++                    }
+                 }
+                 webSocket.send(registro.toString())
+             }
+@@ -387,38 +402,19 @@
                      }
  
                      val correlacaoId = json.optString("correlacao_id", "")
@@ -504,17 +1351,32 @@
 -                        }
 -                        cacheMensagensProcessadas[keyChat] = agora
 -                    }
-+                    if (messagePolicy.isDuplicate(tipoWs, json.optString("id"), correlacaoId,
++                    if (tipoWs != "COMANDO_CASA" && messagePolicy.isDuplicate(tipoWs, json.optString("id"), correlacaoId,
 +                            json.optString("texto"), json.optString("acao", json.optString("comando")),
 +                            json.optString("parametro", json.optString("acao_parametro")), agora)) return
                      
                      if (tipoWs == "SOLICITAR_IDENTIFICACAO") {
                          val registro = JSONObject().apply {
-@@ -489,13 +479,16 @@
+                             put("tipo_ws", "REGISTRO")
+                             put("id", "MOBILE")
+-                            put("connection_id", currentConnId) // 🛡️ IDENTIFICAÇÃO ROBUSTA
++                            put("connection_id", currentConnId)
++                    if (!getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE).getString("ha_token", "").isNullOrBlank()) {
++                        put("capacidades", JSONArray().put("CASA"))
++                    } // 🛡️ IDENTIFICAÇÃO ROBUSTA
+                         }
+                         webSocket.send(registro.toString())
+                         Log.d("AGENTE_WS", "📤 Resposta ao desafio de identificação: MOBILE ($currentConnId)")
+@@ -489,13 +485,21 @@
                          return
                      }
  
 -                    if (tipoWs == "COMANDO_SISTEMA" || tipoWs == "COMANDO_PC") {
++                    if (tipoWs == "COMANDO_CASA") {
++                        com.example.assistentecell.command.HouseCommandExecutor.execute(
++                            this@ListenerDeNotificacoes, json) { webSocket.send(it) }
++                        return
++                    }
 +                    if (tipoWs == "COMANDO_PC") return // Desktop commands belong to the PC executor.
 +                    if (tipoWs == "COMANDO_SISTEMA") {
                          val acao = json.optString("acao", json.optString("comando"))
@@ -529,7 +1391,7 @@
                          }
                          return
                      }
-@@ -509,19 +502,11 @@
+@@ -509,79 +513,30 @@
                          // 🔍 FILTRO DE HÁBITOS REFORÇADO: Silencia e oculta notificações redundantes
                          // Respeita o switch 'habit_filter_enabled'
                          val habitFilterActive = prefs.getBoolean("habit_filter_enabled", true)
@@ -552,17 +1414,55 @@
                              serviceScope.launch {
                                  val prefs = getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
                                  val isVoiceActive = prefs.getBoolean("voice_active", false)
-@@ -561,9 +546,6 @@
-                                     Log.d("AGENTE_WS", "🔇 Sessão ativa: Fala de background suprimida")
+                                 
+-                                // 🗣️ VOZ: Respostas do Chat são faladas se a voz estiver ligada E não for ruído de hábito
+-                                // 🛡️ ANTI-DUPLICIDADE: Se a sessão de voz estiver aberta, não fala aqui (deixa para OllieSession)
+-                                if (isVoiceActive && !isHabitNoise && !ChatBridge.isAssistantSessionActive.value) {
+-                                    Log.d("AGENTE_WS", "🗣️ Chamando speak para: $texto")
+-                                    voiceManager?.speak(texto) {
+-                                        // 🧠 AUTO-LISTENING: Se a Ollie fez uma pergunta/sugestão, abre o microfone
+-                                        val padroesSugestao = listOf("?", "quer que", "deseja", "posso", "gostaria", "o que você acha")
+-                                        if (padroesSugestao.any { texto.lowercase().contains(it) }) {
+-                                            Log.d("AGENTE_WS", "🎙️ Sugestão detectada, abrindo microfone para resposta do usuário.")
+-                                            
+-                                            // Captura o ID da notificação atual (se existir) para contexto
+-                                            val currentCorrelationId = json.optString("correlacao_id", "")
+-                                            
+-                                            voiceManager?.startListening { resposta ->
+-                                                if (resposta.isNotEmpty()) {
+-                                                    serviceScope.launch {
+-                                                        ChatBridge.postMessage(ChatMessage(text = resposta, isFromUser = true))
+-                                                    }
+-                                                    val jsonMsg = JSONObject().apply {
+-                                                        put("texto", resposta)
+-                                                        put("pacote", packageName)
+-                                                        put("tipo_ws", "CHAT_MESSAGE")
+-                                                        if (currentCorrelationId.isNotEmpty()) {
+-                                                            put("correlacao_id", currentCorrelationId)
+-                                                        }
+-                                                    }
+-                                                    enviarMensagemWebSocket(jsonMsg.toString())
+-                                                }
+-                                            }
+-                                        }
+-                                    }
+-                                } else if (ChatBridge.isAssistantSessionActive.value) {
+-                                    Log.d("AGENTE_WS", "🔇 Sessão ativa: Fala de background suprimida")
++                                val explicitVoice = com.example.assistentecell.voice.VoiceReplies.pending.consume(correlacaoId)
++                                if ((isVoiceActive || explicitVoice) && !isHabitNoise &&
++                                    !ChatBridge.isAssistantSessionActive.value) {
++                                    voiceManager?.speak(texto, interactive = explicitVoice)
                                  }
- 
+-
 -                                // 🧠 OLLIE LIVRE: Analisa o texto da resposta para executar comandos implícitos
 -                                SystemCommandHandler.parseAndExecuteFromText(this@ListenerDeNotificacoes, texto)
--
+ 
                                  if (!isHabitNoise) {
                                      ChatBridge.postMessage(
-                                         ChatMessage(text = texto, isFromUser = false)
-@@ -572,16 +554,7 @@
+-                                        ChatMessage(text = texto, isFromUser = false)
++                                        ChatMessage(text = texto, isFromUser = false, correlationId = correlacaoId)
+                                     )
+                                 }
                              }
                          }
  
@@ -580,7 +1480,7 @@
  
                          val acaoTipo = if (json.has("acao_tipo")) json.optString("acao_tipo") else null
                          val acaoParametro = if (json.has("acao_parametro")) json.optString("acao_parametro") else null
-@@ -596,11 +569,13 @@
+@@ -596,11 +551,13 @@
                                      acao_tipo = acaoTipo,
                                      acao_parametro = acaoParametro,
                                      acao_texto = acaoTexto,
@@ -596,7 +1496,7 @@
                                      NotificationHandler.showNotification(this@ListenerDeNotificacoes, payload)
                                  } else {
                                      Log.d("AgenteSensor", "🔇 App em foco: Notificação de sistema suprimida")
-@@ -608,7 +583,10 @@
+@@ -608,7 +565,10 @@
                                  
                                  // 🛡️ MODO FOCO: Se estiver ativo, não dispara o overlay disruptivo
                                  // 🛡️ SESSÃO ATIVA: Se a tela de voz estiver aberta, não dispara overlay redundante
@@ -608,7 +1508,7 @@
                                      dispararNotificacaoLocal(titulo, texto, acaoTipo, acaoParametro, acaoTexto, correlationId)
                                  } else {
                                      Log.d("AgenteSensor", "🔇 Overlay bloqueado: Foco Ativo ou Sessão de Voz Ativa")
-@@ -624,6 +602,7 @@
+@@ -624,6 +584,7 @@
              }
  
              override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -616,7 +1516,7 @@
                  isConectando = false
                  if (this@ListenerDeNotificacoes.webSocket == webSocket) {
                      this@ListenerDeNotificacoes.webSocket = null
-@@ -638,6 +617,7 @@
+@@ -638,6 +599,7 @@
              }
  
              override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -624,7 +1524,7 @@
                  isConectando = false
                  if (this@ListenerDeNotificacoes.webSocket == webSocket) {
                      this@ListenerDeNotificacoes.webSocket = null
-@@ -652,6 +632,7 @@
+@@ -652,6 +614,7 @@
      }
  
      private fun agendarReconexao() {
@@ -632,7 +1532,7 @@
          handlerReconexao.removeCallbacksAndMessages(null)
          handlerReconexao.postDelayed({
              Log.e("AGENTE_WS", "🔄 Iniciando auto-reconexão...")
-@@ -676,38 +657,39 @@
+@@ -676,38 +639,39 @@
          isMonitorando = true
          thread {
              val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -703,7 +1603,7 @@
                  }
                  Thread.sleep(2000)
              }
-@@ -736,6 +718,7 @@
+@@ -736,6 +700,7 @@
                  Log.e("AgenteSensor", "❌ Falha ao conectar no PC: ${e.message}")
              }
              override fun onResponse(call: Call, response: Response) {
@@ -711,6 +1611,43 @@
                  response.close()
              }
          })
+--- a/app/src/main/java/com/example/assistentecell/MainActivity.kt
++++ b/app/src/main/java/com/example/assistentecell/MainActivity.kt
+@@ -110,7 +110,25 @@
+     }
+ 
+     private val permissionLauncher: ActivityResultLauncher<Array<String>> =
+-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ -> }
++        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ -> showAssistantIfRequested() }
++
++    private fun showAssistantIfRequested() {
++        if (intent?.action !in setOf(Intent.ACTION_ASSIST, Intent.ACTION_VOICE_COMMAND)) return
++        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
++        intent.action = null
++        try {
++            startService(Intent(this, com.example.assistentecell.assistant.OllieAssistantService::class.java)
++                .setAction(Intent.ACTION_ASSIST))
++        } catch (e: Exception) {
++            android.widget.Toast.makeText(this, "Selecione a Ollie como assistente padrão nas configurações.", android.widget.Toast.LENGTH_LONG).show()
++        }
++    }
++
++    override fun onNewIntent(newIntent: Intent) {
++        super.onNewIntent(newIntent)
++        setIntent(newIntent)
++        showAssistantIfRequested()
++    }
+ 
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
+@@ -144,6 +162,7 @@
+     override fun onResume() {
+         super.onResume()
+         isAppInForeground = true
++        showAssistantIfRequested()
+         // 🔄 RE-CHECK: Garante que o WakeWordService esteja rodando se habilitado
+         if (chatViewModel.isWakeWordEnabled.value) {
+             com.example.assistentecell.voice.WakeWordService.start(this)
 --- a/app/src/main/java/com/example/assistentecell/network/BackendAuthInterceptor.kt
 +++ b/app/src/main/java/com/example/assistentecell/network/BackendAuthInterceptor.kt
 @@ -0,0 +1,24 @@
@@ -740,7 +1677,7 @@
 +}
 --- a/app/src/main/java/com/example/assistentecell/network/BackendChatTransport.kt
 +++ b/app/src/main/java/com/example/assistentecell/network/BackendChatTransport.kt
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,29 @@
 +package com.example.assistentecell.network
 +
 +import com.google.gson.Gson
@@ -753,9 +1690,10 @@
 +
 +/** Chat uses the same authenticated client as sensors and WebSocket. */
 +class BackendChatTransport(private val client: OkHttpClient, private val serverUrl: () -> String) {
-+    fun enqueue(text: String, packageName: String, callback: Callback): Call {
++    fun enqueue(text: String, packageName: String, callback: Callback, correlationId: String? = null): Call {
 +        val payload = mapOf("categoria" to "SISTEMA_COMANDO_USUARIO", "origem" to "ANDROID",
-+            "pacote" to packageName, "payload" to mapOf("texto" to text))
++            "pacote" to packageName, "payload" to mapOf("texto" to text)) +
++            (correlationId?.let { mapOf("correlacao_id" to it) } ?: emptyMap())
 +        val request = Request.Builder().url(serverUrl() + "eventos")
 +            .post(Gson().toJson(payload).toRequestBody("application/json; charset=utf-8".toMediaType())).build()
 +        return client.newCall(request).also { it.enqueue(callback) }
@@ -799,6 +1737,55 @@
 +        return if (url.encodedPath.endsWith("/")) url.toString() else url.newBuilder().addPathSegment("").build().toString()
 +    }
 +}
+--- a/app/src/main/java/com/example/assistentecell/network/BackendVoiceTransport.kt
++++ b/app/src/main/java/com/example/assistentecell/network/BackendVoiceTransport.kt
+@@ -0,0 +1,24 @@
++package com.example.assistentecell.network
++
++import okhttp3.HttpUrl.Companion.toHttpUrl
++import okhttp3.OkHttpClient
++import okhttp3.Request
++import java.io.File
++import java.io.IOException
++
++/** Usa o mesmo cliente autenticado do chat, sem colocar credenciais na URL do áudio. */
++class BackendVoiceTransport(private val client: OkHttpClient, private val baseUrl: () -> String) {
++    fun download(text: String, rate: Float, pitch: Float, destination: File) {
++        val url = baseUrl().toHttpUrl().newBuilder()
++            .addPathSegments("api/v1/voice/speak")
++            .addQueryParameter("text", text).addQueryParameter("rate", rate.toString())
++            .addQueryParameter("pitch", pitch.toString()).build()
++        client.newCall(Request.Builder().url(url).build()).execute().use { response ->
++            if (!response.isSuccessful) throw IOException("Voz recusada: HTTP ${response.code}")
++            val body = response.body ?: throw IOException("Áudio ausente")
++            if (body.contentType()?.type != "audio") throw IOException("Resposta sem áudio")
++            body.byteStream().use { input -> destination.outputStream().use { input.copyTo(it) } }
++            if (destination.length() == 0L) throw IOException("Áudio vazio")
++        }
++    }
++}
+--- a/app/src/main/java/com/example/assistentecell/network/HouseCommand.kt
++++ b/app/src/main/java/com/example/assistentecell/network/HouseCommand.kt
+@@ -0,0 +1,19 @@
++package com.example.assistentecell.network
++
++import com.google.gson.Gson
++import com.google.gson.JsonObject
++
++data class HouseCommand(val id: String, val action: String, val entityId: String) {
++    companion object {
++        fun parse(raw: String): HouseCommand {
++            val json = Gson().fromJson(raw, JsonObject::class.java)
++            val id = json.get("id_comando")?.asString.orEmpty()
++            val action = json.get("acao")?.asString.orEmpty()
++            val entity = json.get("entity_id")?.asString.orEmpty()
++            require(id.matches(Regex("[\\w.:-]{1,128}"))) { "ID inválido" }
++            require(action in setOf("ligar", "desligar", "alternar", "consultar")) { "Ação inválida" }
++            require(entity.matches(Regex("light\\.[a-z0-9_]+"))) { "Entidade inválida" }
++            return HouseCommand(id, action, entity)
++        }
++    }
++}
 --- a/app/src/main/java/com/example/assistentecell/network/PCCommandSender.kt
 +++ b/app/src/main/java/com/example/assistentecell/network/PCCommandSender.kt
 @@ -84,7 +84,7 @@
@@ -819,6 +1806,24 @@
                      }
                  } catch (e: Exception) {
                      Log.e("PC_COMMAND", "⚠️ Falha ao enviar via WebSocket: ${e.message}")
+--- a/app/src/main/java/com/example/assistentecell/network/RoutineErrors.kt
++++ b/app/src/main/java/com/example/assistentecell/network/RoutineErrors.kt
+@@ -0,0 +1,15 @@
++package com.example.assistentecell.network
++
++import com.google.gson.Gson
++import com.google.gson.JsonObject
++
++object RoutineErrors {
++    fun message(code: Int, body: String?): String {
++        if (code == 401 || code == 403) return "O servidor recusou o token. Confira a conexão nas configurações."
++        if (code == 405) return "O servidor ainda precisa da atualização de gerenciamento de rotinas."
++        val detail = runCatching {
++            Gson().fromJson(body, JsonObject::class.java)?.get("detail")?.takeIf { it.isJsonPrimitive }?.asString
++        }.getOrNull()
++        return detail?.takeIf { it.isNotBlank() } ?: "Não consegui concluir a ação nas rotinas (HTTP $code)."
++    }
++}
 --- a/app/src/main/java/com/example/assistentecell/NotificationHandler.kt
 +++ b/app/src/main/java/com/example/assistentecell/NotificationHandler.kt
 @@ -1,186 +1,100 @@
@@ -1221,6 +2226,1055 @@
 +        return currentPackage
 +    }
 +}
+--- a/app/src/main/java/com/example/assistentecell/ui/screens/CapabilitiesScreen.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/screens/CapabilitiesScreen.kt
+@@ -1,747 +1,219 @@
+ package com.example.assistentecell.ui.screens
+ 
+-import android.content.Context
+-import androidx.compose.foundation.BorderStroke
+-import androidx.compose.foundation.background
+-import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.*
+ import androidx.compose.foundation.lazy.LazyColumn
+ import androidx.compose.foundation.lazy.items
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
+ import androidx.compose.foundation.shape.RoundedCornerShape
+-import androidx.compose.animation.animateColorAsState
+-import androidx.compose.ui.draw.blur
+-import androidx.compose.ui.draw.scale
+ import androidx.compose.material.icons.Icons
+ import androidx.compose.material.icons.outlined.*
+ import androidx.compose.material3.*
+ import androidx.compose.runtime.*
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+-import androidx.compose.ui.draw.clip
+-import androidx.compose.ui.graphics.vector.ImageVector
+-import androidx.compose.ui.graphics.Brush
+-import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.unit.dp
+ import com.example.assistentecell.automation.AutomationManager
+-import com.example.assistentecell.data.model.AutomationRule
+-import com.example.assistentecell.data.model.ApiSuggestedRule
+-import com.example.assistentecell.ui.utils.AppInfo
++import com.example.assistentecell.automation.RoutineDescription
++import com.example.assistentecell.data.model.*
++import com.example.assistentecell.ui.viewmodel.AutomationUiState
+ import com.example.assistentecell.ui.viewmodel.AutomationViewModel
+-import com.example.assistentecell.ui.viewmodel.AutomationUiState
+-import androidx.core.content.edit
+-
+-data class Capability(
+-    val id: String,
+-    val title: String,
+-    val description: String,
+-    val icon: ImageVector,
+-    val isEnabled: Boolean = false
+-)
+ 
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable
+-fun CapabilitiesScreen(
+-    viewModel: AutomationViewModel,
+-    onNavigate: (String) -> Unit
+-) {
++fun CapabilitiesScreen(viewModel: AutomationViewModel, onNavigate: (String) -> Unit) {
+     val context = LocalContext.current
+-    val prefs = remember { context.getSharedPreferences("habilidades_prefs", Context.MODE_PRIVATE) }
+-    val automationManager = remember { AutomationManager(context) }
+-    
+-    val uiState by viewModel.uiState.collectAsState()
+-    val isActionLoading by viewModel.isActionLoading.collectAsState()
+-
+-    var selectedCapabilityForConfig by remember { mutableStateOf<Capability?>(null) }
+-    val sheetState = rememberModalBottomSheetState()
+-    var showBottomSheet by remember { mutableStateOf(false) }
+-    var showCreateMacroDialog by remember { mutableStateOf(false) }
+-
+-    var capabilitiesList by remember {
+-        mutableStateOf(
+-            listOf(
+-                Capability("musica", "Rotinas Musicais", "Aprendo seus hábitos e sugiro trilhas sonoras baseadas no seu contexto.", Icons.Outlined.MusicNote),
+-                Capability("foco", "Foco Inteligente", "Posso silenciar distrações e configurar perfis de foco automaticamente.", Icons.Outlined.Timer),
+-                Capability("clima", "Contexto de Clima", "Sugiro preparações e mudo alertas baseado na previsão do tempo local.", Icons.Outlined.Cloud),
+-                Capability("conversa", "Memória de Conversa", "Lembro de detalhes importantes citados em notificações.", Icons.Outlined.Psychology),
+-                Capability("automacao", "Automação de Apps", "Abro apps e realizo ações rápidas baseado em gatilhos.", Icons.Outlined.Bolt),
+-                Capability("desktop", "Controle de Desktop", "Controle seu PC, troque saídas de áudio e gerencie volume remotamente.", Icons.Outlined.DesktopWindows),
+-                Capability("monitor", "Monitoramento de Sistema", "Acompanho o uso de CPU, RAM e temperatura do seu PC.", Icons.Outlined.Analytics),
+-                Capability("seguranca", "Agente de Segurança", "Monitoro permissões e acessos suspeitos em tempo real.", Icons.Outlined.Shield)
+-            ).map { it.copy(isEnabled = prefs.getBoolean(it.id, false)) }
+-        )
+-    }
+-
+-    Scaffold(
+-        containerColor = Color.Transparent,
+-        topBar = {
+-            LargeTopAppBar(
+-                title = { Text("Meus Superpoderes", fontWeight = FontWeight.Bold) },
+-                colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = Color.Transparent)
+-            )
+-        }
+-    ) { padding ->
+-        LazyColumn(
+-            modifier = Modifier
+-                .fillMaxSize()
+-                .padding(padding)
+-                .padding(horizontal = 16.dp),
+-            verticalArrangement = Arrangement.spacedBy(16.dp),
+-            contentPadding = PaddingValues(bottom = 24.dp)
+-        ) {
++    val state by viewModel.uiState.collectAsState()
++    val busy by viewModel.isActionLoading.collectAsState()
++    val feedback by viewModel.feedback.collectAsState()
++    val manager = remember { AutomationManager(context) }
++    var localRules by remember { mutableStateOf(manager.getRules()) }
++    var tab by remember { mutableIntStateOf(0) }
++    var query by remember { mutableStateOf("") }
++    var create by remember { mutableStateOf(false) }
++    var delete by remember { mutableStateOf<Pair<ApiRoutine, Boolean>?>(null) }
++    var approve by remember { mutableStateOf<ApiRoutine?>(null) }
++    val cache = remember { mutableMapOf<String, String>() }
++    val label: (String) -> String = { id -> cache.getOrPut(id) {
++        runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(id, 0)).toString() }
++            .getOrElse { id.removeSuffix(".exe").ifBlank { "Aplicativo não informado" } }
++    } }
++    LaunchedEffect(Unit) { viewModel.fetchDiscovered() }
++    val loaded = state as? AutomationUiState.Success
++    val serverReady = loaded != null && (loaded.discovered + loaded.routines).all { it.pode_ativar != null }
++    Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
++        TopAppBar(title = { Text("Meus Superpoderes", fontWeight = FontWeight.Bold) }, actions = {
++            IconButton(onClick = viewModel::fetchDiscovered, enabled = !busy) {
++                Icon(Icons.Outlined.Refresh, "Atualizar rotinas")
++            }
++        })
++    }) { padding ->
++        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
++            verticalArrangement = Arrangement.spacedBy(12.dp),
++            contentPadding = PaddingValues(top = 8.dp, bottom = 200.dp)) {
++            item { Text("A Ollie aprende padrões. Você escolhe quais viram rotinas e pode pausá-las a qualquer momento.") }
+             item {
+-                Text(
+-                    "Ativa aí o que eu posso aprontar:",
+-                    style = MaterialTheme.typography.titleMedium,
+-                    modifier = Modifier.padding(vertical = 8.dp)
+-                )
+-            }
+-
+-            // --- SEÇÃO: DESCOBERTAS PELA OLLIE ---
++                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                    OutlinedButton(onClick = viewModel::triggerDiscovery, enabled = !busy && serverReady) { Text("Analisar uso") }
++                    Button(onClick = { create = true }, enabled = !busy && serverReady) { Text("Nova rotina") }
++                }
++            }
++            if (loaded != null && !serverReady) item {
++                Text("O servidor precisa receber a atualização de rotinas para validar sugestões e permitir ativar ou pausar. Você já pode revisar e excluir os registros.", color = MaterialTheme.colorScheme.error)
++            }
++            if (feedback != null) item {
++                Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp)) {
++                    Text(feedback.orEmpty(), Modifier.padding(16.dp))
++                }
++            }
++            if (busy || state is AutomationUiState.Loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+             item {
+-                Row(
+-                    modifier = Modifier.fillMaxWidth(),
+-                    horizontalArrangement = Arrangement.SpaceBetween,
+-                    verticalAlignment = Alignment.CenterVertically
+-                ) {
+-                    SettingCategory("Descobertas pela Ollie")
+-                    if (isActionLoading) {
+-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+-                    } else {
+-                        IconButton(onClick = { viewModel.triggerDiscovery() }) {
+-                            Icon(Icons.Outlined.Refresh, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
++                TabRow(selectedTabIndex = tab) {
++                    Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Sugestões (${loaded?.discovered?.size ?: 0})") })
++                    Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Minhas rotinas (${loaded?.routines?.size ?: 0})") })
++                }
++            }
++            if (state is AutomationUiState.Error) item {
++                Text((state as AutomationUiState.Error).message, color = MaterialTheme.colorScheme.error)
++                TextButton(onClick = viewModel::fetchDiscovered) { Text("Tentar novamente") }
++            }
++            if (loaded != null) {
++                item {
++                    OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Buscar rotina") },
++                        singleLine = true, modifier = Modifier.fillMaxWidth())
++                }
++                val records = (if (tab == 0) loaded.discovered else loaded.routines)
++                    .filter { query.isBlank() || (it.nome + " " + it.justificativa).contains(query, ignoreCase = true) }
++                if (records.isEmpty()) item {
++                    Text(if (query.isNotBlank()) "Nenhuma rotina corresponde à busca."
++                         else if (tab == 0) "Nenhuma sugestão pendente. A análise precisa de uso observado em dias diferentes."
++                         else "Nenhuma rotina cadastrada. Ative uma sugestão ou crie uma rotina.")
++                }
++                items(records, key = { it.nome }) { routine ->
++                    RoutineCard(routine, suggested = tab == 0, enabled = !busy, label = label,
++                        onApprove = { approve = routine },
++                        onDelete = { delete = routine to (tab == 0) },
++                        onToggle = { viewModel.setRoutineState(routine.nome, it) })
++                }
++            }
++            if (localRules.isNotEmpty()) {
++                item {
++                    Text("Regras antigas deste celular", fontWeight = FontWeight.Bold)
++                    Text("Essas regras foram salvas localmente e não estavam ligadas ao motor. Revise e salve como rotinas pausadas.")
++                }
++                items(localRules, key = { it.id }) { rule ->
++                    val routine = RoutineDescription.fromLegacy(rule)
++                    Card {
++                        Column(Modifier.padding(16.dp)) {
++                            Text(routine.nome, fontWeight = FontWeight.Bold)
++                            Text(RoutineDescription.trigger(routine, label))
++                            routine.acoes.forEach { Text(RoutineDescription.action(it, label)) }
++                            Button(enabled = !busy && serverReady, onClick = {
++                                viewModel.createRoutine(routine) {
++                                    manager.removeRule(rule.id)
++                                    localRules = manager.getRules()
++                                    tab = 1
++                                }
++                            }) { Text("Salvar como pausada") }
+                         }
+                     }
+                 }
+             }
+-
+-            when (val state = uiState) {
+-                is AutomationUiState.Success -> {
+-                    if (state.discovered.isEmpty()) {
+-                        item {
+-                            Text(
+-                                "Nenhuma rotina nova detectada ainda. Continue usando o PC e Celular!",
+-                                style = MaterialTheme.typography.bodySmall,
+-                                color = MaterialTheme.colorScheme.outline,
+-                                modifier = Modifier.padding(horizontal = 12.dp)
+-                            )
+-                        }
+-                    } else {
+-                        val chunks = state.discovered.chunked(2)
+-                        chunks.forEachIndexed { index, chunk ->
+-                            item {
+-                                Row(
+-                                    modifier = Modifier.fillMaxWidth(),
+-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+-                                ) {
+-                                    if (chunk.size == 1) {
+-                                        Box(modifier = Modifier.fillMaxWidth()) {
+-                                            DiscoveredRoutineCard(
+-                                                rule = chunk[0],
+-                                                isLarge = true,
+-                                                onApprove = { viewModel.approveRoutine(it) },
+-                                                onReject = { viewModel.rejectRoutine(it) }
+-                                            )
+-                                        }
+-                                    } else {
+-                                        val weight1 = if (index % 2 == 0) 0.58f else 0.42f
+-                                        val weight2 = if (index % 2 == 0) 0.42f else 0.58f
+-                                        Box(modifier = Modifier.weight(weight1)) {
+-                                            DiscoveredRoutineCard(
+-                                                rule = chunk[0],
+-                                                isLarge = weight1 > 0.5f,
+-                                                onApprove = { viewModel.approveRoutine(it) },
+-                                                onReject = { viewModel.rejectRoutine(it) }
+-                                            )
+-                                        }
+-                                        Box(modifier = Modifier.weight(weight2)) {
+-                                            DiscoveredRoutineCard(
+-                                                rule = chunk[1],
+-                                                isLarge = weight2 > 0.5f,
+-                                                onApprove = { viewModel.approveRoutine(it) },
+-                                                onReject = { viewModel.rejectRoutine(it) }
+-                                            )
+-                                        }
+-                                    }
+-                                }
+-                            }
+-                        }
+-                    }
+-                }
+-                is AutomationUiState.Loading -> {
+-                    item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(2.dp))) }
+-                }
+-                else -> {}
+-            }
+-
+-            item { Spacer(Modifier.height(8.dp)) }
+-            item { SettingCategory("Minhas Habilidades") }
+-
+-            val capChunks = capabilitiesList.chunked(2)
+-            capChunks.forEachIndexed { index, chunk ->
+-                item {
+-                    Row(
+-                        modifier = Modifier
+-                            .fillMaxWidth()
+-                            .padding(vertical = 6.dp),
+-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+-                    ) {
+-                        val weight1 = if (index % 2 == 0) 0.58f else 0.42f
+-                        val weight2 = if (index % 2 == 0) 0.42f else 0.58f
+-                        
+-                        Box(modifier = Modifier.weight(weight1)) {
+-                            CapabilityCard(
+-                                capability = chunk[0],
+-                                onToggle = { isChecked ->
+-                                    prefs.edit { putBoolean(chunk[0].id, isChecked) }
+-                                    capabilitiesList = capabilitiesList.map { 
+-                                        if (it.id == chunk[0].id) it.copy(isEnabled = isChecked) else it
+-                                    }
+-                                },
+-                                onConfigClick = {
+-                                    selectedCapabilityForConfig = chunk[0]
+-                                    showBottomSheet = true
+-                                }
+-                            )
+-                        }
+-                        
+-                        if (chunk.size > 1) {
+-                            Box(modifier = Modifier.weight(weight2)) {
+-                                CapabilityCard(
+-                                    capability = chunk[1],
+-                                    onToggle = { isChecked ->
+-                                        prefs.edit { putBoolean(chunk[1].id, isChecked) }
+-                                        capabilitiesList = capabilitiesList.map { 
+-                                            if (it.id == chunk[1].id) it.copy(isEnabled = isChecked) else it
+-                                        }
+-                                    },
+-                                    onConfigClick = {
+-                                        selectedCapabilityForConfig = chunk[1]
+-                                        showBottomSheet = true
+-                                    }
+-                                )
+-                            }
+-                        }
+-                    }
+-                }
+-            }
+-
+-            item { Spacer(Modifier.height(8.dp)) }
+-            item { SettingCategory("Modos Personalizados") }
+-            item {
+-                Card(
+-                    modifier = Modifier.fillMaxWidth(),
+-                    shape = RoundedCornerShape(24.dp),
+-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+-                ) {
+-                    Column(modifier = Modifier.padding(20.dp)) {
+-                        Text("Crie sequências de ações personalizadas. Você pode criar novos modos pedindo diretamente no chat!", style = MaterialTheme.typography.bodySmall)
+-                        Spacer(Modifier.height(12.dp))
+-                        Button(
+-                            onClick = { showCreateMacroDialog = true },
+-                            modifier = Modifier.fillMaxWidth(),
+-                            shape = RoundedCornerShape(12.dp)
+-                        ) {
+-                            Icon(Icons.Outlined.Add, null)
+-                            Spacer(Modifier.width(8.dp))
+-                            Text("Criar Novo Modo")
+-                        }
+-                    }
+-                }
+-            }
+         }
+-
+-        if (showCreateMacroDialog) {
+-            CreateMacroDialog(onDismiss = { showCreateMacroDialog = false })
++    }
++    delete?.let { (routine, suggested) ->
++        AlertDialog(onDismissRequest = { delete = null }, title = { Text("Excluir ${routine.nome}?") },
++            text = { Text(if (suggested) "Essa sugestão será descartada." else "Essa rotina deixará de executar.") },
++            confirmButton = { TextButton(onClick = {
++                if (suggested) viewModel.rejectRoutine(routine.nome) else viewModel.deleteRoutine(routine.nome)
++                delete = null
++            }) { Text("Excluir") } },
++            dismissButton = { TextButton(onClick = { delete = null }) { Text("Cancelar") } })
++    }
++    approve?.let { routine ->
++        AlertDialog(onDismissRequest = { approve = null }, title = { Text("Ativar ${routine.nome}?") },
++            text = { Column(Modifier.verticalScroll(rememberScrollState())) {
++                Text(RoutineDescription.trigger(routine, label))
++                routine.acoes.forEach { Text(RoutineDescription.action(it, label)) }
++                Spacer(Modifier.height(12.dp))
++                Text("Após ativar, a rotina aguardará o próximo gatilho. Você pode pausá-la em Minhas rotinas.")
++            } },
++            confirmButton = { TextButton(onClick = { viewModel.approveRoutine(routine.nome); approve = null }) { Text("Ativar rotina") } },
++            dismissButton = { TextButton(onClick = { approve = null }) { Text("Cancelar") } })
++    }
++    if (create) RoutineCreateDialog(onDismiss = { create = false }, busy = busy, feedback = feedback, onSave = { routine ->
++        viewModel.createRoutine(routine) { create = false; tab = 1 }
++    })
++}
++
++@Composable
++private fun RoutineCard(routine: ApiRoutine, suggested: Boolean, enabled: Boolean, label: (String) -> String,
++                        onApprove: () -> Unit, onDelete: () -> Unit, onToggle: (Boolean) -> Unit) {
++    Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
++        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++            Row(verticalAlignment = Alignment.CenterVertically) {
++                Text(routine.nome, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
++                if (!suggested) Switch(checked = routine.ativa, onCheckedChange = onToggle, enabled = enabled && routine.pode_ativar != null && (routine.ativa || routine.pode_ativar == true))
++            }
++            Text(if (suggested) "Aguardando sua aprovação"
++                else if (!routine.ativa) "Pausada"
++                else if (routine.pode_ativar == false) "Ativa no cadastro — precisa de revisão"
++                else if (routine.pode_ativar == null) "Ativa no servidor atual"
++                else "Ativa — aguardando gatilho",
++                color = MaterialTheme.colorScheme.primary)
++            routine.justificativa?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
++            Text("Quando: ${RoutineDescription.trigger(routine, label)}")
++            routine.acoes.forEach { Text("Então: ${RoutineDescription.action(it, label)}") }
++            Text("Intervalo mínimo: ${routine.cooldown_segundos / 60} min" + if (routine.uma_vez_por_dia) " · Uma vez por dia" else "",
++                style = MaterialTheme.typography.bodySmall)
++            if (suggested) {
++                val evidence = routine.evidencia
++                Text(if (evidence != null && evidence.amostras > 0)
++                    "Observado em ${evidence.amostras} de ${evidence.oportunidades} oportunidades, em ${evidence.dias_distintos} dias."
++                    else "Sugestão antiga ou manual, sem evidência de uso registrada. Revise as ações antes de ativar.",
++                    style = MaterialTheme.typography.bodySmall)
++            }
++            routine.problemas.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
++            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
++                TextButton(onClick = onDelete, enabled = enabled) { Text("Excluir", color = MaterialTheme.colorScheme.error) }
++                if (suggested) Button(onClick = onApprove, enabled = enabled && routine.pode_ativar == true && routine.acoes.isNotEmpty()) { Text("Revisar e ativar") }
++            }
+         }
+-
+-        if (showBottomSheet && selectedCapabilityForConfig != null) {
+-            ModalBottomSheet(
+-                onDismissRequest = { showBottomSheet = false },
+-                sheetState = sheetState
+-            ) {
+-                AutomationConfigContent(
+-                    capability = selectedCapabilityForConfig!!,
+-                    automationManager = automationManager
+-                )
+-            }
+-        }
+     }
+ }
+ 
+ @Composable
+-fun SettingCategory(title: String) {
+-    Text(
+-        text = title.uppercase(),
+-        style = MaterialTheme.typography.labelMedium,
+-        color = MaterialTheme.colorScheme.primary,
+-        fontWeight = FontWeight.Bold,
+-        modifier = Modifier.padding(vertical = 8.dp, horizontal = 12.dp)
+-    )
+-}
+-
+-@Composable
+-fun DiscoveredRoutineCard(
+-    rule: ApiSuggestedRule,
+-    isLarge: Boolean = true,
+-    onApprove: (String) -> Unit,
+-    onReject: (String) -> Unit
+-) {
+-    Card(
+-        modifier = Modifier.fillMaxWidth(),
+-        shape = RoundedCornerShape(24.dp),
+-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.06f)),
+-        border = BorderStroke(
+-            0.5.dp,
+-            Brush.linearGradient(
+-                colors = listOf(Color.White.copy(alpha = 0.2f), Color.White.copy(alpha = 0.02f))
+-            )
+-        )
+-    ) {
+-        Column(modifier = Modifier.padding(if (isLarge) 16.dp else 12.dp)) {
+-            Row(verticalAlignment = Alignment.CenterVertically) {
+-                Icon(Icons.Outlined.AutoAwesome, null, tint = Color(0xFF9D00FF), modifier = Modifier.size(20.dp))
+-                Spacer(Modifier.width(8.dp))
+-                Text(
+-                    rule.nome ?: "Nova Rotina", 
+-                    style = if (isLarge) MaterialTheme.typography.titleSmall else MaterialTheme.typography.labelMedium, 
+-                    fontWeight = FontWeight.Bold,
+-                    maxLines = 1
+-                )
+-            }
+-            
+-            Spacer(Modifier.height(8.dp))
+-            Text(
+-                text = rule.justification ?: "Padrão detectado pelo sistema.",
+-                style = MaterialTheme.typography.bodySmall,
+-                color = Color.White.copy(alpha = 0.7f),
+-                maxLines = if (isLarge) 3 else 1
+-            )
+-            
+-            if (isLarge) {
+-                Spacer(Modifier.height(12.dp))
+-                Surface(
+-                    color = Color.White.copy(alpha = 0.05f),
+-                    shape = RoundedCornerShape(12.dp)
+-                ) {
+-                    Column(modifier = Modifier.padding(12.dp)) {
+-                        val triggerName = rule.triggerPackage?.split(".")?.lastOrNull() ?: "Evento"
+-                        val actionLabel = if (rule.actionType == "PC_COMMAND") "PC ➔" else "Abrir"
+-                        
+-                        Text("GATILHO: Abrir $triggerName", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+-                        Text("AÇÃO: $actionLabel ${rule.actionParameter}", style = MaterialTheme.typography.labelSmall)
+-                    }
+-                }
+-            }
+-            
+-            Spacer(Modifier.height(12.dp))
+-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+-                IconButton(onClick = { onReject(rule.nome ?: "") }, modifier = Modifier.size(32.dp)) {
+-                    Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+-                }
+-                Spacer(Modifier.width(8.dp))
+-                Button(
+-                    onClick = { onApprove(rule.nome ?: "") },
+-                    shape = RoundedCornerShape(12.dp),
+-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+-                    modifier = Modifier.height(32.dp),
+-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9D00FF).copy(alpha = 0.6f))
+-                ) {
+-                    Text("Ativar", style = MaterialTheme.typography.labelSmall, color = Color.White)
+-                }
+-            }
+-        }
+-    }
+-}
+-
+-@Composable
+-fun CapabilityCard(capability: Capability, onToggle: (Boolean) -> Unit, onConfigClick: () -> Unit) {
+-    val glowColor by animateColorAsState(
+-        if (capability.isEnabled) Color(0xFF9D4EDD).copy(alpha = 0.15f) else Color.Transparent,
+-        label = "glow"
+-    )
+-
+-    Box(
+-        modifier = Modifier
+-            .fillMaxWidth()
+-            .clip(RoundedCornerShape(24.dp))
+-    ) {
+-        if (capability.isEnabled) {
+-            Box(
+-                modifier = Modifier
+-                    .matchParentSize()
+-                    .background(glowColor)
+-                    .blur(16.dp)
+-            )
+-        }
+-        Card(
+-            modifier = Modifier.fillMaxWidth(),
+-            shape = RoundedCornerShape(24.dp),
+-            colors = CardDefaults.cardColors(
+-                containerColor = Color.White.copy(alpha = if (capability.isEnabled) 0.08f else 0.04f)
+-            ),
+-            border = BorderStroke(
+-                0.5.dp,
+-                Brush.linearGradient(
+-                    colors = if (capability.isEnabled) {
+-                        listOf(Color(0xFF00E5FF).copy(alpha = 0.4f), Color(0xFF9D4EDD).copy(alpha = 0.1f))
+-                    } else {
+-                        listOf(Color.White.copy(alpha = 0.15f), Color.White.copy(alpha = 0.02f))
+-                    }
+-                )
+-            )
+-        ) {
+-            Column(modifier = Modifier.padding(14.dp)) {
+-                Row(
+-                    modifier = Modifier.fillMaxWidth(),
+-                    horizontalArrangement = Arrangement.SpaceBetween,
+-                    verticalAlignment = Alignment.CenterVertically
+-                ) {
+-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+-                        Icon(
+-                            capability.icon,
+-                            null,
+-                            tint = if (capability.isEnabled) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.5f),
+-                            modifier = Modifier.size(22.dp)
+-                        )
+-                        Spacer(Modifier.width(8.dp))
+-                        Text(
+-                            capability.title,
+-                            style = MaterialTheme.typography.titleSmall,
+-                            fontWeight = FontWeight.Bold,
+-                            maxLines = 1
+-                        )
+-                    }
+-                    
+-                    Switch(
+-                        checked = capability.isEnabled,
+-                        onCheckedChange = onToggle,
+-                        modifier = Modifier.scale(0.8f)
+-                    )
+-                }
+-                Spacer(Modifier.height(8.dp))
+-                Text(
+-                    capability.description,
+-                    style = MaterialTheme.typography.bodySmall,
+-                    color = Color.White.copy(alpha = 0.65f),
+-                    maxLines = 3,
+-                    minLines = 3
+-                )
+-                
+-                if (capability.id == "foco" || capability.id == "automacao") {
+-                    Spacer(Modifier.height(8.dp))
+-                    TextButton(
+-                        onClick = onConfigClick,
+-                        modifier = Modifier.align(Alignment.End),
+-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+-                    ) {
+-                        Icon(Icons.Outlined.Settings, null, modifier = Modifier.size(14.dp))
+-                        Spacer(Modifier.width(4.dp))
+-                        Text("Configurar", style = MaterialTheme.typography.labelSmall)
+-                    }
+-                }
+-            }
+-        }
+-    }
+-}
+-
+-@Composable
+-fun AutomationConfigContent(capability: Capability, automationManager: AutomationManager) {
+-    var rules by remember { mutableStateOf(automationManager.getRulesForSkill(capability.id)) }
+-    var showAddForm by remember { mutableStateOf(false) }
+-
+-    Column(
+-        modifier = Modifier
+-            .fillMaxWidth()
+-            .padding(24.dp)
+-            .padding(bottom = 32.dp)
+-    ) {
+-        Text(
+-            text = "Configurar: ${capability.title}",
+-            style = MaterialTheme.typography.headlineSmall,
+-            fontWeight = FontWeight.Bold
+-        )
+-        Spacer(Modifier.height(16.dp))
+-
+-        if (rules.isEmpty() && !showAddForm) {
+-            Text(
+-                "Nenhuma automação criada para esta habilidade.",
+-                style = MaterialTheme.typography.bodyMedium,
+-                color = MaterialTheme.colorScheme.outline
+-            )
+-        } else {
+-            rules.forEach { rule ->
+-                RuleItem(rule, onDelete = {
+-                    automationManager.removeRule(rule.id)
+-                    rules = automationManager.getRulesForSkill(capability.id)
+-                })
+-                Spacer(Modifier.height(8.dp))
+-            }
+-        }
+-
+-        Spacer(Modifier.height(16.dp))
+-
+-        if (showAddForm) {
+-            AddRuleForm(
+-                skillId = capability.id,
+-                onRuleAdded = {
+-                    rules = automationManager.getRulesForSkill(capability.id)
+-                    showAddForm = false
+-                },
+-                onCancel = { showAddForm = false },
+-                automationManager = automationManager
+-            )
+-        } else {
+-            Button(
+-                onClick = { showAddForm = true },
+-                modifier = Modifier.fillMaxWidth()
+-            ) {
+-                Icon(Icons.Outlined.Add, null)
+-                Spacer(Modifier.width(8.dp))
+-                Text("Nova Regra")
+-            }
+-        }
+-    }
+-}
+-
+-@Composable
+-fun RuleItem(rule: AutomationRule, onDelete: () -> Unit) {
+-    Surface(
+-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+-        shape = RoundedCornerShape(12.dp)
+-    ) {
+-        Row(
+-            modifier = Modifier
+-                .fillMaxWidth()
+-                .padding(12.dp),
+-            verticalAlignment = Alignment.CenterVertically,
+-            horizontalArrangement = Arrangement.SpaceBetween
+-        ) {
+-            Column(modifier = Modifier.weight(1f)) {
+-                if (!rule.nome.isNullOrBlank()) {
+-                    Text(
+-                        text = rule.nome,
+-                        style = MaterialTheme.typography.labelMedium,
+-                        fontWeight = FontWeight.ExtraBold,
+-                        color = MaterialTheme.colorScheme.primary
+-                    )
+-                }
+-                Text(
+-                    text = "SE abrir: ${rule.triggerPackage.split(".").last()}",
+-                    style = MaterialTheme.typography.labelMedium,
+-                    fontWeight = FontWeight.Bold
+-                )
+-                Text(
+-                    text = "ENTÃO: ${if (rule.actionType == "PC_COMMAND") "PC ➔ " else "Abrir "}${rule.actionParameter}",
+-                    style = MaterialTheme.typography.bodySmall
+-                )
+-            }
+-            IconButton(onClick = onDelete) {
+-                Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+-            }
+-        }
+-    }
+-}
+-
+-@Composable
+-fun CreateMacroDialog(onDismiss: () -> Unit) {
++private fun RoutineCreateDialog(onDismiss: () -> Unit, busy: Boolean, feedback: String?, onSave: (ApiRoutine) -> Unit) {
+     var name by remember { mutableStateOf("") }
+-    val context = LocalContext.current
+-    
+-    AlertDialog(
+-        onDismissRequest = onDismiss,
+-        title = { Text("Novo Modo Personalizado") },
+-        text = {
+-            Column {
+-                Text("Dê um nome ao seu novo modo (ex: Modo Cinema)", style = MaterialTheme.typography.bodySmall)
+-                Spacer(Modifier.height(8.dp))
+-                OutlinedTextField(
+-                    value = name,
+-                    onValueChange = { name = it },
+-                    placeholder = { Text("Nome do modo") },
+-                    modifier = Modifier.fillMaxWidth()
+-                )
+-            }
+-        },
+-        confirmButton = {
+-            Button(
+-                enabled = name.isNotBlank(),
+-                onClick = {
+-                    com.example.assistentecell.network.PCCommandSender.enviarComando(
+-                        comando = "criar_macro",
+-                        context = context,
+-                        app = name
+-                    )
+-                    onDismiss()
+-                }
+-            ) {
+-                Text("Criar")
+-            }
+-        },
+-        dismissButton = {
+-            TextButton(onClick = onDismiss) { Text("Cancelar") }
+-        }
+-    )
+-}
+-
+-@Composable
+-fun AddRuleForm(
+-    skillId: String,
+-    onRuleAdded: () -> Unit,
+-    onCancel: () -> Unit,
+-    automationManager: AutomationManager
+-) {
+     var triggerPackage by remember { mutableStateOf("") }
+     var triggerLabel by remember { mutableStateOf("") }
+-    var actionParameter by remember { mutableStateOf("") }
++    var actionPackage by remember { mutableStateOf("") }
+     var actionLabel by remember { mutableStateOf("") }
+-    var isPcCommand by remember { mutableStateOf(skillId == "foco") }
+-
+-    var showTriggerPicker by remember { mutableStateOf(false) }
+-    var showActionPicker by remember { mutableStateOf(false) }
+-    var showPcActionPicker by remember { mutableStateOf(false) }
+-
+-    val pcOptions = listOf(
+-        "vscode" to "Abrir VS Code",
+-        "android_studio" to "Abrir Android Studio",
+-        "spotify" to "Abrir Spotify PC",
+-        "discord" to "Abrir Discord PC",
+-        "lol" to "Abrir League of Legends",
+-        "pasta_jogos" to "Abrir Pasta de Jogos",
+-        "mutar_mic" to "Mudo Microfone",
+-        "bloquear_pc" to "Bloquear PC",
+-        "dormir_pc" to "Suspender PC",
+-        "trocar_saida" to "Trocar Saída Áudio",
+-        "modo_imersao" to "Modo Imersão",
+-        "alt_tab" to "Macro: Alt + Tab",
+-        "win_d" to "Macro: Desktop",
+-        "print_screen" to "Macro: Print Screen",
+-        "task_mgr" to "Macro: Gerenciador Tarefas"
+-    )
+-
+-    Column(
+-        modifier = Modifier
+-            .fillMaxWidth()
+-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+-            .padding(16.dp)
+-    ) {
+-        Text("Nova Automação", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+-        Spacer(Modifier.height(12.dp))
+-        
+-        // --- GATILHO (TRIGGER) ---
+-        Text("QUANDO EU ABRIR:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+-        Surface(
+-            modifier = Modifier
+-                .fillMaxWidth()
+-                .padding(vertical = 4.dp)
+-                .clickable { showTriggerPicker = true },
+-            color = MaterialTheme.colorScheme.surface,
+-            shape = RoundedCornerShape(8.dp),
+-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+-        ) {
+-            Text(
+-                text = if (triggerLabel.isEmpty()) "Escolher aplicativo..." else triggerLabel,
+-                modifier = Modifier.padding(12.dp),
+-                style = MaterialTheme.typography.bodyMedium,
+-                color = if (triggerLabel.isEmpty()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface
+-            )
+-        }
+-        
+-        Spacer(Modifier.height(12.dp))
+-
+-        // --- AÇÃO (ACTION) ---
+-        Row(verticalAlignment = Alignment.CenterVertically) {
+-            Checkbox(checked = isPcCommand, onCheckedChange = { isPcCommand = it })
+-            Text("Ação será no PC?", style = MaterialTheme.typography.bodySmall)
+-        }
+-
+-        Text("ENTÃO FAÇA:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+-        Surface(
+-            modifier = Modifier
+-                .fillMaxWidth()
+-                .padding(vertical = 4.dp)
+-                .clickable { 
+-                    if (isPcCommand) showPcActionPicker = true else showActionPicker = true 
+-                },
+-            color = MaterialTheme.colorScheme.surface,
+-            shape = RoundedCornerShape(8.dp),
+-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+-        ) {
+-            Text(
+-                text = if (actionLabel.isEmpty()) "Escolher ação..." else actionLabel,
+-                modifier = Modifier.padding(12.dp),
+-                style = MaterialTheme.typography.bodyMedium,
+-                color = if (actionLabel.isEmpty()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface
+-            )
+-        }
+-
+-        Spacer(Modifier.height(16.dp))
+-        
+-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+-            TextButton(onClick = onCancel) { Text("Cancelar") }
+-            Button(
+-                enabled = triggerPackage.isNotEmpty() && actionParameter.isNotEmpty(),
+-                onClick = {
+-                    automationManager.addRule(
+-                        null, // nome
+-                        skillId,
+-                        triggerPackage,
+-                        if (isPcCommand) "PC_COMMAND" else "OPEN_APP",
+-                        actionParameter
+-                    )
+-                    onRuleAdded()
+-                }
+-            ) { Text("Salvar") }
+-        }
+-    }
+-
+-    // --- PICKERS ---
+-    if (showTriggerPicker) {
+-        AppPickerDialog(
+-            onDismiss = { showTriggerPicker = false },
+-            onAppSelected = { app ->
+-                triggerPackage = app.packageName ?: ""
+-                triggerLabel = app.label
+-                showTriggerPicker = false
+-            }
+-        )
+-    }
+-
+-    if (showActionPicker) {
+-        AppPickerDialog(
+-            onDismiss = { showActionPicker = false },
+-            onAppSelected = { app ->
+-                actionParameter = app.packageName ?: ""
+-                actionLabel = app.label
+-                showActionPicker = false
+-            }
+-        )
+-    }
+-
+-    if (showPcActionPicker) {
+-        AlertDialog(
+-            onDismissRequest = { showPcActionPicker = false },
+-            title = { Text("Escolher Comando PC") },
+-            confirmButton = {},
+-            text = {
+-                LazyColumn {
+-                    items(pcOptions) { (cmd, label) ->
+-                        Text(
+-                            text = label,
+-                            modifier = Modifier
+-                                .fillMaxWidth()
+-                                .clickable {
+-                                    actionParameter = cmd
+-                                    actionLabel = label
+-                                    showPcActionPicker = false
+-                                }
+-                                .padding(12.dp),
+-                            style = MaterialTheme.typography.bodyMedium
+-                        )
+-                    }
+-                }
+-            }
+-        )
+-    }
++    var triggerPicker by remember { mutableStateOf(false) }
++    var actionPicker by remember { mutableStateOf(false) }
++    var message by remember { mutableStateOf("") }
++    AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text("Nova rotina") },
++        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
++            feedback?.let { Text(it, color = MaterialTheme.colorScheme.error) }
++            OutlinedTextField(name, { name = it }, label = { Text("Nome da rotina") }, singleLine = true)
++            Text("Quando eu abrir:")
++            OutlinedButton(onClick = { triggerPicker = true }) { Text(triggerLabel.ifBlank { "Escolher aplicativo" }) }
++            Text("A Ollie envia um aviso com botão para abrir:")
++            OutlinedButton(onClick = { actionPicker = true }) { Text(actionLabel.ifBlank { "Escolher aplicativo sugerido" }) }
++            OutlinedTextField(message, { message = it }, label = { Text("Mensagem do aviso") })
++            Text("Será salva pausada. Depois, ative em Minhas rotinas. O intervalo mínimo será de uma hora.", style = MaterialTheme.typography.bodySmall)
++        } },
++        confirmButton = { Button(enabled = !busy && name.isNotBlank() && triggerPackage.isNotBlank() && actionPackage.isNotBlank() && message.isNotBlank(), onClick = {
++            onSave(ApiRoutine(nome = name.trim(), gatilho = RoutineTrigger("APP_OPENED", pacote = triggerPackage),
++                acoes = listOf(RoutineAction("IA", "NOTIFICAR", message, "OPEN_APP", actionPackage, "Abrir $actionLabel")), ativa = false))
++        }) { Text("Salvar pausada") } },
++        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancelar") } })
++    if (triggerPicker) AppPickerDialog(onDismiss = { triggerPicker = false }, onAppSelected = {
++        triggerPackage = it.packageName.orEmpty(); triggerLabel = it.label; triggerPicker = false
++    })
++    if (actionPicker) AppPickerDialog(onDismiss = { actionPicker = false }, onAppSelected = {
++        actionPackage = it.packageName.orEmpty(); actionLabel = it.label; actionPicker = false
++    })
+ }
+--- a/app/src/main/java/com/example/assistentecell/ui/screens/HomeScreen.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/screens/HomeScreen.kt
+@@ -56,6 +56,9 @@
+     val isLoading by viewModel.isLoading.collectAsState()
+     val pcStatus by monitorViewModel.pcStatus.collectAsState()
+     val pcApps by viewModel.pcApps.collectAsState()
++    val lights by haViewModel.lights.collectAsState()
++    val pendingLights by haViewModel.pendingLights.collectAsState()
++    val lightError by haViewModel.error.collectAsState()
+     
+     val messages by chatViewModel.messages.collectAsState()
+     val isThinking by chatViewModel.isThinking.collectAsState()
+@@ -173,7 +176,9 @@
+                                 .blur(blurVal.dp)
+                                 .alpha(alpha)
+                         ) {
+-                            OllieBentoGrid(pcStatus, onNavigate, onAppsClick = { showAppLauncher = true })
++                            OllieBentoGrid(pcStatus, onNavigate, onAppsClick = { showAppLauncher = true },
++                                lights = lights, pendingLights = pendingLights, lightError = lightError,
++                                onLightClick = haViewModel::toggleLight, onRefreshLights = haViewModel::refreshLights)
+                         }
+                     }
+                 }
+@@ -283,7 +288,10 @@
+ }
+ 
+ @Composable
+-fun OllieBentoGrid(pcStatus: com.example.assistentecell.ui.viewmodel.PCStatus, onNavigate: (String) -> Unit, onAppsClick: () -> Unit) {
++fun OllieBentoGrid(pcStatus: com.example.assistentecell.ui.viewmodel.PCStatus, onNavigate: (String) -> Unit,
++                  onAppsClick: () -> Unit, lights: List<com.example.assistentecell.data.model.HAEntity>,
++                  pendingLights: Set<String>, lightError: String?, onLightClick: (String) -> Unit,
++                  onRefreshLights: () -> Unit) {
+     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+             BentoBox(
+@@ -321,41 +329,36 @@
+             )
+         }
+         // 💡 CONTROLE DIRETO DE ILUMINAÇÃO (HOME ASSISTANT)
+-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+-            val context = LocalContext.current
+-            BentoBox(
+-                title = "LUZ QUARTO",
+-                subtitle = "Toque para Alternar",
+-                icon = Icons.Outlined.Lightbulb,
+-                modifier = Modifier.weight(1f),
+-                color = Color(0xFFFFD600),
+-                onClick = {
+-                    com.example.assistentecell.command.SystemCommandHandler.executeCommand(
+-                        context,
+-                        org.json.JSONObject().apply {
+-                            put("comando", "TOGGLE_LIGHT")
+-                            put("parametro", "quarto")
+-                        }
++        lights.chunked(2).forEach { row ->
++            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
++                row.forEach { light ->
++                    val pending = light.entityId in pendingLights
++                    val available = light.state == "on" || light.state == "off"
++                    val label = (light.attributes["friendly_name"] as? String)?.removeSuffix(" Light") ?: "Luz"
++                    BentoBox(
++                        title = label.uppercase(),
++                        subtitle = when {
++                            pending -> "Aguarde..."
++                            light.state == "on" -> "Acesa - toque para apagar"
++                            light.state == "off" -> "Apagada - toque para acender"
++                            else -> "Indisponivel"
++                        },
++                        icon = Icons.Outlined.Lightbulb,
++                        modifier = Modifier.weight(1f),
++                        color = if (!available) Color.Gray else if (light.state == "on") Color(0xFFFFD600) else Color(0xFF9D4EDD),
++                        enabled = available && !pending,
++                        onClick = { onLightClick(light.entityId) }
+                     )
+                 }
+-            )
+-            BentoBox(
+-                title = "LUZ SALA",
+-                subtitle = "Toque para Alternar",
+-                icon = Icons.Outlined.Lightbulb,
+-                modifier = Modifier.weight(1f),
+-                color = Color(0xFFFF9100),
+-                onClick = {
+-                    com.example.assistentecell.command.SystemCommandHandler.executeCommand(
+-                        context,
+-                        org.json.JSONObject().apply {
+-                            put("comando", "TOGGLE_LIGHT")
+-                            put("parametro", "sala")
+-                        }
+-                    )
+-                }
+-            )
+-        }
++            }
++        }
++        if (lightError != null) {
++            Text(lightError, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
++        }
++        if (lights.isEmpty() || lightError != null) {
++            TextButton(onClick = onRefreshLights) { Text("Atualizar luzes") }
++        }
++
+     }
+ }
+ 
+@@ -366,10 +369,12 @@
+     icon: ImageVector,
+     modifier: Modifier = Modifier,
+     color: Color = Color(0xFF00E5FF),
++    enabled: Boolean = true,
+     onClick: () -> Unit = {}
+ ) {
+     Surface(
+         onClick = onClick,
++        enabled = enabled,
+         modifier = modifier.height(100.dp),
+         shape = RoundedCornerShape(24.dp),
+         color = Color.White.copy(alpha = 0.07f),
 --- a/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt
 +++ b/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt
 @@ -47,7 +47,7 @@
@@ -1293,41 +3347,123 @@
                              com.example.assistentecell.api.RetrofitClient.updateBaseUrl(newUrl)
 --- a/app/src/main/java/com/example/assistentecell/ui/viewmodel/AutomationViewModel.kt
 +++ b/app/src/main/java/com/example/assistentecell/ui/viewmodel/AutomationViewModel.kt
-@@ -32,6 +32,7 @@
-             }.onFailure {
-                 _uiState.value = AutomationUiState.Error(it.message ?: "Erro desconhecido")
+@@ -2,69 +2,70 @@
+ 
+ import androidx.lifecycle.ViewModel
+ import androidx.lifecycle.viewModelScope
+-import com.example.assistentecell.data.model.ApiSuggestedRule
++import com.example.assistentecell.data.model.ApiRoutine
++import com.example.assistentecell.data.model.RoutineMutation
+ import com.example.assistentecell.data.repository.CognitiveRepository
++import kotlinx.coroutines.*
+ import kotlinx.coroutines.flow.MutableStateFlow
+-import kotlinx.coroutines.flow.StateFlow
+ import kotlinx.coroutines.flow.asStateFlow
+-import kotlinx.coroutines.launch
+ 
+ sealed class AutomationUiState {
+     object Idle : AutomationUiState()
+     object Loading : AutomationUiState()
+-    data class Success(val discovered: List<ApiSuggestedRule>) : AutomationUiState()
++    data class Success(val discovered: List<ApiRoutine>, val routines: List<ApiRoutine>) : AutomationUiState()
+     data class Error(val message: String) : AutomationUiState()
+ }
+ 
+ class AutomationViewModel(private val repository: CognitiveRepository) : ViewModel() {
++    private val _uiState = MutableStateFlow<AutomationUiState>(AutomationUiState.Idle)
++    val uiState = _uiState.asStateFlow()
++    private val _isActionLoading = MutableStateFlow(false)
++    val isActionLoading = _isActionLoading.asStateFlow()
++    private val _feedback = MutableStateFlow<String?>(null)
++    val feedback = _feedback.asStateFlow()
++    private var refresh: Job? = null
+ 
+-    private val _uiState = MutableStateFlow<AutomationUiState>(AutomationUiState.Idle)
+-    val uiState: StateFlow<AutomationUiState> = _uiState.asStateFlow()
+-
+-    private val _isActionLoading = MutableStateFlow(false)
+-    val isActionLoading: StateFlow<Boolean> = _isActionLoading.asStateFlow()
++    private suspend fun reload() = coroutineScope {
++        val suggestions = async { repository.getDiscoveredRoutines().getOrThrow() }
++        val routines = async { repository.getRoutines().getOrThrow() }
++        _uiState.value = AutomationUiState.Success(suggestions.await(), routines.await())
++    }
+ 
+     fun fetchDiscovered() {
+-        viewModelScope.launch {
+-            _uiState.value = AutomationUiState.Loading
+-            repository.getDiscoveredRoutines().onSuccess {
+-                _uiState.value = AutomationUiState.Success(it)
+-            }.onFailure {
+-                _uiState.value = AutomationUiState.Error(it.message ?: "Erro desconhecido")
++        if (_isActionLoading.value) return
++        refresh?.cancel()
++        refresh = viewModelScope.launch {
++            if (_uiState.value !is AutomationUiState.Success) _uiState.value = AutomationUiState.Loading
++            try { reload() }
++            catch (e: CancellationException) { throw e }
++            catch (e: Exception) {
++                _feedback.value = e.message
++                if (_uiState.value !is AutomationUiState.Success) _uiState.value = AutomationUiState.Error(e.message.orEmpty())
              }
-+            _isActionLoading.value = false
          }
      }
  
-@@ -42,6 +43,7 @@
-                 fetchDiscovered()
-             }.onFailure {
-                 _isActionLoading.value = false
-+                _uiState.value = AutomationUiState.Error(it.message ?: "Não foi possível gerar rotinas")
-             }
+-    fun triggerDiscovery() {
++    private fun mutate(block: suspend () -> Result<RoutineMutation>, onSaved: () -> Unit = {}) {
++        if (_isActionLoading.value) return
++        _isActionLoading.value = true
++        _feedback.value = null
++        refresh?.cancel()
+         viewModelScope.launch {
+-            _isActionLoading.value = true
+-            repository.triggerDiscovery().onSuccess {
+-                fetchDiscovered()
+-            }.onFailure {
+-                _isActionLoading.value = false
+-            }
++            try {
++                val result = block().getOrThrow()
++                _feedback.value = if (result.geradas != null) "Análise concluída: ${result.geradas} novas sugestões." else result.message
++                onSaved()
++                reload()
++            } catch (e: CancellationException) { throw e }
++            catch (e: Exception) { _feedback.value = e.message ?: "Não consegui concluir a ação." }
++            finally { _isActionLoading.value = false }
          }
      }
-@@ -53,6 +55,7 @@
-                 fetchDiscovered()
-             }.onFailure {
-                 _isActionLoading.value = false
-+                _uiState.value = AutomationUiState.Error(it.message ?: "Não foi possível aprovar a rotina")
-             }
-         }
-     }
-@@ -64,6 +67,7 @@
-                 fetchDiscovered()
-             }.onFailure {
-                 _isActionLoading.value = false
-+                _uiState.value = AutomationUiState.Error(it.message ?: "Não foi possível rejeitar a rotina")
-             }
-         }
-     }
+ 
+-    fun approveRoutine(nome: String) {
+-        viewModelScope.launch {
+-            _isActionLoading.value = true
+-            repository.approveRoutine(nome).onSuccess {
+-                fetchDiscovered()
+-            }.onFailure {
+-                _isActionLoading.value = false
+-            }
+-        }
+-    }
+-
+-    fun rejectRoutine(nome: String) {
+-        viewModelScope.launch {
+-            _isActionLoading.value = true
+-            repository.rejectRoutine(nome).onSuccess {
+-                fetchDiscovered()
+-            }.onFailure {
+-                _isActionLoading.value = false
+-            }
+-        }
+-    }
++    fun triggerDiscovery() = mutate({ repository.triggerDiscovery() })
++    fun approveRoutine(nome: String) = mutate({ repository.approveRoutine(nome) })
++    fun rejectRoutine(nome: String) = mutate({ repository.rejectRoutine(nome) })
++    fun setRoutineState(nome: String, ativa: Boolean) = mutate({ repository.setRoutineState(nome, ativa) })
++    fun deleteRoutine(nome: String) = mutate({ repository.deleteRoutine(nome) })
++    fun createRoutine(routine: ApiRoutine, onSaved: () -> Unit = {}) = mutate({ repository.createRoutine(routine) }, onSaved)
+ }
 --- a/app/src/main/java/com/example/assistentecell/ui/viewmodel/ChatViewModel.kt
 +++ b/app/src/main/java/com/example/assistentecell/ui/viewmodel/ChatViewModel.kt
-@@ -4,6 +4,7 @@
+@@ -4,9 +4,11 @@
  import androidx.lifecycle.AndroidViewModel
  import androidx.lifecycle.viewModelScope
  import com.example.assistentecell.api.RetrofitClient
@@ -1335,7 +3471,11 @@
  import com.example.assistentecell.websocket.ChatBridge
  import com.example.assistentecell.websocket.ChatMessage
  import com.example.assistentecell.voice.VoiceManager
-@@ -15,10 +16,6 @@
++import com.example.assistentecell.voice.VoiceReplies
+ import kotlinx.coroutines.Job
+ import kotlinx.coroutines.delay
+ import kotlinx.coroutines.flow.MutableStateFlow
+@@ -15,10 +17,6 @@
  import kotlinx.coroutines.flow.collectLatest
  import kotlinx.coroutines.launch
  import okhttp3.*
@@ -1346,7 +3486,7 @@
  import kotlin.time.Duration.Companion.seconds
  import androidx.core.content.edit
  
-@@ -51,9 +48,7 @@
+@@ -51,9 +49,7 @@
      private val _isWakeWordEnabled = MutableStateFlow(prefs.getBoolean("wakeword_enabled", false))
      val isWakeWordEnabled: StateFlow<Boolean> = _isWakeWordEnabled.asStateFlow()
  
@@ -1357,7 +3497,7 @@
          
      private var thinkingJob: Job? = null
  
-@@ -89,7 +84,7 @@
+@@ -89,7 +85,7 @@
          _isThinking.value = true
          thinkingJob?.cancel()
          thinkingJob = viewModelScope.launch {
@@ -1366,16 +3506,47 @@
              _isThinking.value = false
          }
      }
-@@ -177,7 +172,7 @@
+@@ -123,10 +119,13 @@
+ 
+     fun startVoiceInput() {
+         _isListening.value = true
+-        voiceManager.startListening { result ->
++        voiceManager.startListening(onReady = { _isListening.value = true }, onError = { error ->
++            _isListening.value = false
++            mostrarErroEnvio(error)
++        }) { result ->
+             _isListening.value = false
+             if (result.isNotBlank()) {
+-                sendMessage(result)
++                sendMessage(result, spoken = true)
+             }
+         }
+     }
+@@ -171,16 +170,18 @@
+ 
+     private var lastMessageSentTime = 0L
+ 
+-    fun sendMessage(text: String) {
++    fun sendMessage(text: String, spoken: Boolean = false) {
+         val now = System.currentTimeMillis()
+         if (text.isBlank() || _isThinking.value || (now - lastMessageSentTime < 2000)) return
          
          lastMessageSentTime = now
          android.util.Log.d("ChatViewModel", "🚀 Enviando mensagem única: $text")
 -        _isThinking.value = true
+-        
+-        viewModelScope.launch {
+-            val userMsg = ChatMessage(text = text, isFromUser = true)
 +        iniciarThinking()
-         
-         viewModelScope.launch {
-             val userMsg = ChatMessage(text = text, isFromUser = true)
-@@ -188,37 +183,30 @@
++        val correlation = java.util.UUID.randomUUID().toString()
++        if (spoken) VoiceReplies.pending.expect(correlation)
++        
++        viewModelScope.launch {
++            val userMsg = ChatMessage(text = text, isFromUser = true, correlationId = correlation)
+             // 🛡️ ANTI-DUPLICIDADE: Se a última mensagem for idêntica, não adiciona
+             if (_messages.value.lastOrNull()?.text != text) {
+                 val currentList = _messages.value.toMutableList()
+@@ -188,37 +189,32 @@
                  _messages.value = currentList
              }
  
@@ -1396,6 +3567,7 @@
 -            client.newCall(request).enqueue(object : Callback {
 +            chatTransport.enqueue(text, getApplication<Application>().packageName + ".chat", object : Callback {
                  override fun onFailure(call: Call, e: java.io.IOException) {
++                    VoiceReplies.pending.forget(correlation)
                      android.util.Log.e("ChatViewModel", "Falha no envio: ${e.message}")
 -                    viewModelScope.launch {
 -                        _isThinking.value = false
@@ -1408,6 +3580,7 @@
 +                    response.use {
 +                        val error = BackendChatTransport.failureMessage(it.code)
 +                        if (error != null) {
++                            VoiceReplies.pending.forget(correlation)
 +                            android.util.Log.w("ChatViewModel", "Mensagem recusada: HTTP ${it.code}")
 +                            mostrarErroEnvio(error)
 +                        } else {
@@ -1421,17 +3594,536 @@
 -                    // ou o timeout do job de thinking que já existe no init
 -                    response.close()
 -                }
-             })
-         }
-     }
+-            })
++            }, correlationId = correlation)
++        }
++    }
 +
 +    private fun mostrarErroEnvio(message: String) {
 +        viewModelScope.launch {
 +            pararThinking()
 +            _messages.value = _messages.value + ChatMessage(text = message, isFromUser = false)
-+        }
-+    }
+         }
+     }
  }
+--- a/app/src/main/java/com/example/assistentecell/ui/viewmodel/HomeAssistantViewModel.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/viewmodel/HomeAssistantViewModel.kt
+@@ -26,6 +26,8 @@
+ 
+     private val _error = MutableStateFlow<String?>(null)
+     val error: StateFlow<String?> = _error.asStateFlow()
++    private val _pendingLights = MutableStateFlow<Set<String>>(emptySet())
++    val pendingLights: StateFlow<Set<String>> = _pendingLights.asStateFlow()
+ 
+     private fun getToken(): String {
+         val prefs = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
+@@ -68,12 +70,25 @@
+     }
+ 
+     fun toggleLight(entityId: String) {
++        if (entityId in _pendingLights.value) return
+         val token = getToken()
++        if (token.isBlank()) {
++            _error.value = "Configure o acesso ao Home Assistant nas opções."
++            return
++        }
++        _pendingLights.value = _pendingLights.value + entityId
++        _error.value = null
+         viewModelScope.launch {
+-            repository.toggleLight(token, entityId).onSuccess {
+-                refreshLights() // Atualiza a lista após a mudança
+-            }.onFailure {
+-                _error.value = "Erro ao mudar luz: ${it.message}"
++            try {
++                repository.toggleLight(token, entityId).onSuccess { confirmed ->
++                    _lights.value = _lights.value.map { light -> confirmed.find { it.entityId == light.entityId } ?: light }
++                    com.example.assistentecell.data.SmartHomeCache.update(_lights.value)
++                    sendContextUpdate(_lights.value)
++                }.onFailure {
++                    _error.value = it.message ?: "Não consegui confirmar a mudança da luz."
++                }
++            } finally {
++                _pendingLights.value = _pendingLights.value - entityId
+             }
+         }
+     }
+--- a/app/src/main/java/com/example/assistentecell/voice/VoiceActivity.kt
++++ b/app/src/main/java/com/example/assistentecell/voice/VoiceActivity.kt
+@@ -0,0 +1,16 @@
++package com.example.assistentecell.voice
++
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.asStateFlow
++
++/** Wake-word recognition yields the microphone during interactive voice use. */
++object VoiceActivity {
++    private val owners = mutableSetOf<String>()
++    private val _busy = MutableStateFlow(false)
++    val busy = _busy.asStateFlow()
++
++    @Synchronized fun setBusy(owner: String, active: Boolean) {
++        if (active) owners.add(owner) else owners.remove(owner)
++        _busy.value = owners.isNotEmpty()
++    }
++}
+--- a/app/src/main/java/com/example/assistentecell/voice/VoiceManager.kt
++++ b/app/src/main/java/com/example/assistentecell/voice/VoiceManager.kt
+@@ -13,21 +13,32 @@
+ import android.speech.SpeechRecognizer
+ import android.speech.tts.TextToSpeech
+ import com.example.assistentecell.api.RetrofitClient
+-import java.net.URLEncoder
++import kotlinx.coroutines.*
++import java.io.File
++import com.example.assistentecell.network.BackendVoiceTransport
+ import java.util.Locale
+ 
+ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
++    companion object { private var listeningOwner: VoiceManager? = null }
++    private val ownerId = java.util.UUID.randomUUID().toString()
++    private val ttsInitialized = CompletableDeferred<Boolean>()
++    private var recognitionGeneration = 0
++    private var listenJob: Job? = null
++    private var listeningCancelled: (() -> Unit)? = null
+ 
+     private var tts: TextToSpeech? = TextToSpeech(context, this)
+     private var speechRecognizer: SpeechRecognizer? = null
+     private var isTtsReady = false
+     private var mediaPlayer: MediaPlayer? = null
++    private val voiceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
++    private var cloudJob: Job? = null
++    private var cloudAudioFile: File? = null
+ 
+     override fun onInit(status: Int) {
+         Log.d("VoiceManager", "INIT TTS - Status: $status")
+         if (status == TextToSpeech.SUCCESS) {
+             val result = tts?.setLanguage(Locale("pt", "BR"))
+-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
++            if (result == null || result < TextToSpeech.LANG_AVAILABLE) {
+                 Log.e("VoiceManager", "Linguagem não suportada")
+             } else {
+                 isTtsReady = true
+@@ -52,13 +63,18 @@
+                 }
+             }
+         }
+-    }
+-
+-    fun speak(text: String, onComplete: (() -> Unit)? = null) {
++        ttsInitialized.complete(isTtsReady)
++    }
++
++    fun speak(text: String, interactive: Boolean = false, onComplete: (() -> Unit)? = null) {
++        if (Looper.myLooper() != Looper.getMainLooper()) {
++            Handler(Looper.getMainLooper()).post { speak(text, interactive, onComplete) }
++            return
++        }
+         val prefs = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
+         
+         // 🛡️ MODO FOCO: Se estiver ativo, a Ollie fica em silêncio absoluto
+-        if (prefs.getBoolean("focus_mode_active", false)) {
++        if (!interactive && prefs.getBoolean("focus_mode_active", false)) {
+             Log.d("VoiceManager", "🔇 Modo Foco Ativo: Silenciando fala")
+             onComplete?.invoke()
+             return
+@@ -69,56 +85,71 @@
+         
+         Log.d("VoiceManager", "📢 Solicitando fala: $text (Rate: $rate, Pitch: $pitch)")
+         // Tenta falar via Nuvem (Edge TTS) para maior qualidade
+-        speakCloud(text, rate, pitch, onComplete)
++        stopListening()
++        VoiceActivity.setBusy("$ownerId.speak", true)
++        speakCloud(text, rate, pitch) {
++            VoiceActivity.setBusy("$ownerId.speak", false)
++            onComplete?.invoke()
++        }
+     }
+ 
+     private fun speakCloud(text: String, rate: Float, pitch: Float, onComplete: (() -> Unit)?) {
+-        try {
+-            val encodedText = URLEncoder.encode(text, "UTF-8")
+-            val baseUrl = RetrofitClient.getBaseUrl()
+-            
+-            val url = "${baseUrl}api/v1/voice/speak?text=$encodedText&rate=$rate&pitch=$pitch"
+-            Log.d("VoiceManager", "☁️ Tentando speakCloud na URL: $url")
+-            
+-            mediaPlayer?.stop()
+-            mediaPlayer?.release()
+-            
+-            val usage = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+-                AudioAttributes.USAGE_ASSISTANT
+-            } else {
+-                AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
+-            }
+-
+-            mediaPlayer = MediaPlayer().apply {
+-                setAudioAttributes(
+-                    AudioAttributes.Builder()
++        cloudJob?.cancel()
++        mediaPlayer?.release()
++        mediaPlayer = null
++        cloudAudioFile?.delete()
++        cloudAudioFile = null
++        cloudJob = voiceScope.launch {
++            val audioFile = File.createTempFile("ollie-voice-", ".mp3", context.cacheDir)
++            try {
++                withContext(Dispatchers.IO) {
++                    val client = RetrofitClient.backendHttpClient.newBuilder()
++                        .callTimeout(6, java.util.concurrent.TimeUnit.SECONDS).build()
++                    BackendVoiceTransport(client) { RetrofitClient.getBaseUrl() }
++                        .download(text, rate, pitch, audioFile)
++                }
++                cloudAudioFile = audioFile
++                mediaPlayer = MediaPlayer().apply {
++                    setAudioAttributes(AudioAttributes.Builder()
+                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+-                        .setUsage(usage)
+-                        .build()
+-                )
+-                setDataSource(url)
+-                prepareAsync()
+-                setOnPreparedListener { 
+-                    Log.d("VoiceManager", "▶️ Áudio neural (Nuvem) preparado, iniciando reprodução")
+-                    start() 
+-                }
+-                setOnCompletionListener {
+-                    Log.d("VoiceManager", "🏁 Reprodução neural finalizada")
+-                    onComplete?.invoke()
+-                }
+-                setOnErrorListener { _, what, extra ->
+-                    Log.e("VoiceManager", "❌ Erro no áudio nuvem (what: $what, extra: $extra), usando fallback local")
+-                    speakLocal(text, rate, pitch, onComplete)
+-                    true
+-                }
+-            }
+-        } catch (e: Exception) {
+-            Log.e("VoiceManager", "💥 Exceção no speakCloud: ${e.message}")
+-            speakLocal(text, rate, pitch, onComplete)
++                        .setUsage(AudioAttributes.USAGE_ASSISTANT).build())
++                    setDataSource(audioFile.absolutePath)
++                    setOnPreparedListener { Log.d("VoiceManager", "Cloud playback started"); it.start() }
++                    setOnCompletionListener {
++                        it.release()
++                        if (mediaPlayer === it) mediaPlayer = null
++                        audioFile.delete()
++                        Log.d("VoiceManager", "Cloud playback completed")
++                        onComplete?.invoke()
++                    }
++                    setOnErrorListener { player, _, _ ->
++                        player.release()
++                        if (mediaPlayer === player) mediaPlayer = null
++                        audioFile.delete()
++                        speakLocal(text, rate, pitch, onComplete)
++                        true
++                    }
++                    prepareAsync()
++                }
++            } catch (e: CancellationException) {
++                audioFile.delete()
++                throw e
++            } catch (_: Exception) {
++                audioFile.delete()
++                speakLocal(text, rate, pitch, onComplete)
++            }
+         }
+     }
+ 
+     private fun speakLocal(text: String, rate: Float, pitch: Float, onComplete: (() -> Unit)?) {
++        if (!ttsInitialized.isCompleted) {
++            cloudJob = voiceScope.launch {
++                withTimeoutOrNull(2000) { ttsInitialized.await() }
++                if (ttsInitialized.isCompleted) speakLocal(text, rate, pitch, onComplete)
++                else onComplete?.invoke()
++            }
++            return
++        }
+         Log.d("VoiceManager", "🏠 Usando TTS Local (Ready: $isTtsReady)")
+         if (isTtsReady) {
+             tts?.setSpeechRate(rate)
+@@ -128,7 +159,7 @@
+             params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "msg_id")
+             
+             tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+-                override fun onStart(utteranceId: String?) {}
++                override fun onStart(utteranceId: String?) { Log.d("VoiceManager", "Local playback started") }
+                 override fun onDone(utteranceId: String?) {
+                     Handler(Looper.getMainLooper()).post { onComplete?.invoke() }
+                 }
+@@ -138,44 +169,78 @@
+             })
+             
+             val result = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "msg_id")
++            if (result != TextToSpeech.SUCCESS) onComplete?.invoke()
+             Log.d("VoiceManager", "🎙️ Resultado TTS Local: $result")
+         } else {
+             onComplete?.invoke()
+         }
+     }
+ 
+-    fun startListening(onPartial: ((String) -> Unit)? = null, onResult: (String) -> Unit) {
+-        try {
++    fun startListening(onPartial: ((String) -> Unit)? = null,
++                       onError: ((String) -> Unit)? = null,
++                       onReady: (() -> Unit)? = null,
++                       onResult: (String) -> Unit) {
++        if (Looper.myLooper() != Looper.getMainLooper()) {
++            Handler(Looper.getMainLooper()).post { startListening(onPartial, onError, onReady, onResult) }
++            return
++        }
++        stopSpeaking()
++        listeningOwner?.stopListening()
++        stopListening()
++        fun fail(message: String) { if (onError != null) onError(message) else onResult("") }
++        if (context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
++            fail("Permita o uso do microfone nas configurações da Ollie.")
++            return
++        }
++        listeningOwner = this
++        listeningCancelled = { onResult("") }
++        VoiceActivity.setBusy("$ownerId.listen", true)
++        val generation = ++recognitionGeneration
++        fun complete(text: String?, error: String? = null) {
++            if (generation != recognitionGeneration) return
++            listeningCancelled = null
++            stopListening()
++            if (error != null) fail(error) else onResult(text.orEmpty())
++        }
++        listenJob = voiceScope.launch {
++          delay(180) // The wake-word recorder yields before interactive capture.
++          try {
+             if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+                 Log.e("VoiceManager", "Reconhecimento de voz não disponível no dispositivo")
+-                onResult("")
+-                return
++                complete(null, "Nenhum serviço de reconhecimento de voz está disponível no celular.")
++                return@launch
+             }
+ 
+             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
+             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale("pt", "BR"))
++                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "pt-BR")
+                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+             }
+ 
+             speechRecognizer?.setRecognitionListener(object : RecognitionListener {
+-                override fun onReadyForSpeech(params: Bundle?) {}
++                override fun onReadyForSpeech(params: Bundle?) {
++                    Log.d("VoiceManager", "Recognition ready")
++                    onReady?.invoke()
++                }
+                 override fun onBeginningOfSpeech() {}
+                 override fun onRmsChanged(rmsdB: Float) {}
+                 override fun onBufferReceived(buffer: ByteArray?) {}
+                 override fun onEndOfSpeech() {}
+                 override fun onError(error: Int) {
+                     Log.e("VoiceManager", "Erro no reconhecimento: $error")
+-                    onResult("")
++                    complete(null, recognitionError(error))
+                 }
+                 override fun onResults(results: Bundle?) {
+                     val data = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+-                    onResult(data?.get(0) ?: "")
++                    Log.d("VoiceManager", "Recognition result received")
++                    val text = data?.firstOrNull()
++                    if (text.isNullOrBlank()) complete(null, "Não entendi. Toque no microfone e tente de novo.")
++                    else complete(text)
+                 }
+                 override fun onPartialResults(partialResults: Bundle?) {
+                     val data = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+-                    onPartial?.invoke(data?.get(0) ?: "")
++                    if (generation == recognitionGeneration) onPartial?.invoke(data?.firstOrNull().orEmpty())
+                 }
+                 override fun onEvent(eventType: Int, params: Bundle?) {}
+             })
+@@ -183,13 +248,41 @@
+             speechRecognizer?.startListening(intent)
+         } catch (e: Exception) {
+             Log.e("VoiceManager", "Falha catastrófica ao iniciar escuta: ${e.message}")
+-            onResult("")
++            complete(null, "Não consegui abrir o microfone. Confira a permissão e tente de novo.")
++          }
+         }
+     }
+ 
+     fun stopListening() {
+-        speechRecognizer?.stopListening()
++        if (Looper.myLooper() != Looper.getMainLooper()) {
++            Handler(Looper.getMainLooper()).post { stopListening() }; return
++        }
++        recognitionGeneration++
++        listenJob?.cancel(); listenJob = null
++        val cancelled = listeningCancelled; listeningCancelled = null
++        speechRecognizer?.cancel()
+         speechRecognizer?.destroy()
++        speechRecognizer = null
++        if (listeningOwner === this) listeningOwner = null
++        VoiceActivity.setBusy("$ownerId.listen", false)
++        cancelled?.invoke()
++    }
++
++    private fun recognitionError(code: Int) = when (code) {
++        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Permita o uso do microfone nas configurações da Ollie."
++        SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Não ouvi um pedido. Toque no microfone para tentar de novo."
++        SpeechRecognizer.ERROR_RECOGNIZER_BUSY, SpeechRecognizer.ERROR_AUDIO -> "O microfone está ocupado. Encerre a outra gravação e tente de novo."
++        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "O reconhecimento de voz está sem conexão. Confira a internet."
++        12, 13 -> "O reconhecimento em português não está disponível. Confira o serviço de voz do celular."
++        else -> "O reconhecimento de voz falhou (código $code). Toque no microfone para tentar de novo."
++    }
++
++    fun stopSpeaking() {
++        cloudJob?.cancel(); cloudJob = null
++        mediaPlayer?.release(); mediaPlayer = null
++        cloudAudioFile?.delete(); cloudAudioFile = null
++        tts?.stop()
++        VoiceActivity.setBusy("$ownerId.speak", false)
+     }
+ 
+     fun getAvailableVoices() = tts?.voices?.filter { it.locale.language == "pt" }?.toList() ?: emptyList()
+@@ -206,6 +299,12 @@
+     }
+ 
+     fun shutdown() {
++        stopSpeaking()
++        voiceScope.cancel()
++        mediaPlayer?.release()
++        mediaPlayer = null
++        cloudAudioFile?.delete()
++        stopListening()
+         tts?.stop()
+         tts?.shutdown()
+     }
+--- a/app/src/main/java/com/example/assistentecell/voice/VoiceReplies.kt
++++ b/app/src/main/java/com/example/assistentecell/voice/VoiceReplies.kt
+@@ -0,0 +1,17 @@
++package com.example.assistentecell.voice
++
++/** Only a reply to an explicit microphone request overrides automatic read-aloud. */
++class VoiceReplyTracker(private val now: () -> Long = System::currentTimeMillis) {
++    private val pending = mutableMapOf<String, Long>()
++
++    @Synchronized fun expect(id: String) {
++        pending.entries.removeAll { it.value <= now() }
++        pending[id] = now() + 90000
++    }
++
++    @Synchronized fun forget(id: String) { pending.remove(id) }
++
++    @Synchronized fun consume(id: String): Boolean = (pending.remove(id) ?: 0) > now()
++}
++
++object VoiceReplies { val pending = VoiceReplyTracker() }
+--- a/app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt
++++ b/app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt
+@@ -10,6 +10,8 @@
+ import com.example.assistentecell.R
+ import com.example.assistentecell.assistant.OllieAssistantService
+ import kotlinx.coroutines.*
++import kotlinx.coroutines.flow.combine
++import com.example.assistentecell.websocket.ChatBridge
+ import org.vosk.Model
+ import org.vosk.Recognizer
+ import org.vosk.android.RecognitionListener
+@@ -23,18 +25,25 @@
+     private var speechService: SpeechService? = null
+     private var model: Model? = null
+     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
++    private var microphoneBusy = false
++    private var destroyed = false
+ 
+     companion object {
+         private const val CHANNEL_ID = "WAKE_WORD_CHANNEL"
+         private const val NOTIFICATION_ID = 1001
+         
+         fun start(context: Context) {
++            if (context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
+             val intent = Intent(context, WakeWordService::class.java)
++            try {
+             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                 context.startForegroundService(intent)
+             } else {
+                 context.startService(intent)
+             }
++            } catch (e: Exception) {
++                Log.e("WakeWordService", "Ativação por voz indisponível: ${e.javaClass.simpleName}")
++            }
+         }
+         
+         fun stop(context: Context) {
+@@ -47,6 +56,13 @@
+         super.onCreate()
+         createNotificationChannel()
+         startForeground(NOTIFICATION_ID, createNotification())
++        serviceScope.launch {
++            combine(VoiceActivity.busy, ChatBridge.isAssistantSessionActive) { voice, session -> voice || session }
++                .collect { busy ->
++                    microphoneBusy = busy
++                    if (busy) speechService?.stop() else startListening()
++                }
++        }
+         
+         initModel()
+     }
+@@ -56,6 +72,7 @@
+         
+         StorageService.unpack(this, "model/vosk-model-small-pt-0.3", "model",
+             { model: Model ->
++                if (destroyed) { model.close(); return@unpack }
+                 this.model = model
+                 Log.e("WakeWordService", "🚀 VOSK PRONTO via StorageService! Iniciando escuta...")
+                 startListening()
+@@ -125,6 +142,7 @@
+     }
+ 
+     private fun startListening() {
++        if (destroyed || microphoneBusy) return
+         if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+             Log.e("WakeWordService", "❌ Permissão de áudio não concedida!")
+             return
+@@ -199,14 +217,11 @@
+             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+             putExtra("v_source", "wake_word") // Identificador opcional
+         }
+-        startService(intent)
+-        
+-        // 4. Reinicia a escuta após a sessão fechar (ou timeout de 8 segundos)
+-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+-            if (speechService != null) {
+-                startListening() 
+-            }
+-        }, 8000)
++        try { startService(intent) } catch (e: Exception) {
++            Log.e("WakeWordService", "Falha ao abrir assistente: ${e.javaClass.simpleName}")
++        }
++        
++        // The session/activity flows resume wake-word capture after interaction ends.
+     }
+ 
+     private fun createNotification(): Notification {
+@@ -238,9 +253,12 @@
+     override fun onBind(intent: Intent?): IBinder? = null
+ 
+     override fun onDestroy() {
++        destroyed = true
++        serviceScope.cancel()
+         super.onDestroy()
+         speechService?.stop()
+         speechService?.shutdown()
++        model?.close()
+         Log.d("WakeWordService", "🛑 Ativação por voz desativada.")
+     }
+ }
+--- a/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
++++ b/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
+@@ -10,6 +10,7 @@
+     val id: String = UUID.randomUUID().toString(),
+     val text: String,
+     val isFromUser: Boolean,
++    val correlationId: String? = null,
+     val timestamp: Long = System.currentTimeMillis()
+ )
+ 
 --- a/app/src/test/java/com/example/assistentecell/BackendAuthTest.kt
 +++ b/app/src/test/java/com/example/assistentecell/BackendAuthTest.kt
 @@ -0,0 +1,90 @@
@@ -1527,12 +4219,13 @@
 +}
 --- a/app/src/test/java/com/example/assistentecell/BackendChatTransportTest.kt
 +++ b/app/src/test/java/com/example/assistentecell/BackendChatTransportTest.kt
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,85 @@
 +package com.example.assistentecell
 +
 +import com.example.assistentecell.network.BackendAuthInterceptor
 +import com.example.assistentecell.network.BackendChatTransport
-+import com.google.gson.JsonParser
++import com.google.gson.Gson
++import com.google.gson.JsonObject
 +import java.io.IOException
 +import java.util.concurrent.CountDownLatch
 +import java.util.concurrent.TimeUnit
@@ -1559,7 +4252,7 @@
 +            override fun onResponse(call: Call, response: Response) {
 +                response.use { code.set(it.code) }; done.countDown()
 +            }
-+        })
++        }, correlationId = "voice-request-123")
 +        assertTrue(done.await(3, TimeUnit.SECONDS))
 +        assertNull(error.get())
 +        return code.get()
@@ -1582,8 +4275,9 @@
 +            assertEquals("Bearer example-token", request.header("Authorization"))
 +            val buffer = Buffer()
 +            request.body!!.writeTo(buffer)
-+            val event = JsonParser.parseString(buffer.readUtf8()).asJsonObject
++            val event = Gson().fromJson(buffer.readUtf8(), JsonObject::class.java)
 +            assertEquals("SISTEMA_COMANDO_USUARIO", event["categoria"].asString)
++            assertEquals("voice-request-123", event["correlacao_id"].asString)
 +            assertEquals("com.example.assistentecell.chat", event["pacote"].asString)
 +            assertEquals("Olá, Ollie!", event["payload"].asJsonObject["texto"].asString)
 +        } finally { client.dispatcher.executorService.shutdownNow() }
@@ -1609,6 +4303,170 @@
 +            assertNotNull(BackendChatTransport.failureMessage(503))
 +            assertNull(BackendChatTransport.failureMessage(202))
 +        } finally { client.dispatcher.executorService.shutdownNow() }
++    }
++}
+--- a/app/src/test/java/com/example/assistentecell/BackendVoiceTransportTest.kt
++++ b/app/src/test/java/com/example/assistentecell/BackendVoiceTransportTest.kt
+@@ -0,0 +1,47 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.network.BackendAuthInterceptor
++import com.example.assistentecell.network.BackendVoiceTransport
++import okhttp3.*
++import okhttp3.MediaType.Companion.toMediaType
++import okhttp3.ResponseBody.Companion.toResponseBody
++import org.junit.Assert.*
++import org.junit.Test
++import java.io.File
++import java.io.IOException
++
++class BackendVoiceTransportTest {
++    @Test fun voiceUsesAuthenticationWithoutPuttingTokenInUrl() {
++        var received: Request? = null
++        val client = OkHttpClient.Builder()
++            .addInterceptor(BackendAuthInterceptor({ "https://example.test/" }, { "test-token" }))
++            .addInterceptor {
++                received = it.request()
++                Response.Builder().request(it.request()).protocol(Protocol.HTTP_1_1).code(200).message("OK")
++                    .body(byteArrayOf(1, 2, 3).toResponseBody("audio/mpeg".toMediaType())).build()
++            }.build()
++        val file = File.createTempFile("voice-test", ".mp3")
++        try {
++            BackendVoiceTransport(client) { "https://example.test/" }.download("Luz apagada & pronto", 1f, 1f, file)
++            assertEquals("Bearer test-token", received!!.header("Authorization"))
++            assertEquals("Luz apagada & pronto", received!!.url.queryParameter("text"))
++            assertFalse(received!!.url.toString().contains("test-token"))
++            assertArrayEquals(byteArrayOf(1, 2, 3), file.readBytes())
++        } finally { file.delete(); client.dispatcher.executorService.shutdownNow() }
++    }
++
++    @Test fun refusesAuthenticationErrorsAndNonAudioResponses() {
++        for (code in listOf(401, 200)) {
++            val client = OkHttpClient.Builder().addInterceptor {
++                Response.Builder().request(it.request()).protocol(Protocol.HTTP_1_1).code(code).message("Test")
++                    .body("{}".toResponseBody("application/json".toMediaType())).build()
++            }.build()
++            val file = File.createTempFile("voice-test", ".mp3")
++            try {
++                try { BackendVoiceTransport(client) { "https://example.test/" }.download("Teste", 1f, 1f, file)
++                    fail("Resposta deve ser recusada")
++                } catch (_: IOException) {}
++            } finally { file.delete(); client.dispatcher.executorService.shutdownNow() }
++        }
++    }
++}
+--- a/app/src/test/java/com/example/assistentecell/HomeAssistantLightControllerTest.kt
++++ b/app/src/test/java/com/example/assistentecell/HomeAssistantLightControllerTest.kt
+@@ -0,0 +1,85 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.data.HomeAssistantLightController
++import com.example.assistentecell.data.HouseLightResolver
++import com.example.assistentecell.data.api.HomeAssistantApiService
++import com.example.assistentecell.data.model.HAEntity
++import kotlinx.coroutines.*
++import okhttp3.ResponseBody.Companion.toResponseBody
++import org.junit.Assert.*
++import org.junit.Test
++import retrofit2.Response
++import java.io.IOException
++
++class HomeAssistantLightControllerTest {
++    private class FakeApi(var current: String = "on", var applyAction: Boolean = true) : HomeAssistantApiService {
++        val id = "light.yeelink_color5_027d_light"
++        val posts = mutableListOf<Pair<String, Map<String, Any>>>()
++        fun light() = HAEntity(id, current, mapOf("friendly_name" to "luz quarto Light"), null)
++        override suspend fun getStates(token: String) = Response.success(listOf(light()))
++        override suspend fun getEntityState(token: String, entityId: String): Response<HAEntity> {
++            delay(2)
++            return if (entityId == id) Response.success(light()) else Response.error(404, "{}".toResponseBody())
++        }
++        override suspend fun callService(token: String, domain: String, service: String, body: Map<String, Any>): Response<List<HAEntity>> {
++            assertEquals("light", domain)
++            assertEquals(id, body["entity_id"])
++            posts.add(service to body)
++            if (applyAction) current = if (service == "turn_on") "on" else "off"
++            return Response.success(emptyList())
++        }
++    }
++
++    @Test fun roomNameResolvesRealEntityAndUnknownRoomIsRejected() {
++        val api = FakeApi()
++        assertEquals(api.id, HouseLightResolver.resolve("quarto", listOf(api.light())).entityId)
++        try { HouseLightResolver.resolve("sala", listOf(api.light())); fail("Não inventar luz da sala") }
++        catch (_: IllegalArgumentException) {}
++        try { HouseLightResolver.resolve("light.luz_quarto", listOf(api.light())); fail("Não aceitar entidade inexistente") }
++        catch (_: IllegalArgumentException) {}
++    }
++
++    @Test fun ambiguousNameDoesNotChooseFirstLight() {
++        val api = FakeApi()
++        val other = api.light().copy(entityId = "light.outra")
++        try { HouseLightResolver.resolve("quarto", listOf(api.light(), other)); fail("Nome ambíguo") }
++        catch (_: IllegalArgumentException) {}
++    }
++
++    @Test fun toggleSendsOneExplicitActionAndConfirmsState() = runBlocking {
++        val api = FakeApi()
++        val result = HomeAssistantLightController(api).execute("token", "alternar", api.id)
++        assertEquals("off", result.state)
++        assertEquals(1, api.posts.size)
++        assertEquals("turn_off", api.posts.single().first)
++    }
++
++    @Test fun acceptedRequestWithoutStateChangeIsFailure() = runBlocking {
++        val api = FakeApi(applyAction = false)
++        try { HomeAssistantLightController(api).execute("token", "alternar", api.id); fail("Não declarar sucesso por HTTP 200") }
++        catch (e: IOException) { assertTrue(e.message!!.contains("não confirmou")) }
++        assertEquals(1, api.posts.size)
++    }
++
++    @Test fun nonexistentEntityIsRejectedBeforeCallingService() = runBlocking {
++        val api = FakeApi()
++        try { HomeAssistantLightController(api).execute("token", "alternar", "light.luz_quarto"); fail("Não acionar entidade inexistente") }
++        catch (_: IOException) {}
++        assertTrue(api.posts.isEmpty())
++    }
++
++    @Test fun unavailableLightDoesNotReceiveServiceCall() = runBlocking {
++        val api = FakeApi(current = "unavailable")
++        try { HomeAssistantLightController(api).execute("token", "alternar", api.id); fail("Luz indisponível") }
++        catch (_: IOException) {}
++        assertTrue(api.posts.isEmpty())
++    }
++
++    @Test fun concurrentTogglesAreSerializedAcrossControllerInstances() = runBlocking {
++        val api = FakeApi()
++        awaitAll(async { HomeAssistantLightController(api).execute("token", "alternar", api.id) },
++                 async { HomeAssistantLightController(api).execute("token", "alternar", api.id) })
++        assertEquals("on", api.current)
++        assertEquals(listOf("turn_off", "turn_on"), api.posts.map { it.first })
++    }
++}
+--- a/app/src/test/java/com/example/assistentecell/HouseCommandTest.kt
++++ b/app/src/test/java/com/example/assistentecell/HouseCommandTest.kt
+@@ -0,0 +1,23 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.network.HouseCommand
++import org.junit.Assert.*
++import org.junit.Test
++
++class HouseCommandTest {
++    @Test fun exactLightAndActionArePreserved() {
++        val cmd = HouseCommand.parse("""{"id_comando":"pedido-1","acao":"desligar","entity_id":"light.quarto"}""")
++        assertEquals("desligar", cmd.action)
++        assertEquals("light.quarto", cmd.entityId)
++    }
++
++    @Test fun rejectsOtherDomainsAndUnknownActions() {
++        for (raw in listOf(
++            """{"id_comando":"1","acao":"desligar","entity_id":"switch.pc"}""",
++            """{"id_comando":"1","acao":"shell","entity_id":"light.quarto"}""",
++            """{"id_comando":"","acao":"consultar","entity_id":"light.quarto"}"""
++        )) {
++            try { HouseCommand.parse(raw); fail("Deveria recusar") } catch (_: IllegalArgumentException) {}
++        }
 +    }
 +}
 --- a/app/src/test/java/com/example/assistentecell/IncomingMessagePolicyTest.kt
@@ -1659,5 +4517,151 @@
 +        assertEquals("com.b", tracker.heartbeat(61_500))
 +        tracker.paused("com.b", 62_000)
 +        assertNull(tracker.heartbeat(125_000))
++    }
++}
+--- a/app/src/test/java/com/example/assistentecell/RoutineManagementTest.kt
++++ b/app/src/test/java/com/example/assistentecell/RoutineManagementTest.kt
+@@ -0,0 +1,105 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.data.api.CognitiveApiService
++import com.example.assistentecell.data.model.*
++import com.example.assistentecell.data.repository.CognitiveRepository
++import com.example.assistentecell.automation.RoutineDescription
++import com.example.assistentecell.network.BackendAuthInterceptor
++import com.google.gson.Gson
++import com.google.gson.JsonObject
++import kotlinx.coroutines.runBlocking
++import okhttp3.*
++import okhttp3.MediaType.Companion.toMediaType
++import okhttp3.ResponseBody.Companion.toResponseBody
++import okio.Buffer
++import org.junit.Assert.*
++import org.junit.Test
++import retrofit2.Retrofit
++import retrofit2.converter.gson.GsonConverterFactory
++
++class RoutineManagementTest {
++    private fun client(block: (Request) -> Pair<Int, String>): Pair<OkHttpClient, CognitiveRepository> {
++        val client = OkHttpClient.Builder()
++            .addInterceptor(BackendAuthInterceptor({ "https://example.test/" }, { "test-token" }))
++            .addInterceptor { chain ->
++                val result = block(chain.request())
++                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(result.first)
++                    .message("Test").body(result.second.toResponseBody("application/json".toMediaType())).build()
++            }.build()
++        val api = Retrofit.Builder().baseUrl("https://example.test/").client(client)
++            .addConverterFactory(GsonConverterFactory.create()).build().create(CognitiveApiService::class.java)
++        return client to CognitiveRepository(api)
++    }
++
++    @Test fun actualStoredRoutineHasTriggerAndEveryAction() {
++        val old = """{"nome":"Editor","gatilho":{"tipo":"APP_OPENED","pacote":"com.trabalho"},"acoes":[{"alvo":"PC","comando":"abrir_app","parametro":"code.exe"},{"alvo":"IA","comando":"NOTIFICAR","parametro":"Agenda?"}],"ativa":false}"""
++        val routine = Gson().fromJson(old, ApiRoutine::class.java)
++        assertEquals(2, routine.acoes.size)
++        assertEquals("Ao abrir Trabalho no celular", RoutineDescription.trigger(routine) { "Trabalho" })
++        assertEquals("Abrir code.exe no PC", RoutineDescription.action(routine.acoes[0]))
++        assertFalse(routine.ativa)
++        assertNull(routine.pode_ativar) // An old server must not imply validation.
++    }
++
++    @Test fun unicodeAndSlashNamesStayInBodiesAndUseAuthentication() = runBlocking {
++        val requests = mutableListOf<Request>()
++        val (client, repo) = client { requests.add(it); 200 to """{"status":"success","message":"OK"}""" }
++        try {
++            val name = "Rotina / desenho → editor"
++            assertTrue(repo.approveRoutine(name).isSuccess)
++            assertTrue(repo.rejectRoutine(name).isSuccess)
++            assertEquals(listOf("POST", "DELETE"), requests.map { it.method })
++            assertEquals(listOf("/api/v1/capabilities/approve", "/api/v1/capabilities/discovered"), requests.map { it.url.encodedPath })
++            requests.forEach {
++                assertEquals("Bearer test-token", it.header("Authorization"))
++                val body = Buffer(); it.body!!.writeTo(body)
++                assertEquals(name, Gson().fromJson(body.readUtf8(), JsonObject::class.java)["nome"].asString)
++            }
++        } finally { client.dispatcher.executorService.shutdownNow() }
++    }
++
++    @Test fun pausedRoutineIsLoadedWithoutSendingAnyMutation() = runBlocking {
++        val requests = mutableListOf<Request>()
++        val (client, repo) = client {
++            requests.add(it)
++            200 to """[{"nome":"Pausa","ativa":false,"pode_ativar":true,"gatilho":{"tipo":"APP_OPENED","pacote":"com.a"},"acoes":[]}]"""
++        }
++        try {
++            assertFalse(repo.getRoutines().getOrThrow().single().ativa)
++            repo.getDiscoveredRoutines().getOrThrow()
++            assertTrue(requests.all { it.method == "GET" })
++        } finally { client.dispatcher.executorService.shutdownNow() }
++    }
++
++    @Test fun validationAndOldServerErrorsReachTheScreen() = runBlocking {
++        var code = 422
++        val (client, repo) = client { code to """{"detail":"Esse gatilho não produz eventos."}""" }
++        try {
++            assertTrue(repo.approveRoutine("Inválida").exceptionOrNull()!!.message!!.contains("gatilho"))
++            code = 405
++            assertTrue(repo.setRoutineState("Pausa", false).exceptionOrNull()!!.message!!.contains("atualização"))
++        } finally { client.dispatcher.executorService.shutdownNow() }
++    }
++
++    @Test fun deleteCanUseThePublishedLegacyEndpoint() = runBlocking {
++        val requests = mutableListOf<Request>()
++        val (client, repo) = client {
++            requests.add(it)
++            if (it.url.encodedPath.endsWith("/routines")) 405 to "{}"
++            else 200 to """{"status":"success","message":"Removed"}"""
++        }
++        try {
++            assertTrue(repo.deleteRoutine("Editor").isSuccess)
++            assertEquals("/api/v1/capabilities/routines/Editor", requests.last().url.encodedPath)
++            assertTrue(requests.all { it.method == "DELETE" })
++        } finally { client.dispatcher.executorService.shutdownNow() }
++    }
++
++    @Test fun localDraftMigrationIsPausedAndKeepsTriggerAndAction() {
++        val rule = AutomationRule("old", "Editor", "automacao", "com.trabalho", "PC_COMMAND", "vscode")
++        val draft = RoutineDescription.fromLegacy(rule)
++        assertFalse(draft.ativa)
++        assertEquals("com.trabalho", draft.gatilho!!.pacote)
++        assertEquals(RoutineAction("PC", "abrir_app", "vscode"), draft.acoes.single())
++    }
++}
+--- a/app/src/test/java/com/example/assistentecell/VoiceReplyTrackerTest.kt
++++ b/app/src/test/java/com/example/assistentecell/VoiceReplyTrackerTest.kt
+@@ -0,0 +1,35 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.voice.VoiceReplyTracker
++import org.junit.Assert.*
++import org.junit.Test
++
++class VoiceReplyTrackerTest {
++    @Test fun unrelatedNotificationDoesNotConsumeSpokenReply() {
++        val replies = VoiceReplyTracker { 1000L }
++        replies.expect("voice-1")
++        assertFalse(replies.consume("notification-1"))
++        assertFalse(replies.consume(""))
++        assertTrue(replies.consume("voice-1"))
++        assertFalse(replies.consume("voice-1"))
++    }
++
++    @Test fun oldOrRejectedRequestsDoNotSpeakLater() {
++        var time = 1000L
++        val replies = VoiceReplyTracker { time }
++        replies.expect("old")
++        replies.expect("rejected")
++        replies.forget("rejected")
++        assertFalse(replies.consume("rejected"))
++        time += 90001
++        assertFalse(replies.consume("old"))
++    }
++
++    @Test fun multipleVoiceRequestsKeepTheirOwnReply() {
++        val replies = VoiceReplyTracker { 1000L }
++        replies.expect("first")
++        replies.expect("second")
++        assertTrue(replies.consume("second"))
++        assertTrue(replies.consume("first"))
 +    }
 +}

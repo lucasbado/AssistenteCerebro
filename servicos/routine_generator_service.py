@@ -1,22 +1,19 @@
 """Materializa sugestões auditáveis; nenhuma sugestão nasce ativa."""
 import asyncio
-import json
 
 from servicos.routine_discovery_service import routine_discovery_service
-from servicos.routine_paths import ACTIVE_PATH, DISCOVERED_PATH, REJECTED_PATH, salvar_json
+from servicos.catalogo_rotinas import catalogo_rotinas
 
 
 class RoutineGeneratorService:
     def __init__(self):
-        self.active_path = ACTIVE_PATH
-        self.discovered_path = DISCOVERED_PATH
-        self.rejected_path = REJECTED_PATH
+        self.catalogo = catalogo_rotinas
         self._lock = asyncio.Lock()
 
     async def run_batch_generation(self):
         async with self._lock:
             sugestoes = await routine_discovery_service.discover_suggestions(min_confidence=0.8)
-            existentes = self._get_all_existing_names()
+            existentes = await self._get_all_existing_names()
             novas = []
             for sugestao in sugestoes:
                 if sugestao.get("tipo") != "sugestao_regra":
@@ -29,9 +26,7 @@ class RoutineGeneratorService:
                 if rotina:
                     novas.append(rotina)
                     existentes.add(nome)
-            if novas:
-                self._save_discovered_routines(novas)
-            return len(novas)
+            return await self.catalogo.adicionar_sugestoes(novas) if novas else 0
 
     async def _materialize_routine(self, sugestao):
         skill = sugestao.get("skill_id")
@@ -75,23 +70,8 @@ class RoutineGeneratorService:
                 "NOITE": ("18:00", "23:59"), "MADRUGADA": ("00:00", "05:59")}
         return mapa[periodo][0 if tipo == "inicio" else 1]
 
-    def _get_all_existing_names(self):
-        nomes = set()
-        for caminho in (self.active_path, self.discovered_path, self.rejected_path):
-            try:
-                with open(caminho, encoding="utf-8") as arquivo:
-                    nomes.update(r["nome"].strip().casefold() for r in json.load(arquivo))
-            except FileNotFoundError:
-                pass
-        return nomes
-
-    def _save_discovered_routines(self, novas):
-        try:
-            with open(self.discovered_path, encoding="utf-8") as arquivo:
-                atuais = json.load(arquivo)
-        except FileNotFoundError:
-            atuais = []
-        salvar_json(self.discovered_path, atuais + novas)
+    async def _get_all_existing_names(self):
+        return {r["nome"].strip().casefold() for r in await self.catalogo.existentes()}
 
 
 routine_generator_service = RoutineGeneratorService()

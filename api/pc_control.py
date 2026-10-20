@@ -1,10 +1,25 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from servicos.pc_control_service import pc_control_service
 from core.evento import EventoCanonico
 from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento, PrioridadeEvento
 from core.kernel import kernel
 
 router = APIRouter(tags=["PC Control"])
+
+
+@router.get("/conexoes")
+async def get_conexoes():
+    from api.websocket import central_alertas
+    return central_alertas.estado_conexoes()
+
+
+@router.get("/comando/{identificador}")
+async def get_confirmacao(identificador: str):
+    from api.websocket import central_alertas
+    resultado = central_alertas.confirmacoes.consultar(identificador)
+    if resultado is None:
+        raise HTTPException(status_code=404, detail="Comando ainda não roteado ou fora do histórico recente")
+    return resultado
 
 @router.get("/mobile-apps")
 async def get_mobile_apps():

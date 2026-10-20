@@ -1,0 +1,41 @@
+# Pacote HA para os DOIS botões novos. Veja docs/integracao-botoes-cenarios.md.
+# Não substitui as automações de mídia, luz e relé existentes.
+rest_command:
+  ollie_botao:
+    url: https://assistentecellfront.onrender.com/api/v1/ha/webhook
+    method: POST
+    headers:
+      authorization: !secret ollie_authorization
+    content_type: "application/json"
+    timeout: 30
+    payload: >-
+      {{ {"dispositivo": dispositivo, "botao": botao,
+          "gesto": gesto | default("toque"), "evento_id": evento_id} | to_json }}
+
+automation:
+  - id: ollie_botoes_novos
+    alias: "Ollie - wake e cenários nos novos botões"
+    triggers:
+      - trigger: event
+        event_type: esphome.ollie_botao
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ trigger.event.data.get('dispositivo') == 'esphome-web-903934'
+             and trigger.event.data.get('botao') in ['ollie', 'cenarios'] }}
+    actions:
+      - action: rest_command.ollie_botao
+        data:
+          dispositivo: "{{ trigger.event.data.dispositivo }}"
+          botao: "{{ trigger.event.data.botao }}"
+          gesto: "{{ trigger.event.data.get('gesto', 'toque') }}"
+          evento_id: "{{ trigger.event.context.id }}"
+        response_variable: resposta_ollie
+      - if: "{{ resposta_ollie.status not in [200, 202] }}"
+        then:
+          - action: system_log.write
+            data:
+              level: warning
+              message: "Ollie: botão recusado (HTTP {{ resposta_ollie.status }})."
+    mode: queued
+    max: 10

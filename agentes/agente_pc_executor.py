@@ -27,7 +27,7 @@ class AgentePcExecutor:
                 return
         # ☁️ ROTEAMENTO CLOUD: Se estivermos no Render ou Linux (Cloud), o comando deve ir via WebSocket para o PC Master
         is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"] or os.name != "nt"
-        if is_render:
+        if is_render or comando == "wake_ollie":
             comando = evento.payload.get("comando")
             if evento.acao == TipoAcao.EXECUTAR_PROGRAMA:
                 comando = "abrir_app"
@@ -36,16 +36,18 @@ class AgentePcExecutor:
                 from api.websocket import central_alertas
                 # Prepara o payload para o PC Master local (Relé)
                 payload_ws = {
+                    **evento.model_dump()["payload"],
                     "tipo_ws": "COMANDO_PC",
                     "comando": comando,
                     "parametro": evento.payload.get("parametro") or evento.payload.get("programa"),
                     "origem": evento.origem.value,
                     "valor": evento.payload.get("valor"),
                     "app": evento.payload.get("app"),
-                    "url": evento.payload.get("url")
+                    "url": evento.payload.get("url"),
+                    "id_comando": evento.payload.get("id_comando") or evento.id,
+                    "correlacao_id": evento.correlacao_id
                 }
-                if central_alertas.pc_master:
-                    await central_alertas._enviar_direto(central_alertas.pc_master, payload_ws)
+                await central_alertas.enviar_comando_pc(payload_ws)
             return
 
         if evento.acao == TipoAcao.EXECUTAR_PROGRAMA:
@@ -79,6 +81,10 @@ class AgentePcExecutor:
         
         try:
             # --- COMANDOS DE MANUTENÇÃO / INTERFACE ---
+            if comando == "executar_cenario":
+                from servicos.cenarios import ServicoCenarios
+                await asyncio.to_thread(ServicoCenarios().executar, param)
+                return
             if comando == "estudar_pc":
                 logger.info("🧠 [Agente PC] Iniciando mapeamento geográfico do PC...")
                 pastas = await asyncio.to_thread(pc_control_service.mapear_estrutura_usuario)
@@ -157,7 +163,7 @@ class AgentePcExecutor:
                         acao=TipoAcao.INTENCAO_INTERACAO,
                         origem=OrigemEvento.IA,
                         payload={
-                            "texto": f"O {param} já estava aberto, trouxe a janela para frente!",
+                            "texto": f"O {param} foi aberto ou trazido para frente.",
                             "tipo_ws": "CHAT_RESPONSE"
                         }
                     ))
