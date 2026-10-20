@@ -1,0 +1,9 @@
+# Ambiente local de avaliacao: nao instalar no backend/Render.
+# openwakeword e instalado separadamente com --no-deps: TFLite nao e usado no Windows.
+numpy
+scipy
+onnxruntime
+scikit-learn
+tqdm
+requests
+sounddevice
