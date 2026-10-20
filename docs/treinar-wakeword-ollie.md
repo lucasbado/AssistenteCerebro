@@ -148,11 +148,13 @@ foi concluída sem erro e sem ativações. Isso valida o carregamento e o caminh
 de áudio, mas não valida “Ei Ollie”. O modelo personalizado depende do treino
 no Colab e do teste da pronúncia pelo usuário.
 
-O novo notebook foi validado estruturalmente; o treino completo no Linux e a
-pronúncia da prévia continuam pendentes. Não há um modelo Hey Ollie pronto nesta
+Uma [verificação real em Linux com uma atualização de pesos](validacao-wakeword-linux.md)
+foi concluída: 40 imports aprovados, uma amostra Piper gerada e inferência ONNX
+validada contra PyTorch. O treino automático completo, CUDA e a pronúncia do
+usuário continuam pendentes. Não há um detector Hey Ollie pronto para uso nesta
 revisão. Se o helper ou as dependências do treino forem alterados, regenere o
 notebook com `python tools/wakeword/gerar_notebook.py` para atualizar seus hashes.
-Os 27 testes locais passaram, cobrindo intervalo de ativação, rejeição de scores
+Os 33 testes locais passaram, cobrindo intervalo de ativação, rejeição de scores
 inválidos, formato de áudio, reinício entre gravações, integridade do notebook e
 propagação de erros reais dos processos para a saída visível. A regressão de
 importação verifica também que um subprocesso encontra o módulo de treino. Os
