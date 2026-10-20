@@ -2,7 +2,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from typing import Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from core.imutavel import congelar
 
 from core.tipos import (
     CategoriaEvento,
@@ -13,6 +14,14 @@ from core.tipos import (
 )
 
 class EventoCanonico(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    @model_validator(mode="after")
+    def congelar_conteudo(self):
+        object.__setattr__(self, "payload", congelar(self.payload))
+        object.__setattr__(self, "metadados", congelar(self.metadados))
+        return self
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     correlacao_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

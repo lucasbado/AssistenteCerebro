@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.perfil import router as perfil_router
 from api.status import router as status_router
 from api.memoria import router as memoria_router
-# 🌟 CORREÇÃO: O router da timeline foi movido para a camada de API, seguindo a arquitetura.
-from api.router_timeline import router as timeline_router
+# Router de timeline compartilhado com a aplicação principal.
+from servicos.router import router as timeline_router
 from api.router import router as home_router
 from api.router_capabilities import router as capabilities_router
 from api.router_ha import router as ha_router
@@ -19,6 +19,8 @@ def criar_app_api():
         description="API para servir conhecimento processado ao cliente Android.",
         version="1.0.0"
     )
+    from api.auth import AuthMiddleware
+    app.add_middleware(AuthMiddleware)
 
     # Adiciona o middleware de CORS para permitir requisições do frontend
     app.add_middleware(

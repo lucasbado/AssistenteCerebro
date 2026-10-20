@@ -1,174 +1,133 @@
-import logging
+"""Descobre padrões a partir de observações datadas, sem usar scores inflados."""
 import json
-import os
-from typing import List, Dict, Any
-from servicos.memoria_perfil import memoria_perfil
-from servicos.catalogo_semantico import catalogo
-from sqlalchemy.future import select
-from banco.database import AsyncSessionLocal
-from banco.models import EntidadeSemanticaDB
+from collections import Counter, defaultdict
+from datetime import datetime, timedelta, timezone
 
-logger = logging.getLogger("RoutineDiscovery")
+from sqlalchemy import select
+from banco.database import AsyncSessionLocal
+from banco.models import EventoEpisodicoDB
+from servicos.routine_paths import ACTIVE_PATH, REJECTED_PATH
+from servicos.tempo import horario_local, periodo_do_dia, utc
+from servicos.atividade import processo_pc
+
 
 class RoutineDiscoveryService:
+    MIN_SAMPLES = 5
+    MIN_DAYS = 3
+
     def __init__(self):
-        self.routines_path = "config/routines.json"
-        if not os.path.exists(os.path.dirname(self.routines_path)):
-            if os.path.exists("D:/Programacao/AssistenteCell/config/routines.json"):
-                self.routines_path = "D:/Programacao/AssistenteCell/config/routines.json"
-            else:
-                os.makedirs(os.path.dirname(self.routines_path), exist_ok=True)
+        self.routines_path = ACTIVE_PATH
+        self.rejected_path = REJECTED_PATH
 
-    def _get_existing_routine_names(self) -> set:
-        if not os.path.exists(self.routines_path): return set()
-        try:
-            with open(self.routines_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return {r.get("nome") for r in data}
-        except: return set()
+    def _get_existing_routine_names(self):
+        nomes = set()
+        for caminho in (self.routines_path, self.rejected_path):
+            try:
+                with open(caminho, encoding="utf-8") as arquivo:
+                    nomes.update(r["nome"].strip().casefold() for r in json.load(arquivo))
+            except FileNotFoundError:
+                pass
+        return nomes
 
-    async def discover_suggestions(self, min_confidence: float = 0.8) -> List[Dict[str, Any]]:
-        """
-        Varre todas as memórias em busca de padrões para sugerir rotinas.
-        """
-        logger.info(f"🔍 Iniciando descoberta de rotinas (Confiança mín: {min_confidence})...")
-        sugestoes = []
-        existentes = self._get_existing_routine_names()
-
-        # 1. Scanner de Sinergia (Cross-Device) via Memória Semântica
-        sugestoes.extend(await self._scan_cross_device_associations(min_confidence, existentes))
-
-        # 2. Scanner Temporal via Memória de Perfil (PC)
-        sugestoes.extend(await self._scan_temporal_patterns(min_confidence, existentes))
-        
-        # 3. Scanner de Hábitos de Apps Fortes (Mobile)
-        sugestoes.extend(await self._scan_strong_habits(min_confidence, existentes))
-
-        logger.info(f"✅ Descoberta finalizada. {len(sugestoes)} novas sugestões encontradas.")
-        return sugestoes
-
-    async def _scan_cross_device_associations(self, min_conf: float, existentes: set) -> List[Dict[str, Any]]:
-        sugestoes = []
-        from sqlalchemy import cast, String
+    async def discover_suggestions(self, min_confidence=0.8):
+        if not 0 <= min_confidence <= 1:
+            raise ValueError("A confiança deve estar entre 0 e 1.")
+        agora = datetime.now(timezone.utc)
         async with AsyncSessionLocal() as session:
-            # 🛡️ FIX: Cast para String para compatibilidade com Postgres/SQLite no LIKE
-            stmt = select(EntidadeSemanticaDB).where(cast(EntidadeSemanticaDB.dados_json, String).like('%associacoes%'))
-            result = await session.execute(stmt)
-            entidades = result.scalars().all()
+            resultado = await session.execute(select(EventoEpisodicoDB).where(
+                EventoEpisodicoDB.timestamp >= agora - timedelta(days=21),
+                EventoEpisodicoDB.timestamp <= agora,
+                EventoEpisodicoDB.tipo.in_(["APP_FOREGROUND", "PC_ACTIVITY"]),
+                EventoEpisodicoDB.origem.in_(["ANDROID", "PC"]),
+            ).order_by(EventoEpisodicoDB.timestamp))
+            observacoes = resultado.scalars().all()
+        existentes = self._get_existing_routine_names()
+        return [s for s in self.analisar(observacoes, min_confidence, agora)
+                if s["conteudo"]["nome"].strip().casefold() not in existentes]
 
-            for ent in entidades:
-                dados = ent.dados_json
-                assoc = dados.get("atributos", {}).get("associacoes", {})
-                
-                # Sinergia PC
-                pc_default = assoc.get("pc_default")
-                if pc_default:
-                    programa = pc_default.get("programa")
-                    pacote = ent.chave
-                    nome_app = dados.get("atributos", {}).get("nome", pacote)
-                    nome_rotina = f"Sinergia: {nome_app} ➔ {programa}"
+    def analisar(self, observacoes, min_confidence=0.8, agora=None):
+        agora = agora or datetime.now(timezone.utc)
+        sessoes = {"mobile": [], "pc": []}
+        for evento in sorted(observacoes, key=lambda e: utc(e.timestamp)):
+            ts = utc(evento.timestamp)
+            if not agora - timedelta(days=21) <= ts <= agora:
+                continue
+            if evento.origem not in ("ANDROID", "PC") or evento.tipo not in ("APP_FOREGROUND", "PC_ACTIVITY"):
+                continue
+            dados = evento.payload or {}
+            if dados.get("heartbeat"):
+                continue
+            dispositivo = "mobile" if evento.tipo == "APP_FOREGROUND" else "pc"
+            alvo = str(dados.get("pacote") or "") if dispositivo == "mobile" else processo_pc(dados)
+            if not alvo or "assistentecell" in alvo.lower() or alvo.startswith("sistema."):
+                continue
+            if dispositivo == "pc" and alvo in {"explorer.exe", "dwm.exe", "svchost.exe"}:
+                continue
+            lista = sessoes[dispositivo]
+            # Mudanças de título/aba e heartbeats não são novas aberturas.
+            if lista and lista[-1][1] == alvo and ts - lista[-1][0] < timedelta(minutes=30):
+                continue
+            lista.append((ts, alvo))
 
-                    if nome_rotina not in existentes:
-                        sugestoes.append({
-                            "tipo": "sugestao_regra",
-                            "conteudo": {
-                                "nome": nome_rotina,
-                                "skill_id": "automacao_cross",
-                                "trigger_package": pacote,
-                                "action_type": "PC_COMMAND",
-                                "action_parameter": f"abrir_app:{programa}",
-                                "justificativa": f"Sempre que você usa {nome_app}, o {programa} costuma estar aberto no PC."
-                            }
-                        })
-                
-                # Fluxo Mobile (Próximo App)
-                mobile_next = assoc.get("mobile_next")
-                if mobile_next:
-                    p2 = mobile_next.get("pacote")
-                    p1 = ent.chave
-                    nome1 = dados.get("atributos", {}).get("nome", p1)
-                    nome_rotina = f"Fluxo: {nome1} ➔ {p2.split('.')[-1].capitalize()}"
-                    
-                    if nome_rotina not in existentes:
-                        sugestoes.append({
-                            "tipo": "sugestao_regra",
-                            "conteudo": {
-                                "nome": nome_rotina,
-                                "skill_id": "automacao_fluxo",
-                                "trigger_package": p1,
-                                "action_type": "OPEN_APP",
-                                "action_parameter": p2,
-                                "justificativa": f"Notei que você quase sempre abre o {p2.split('.')[-1].capitalize()} logo após o {nome1}."
-                            }
-                        })
-
-        return sugestoes
-
-    async def _scan_temporal_patterns(self, min_conf: float, existentes: set) -> List[Dict[str, Any]]:
         sugestoes = []
-        periodos = ["MANHA", "TARDE", "NOITE", "MADRUGADA"]
-        for periodo in periodos:
-            # Busca padrões de PC por horário
-            itens_pc = await memoria_perfil.obter_top_entidades(categoria=f"PC_ROUTINE_{periodo}", limite=3)
-            for it in itens_pc:
-                if it.confianca >= min_conf:
-                    programa = it.valor
-                    nome_rotina = f"Rotina {periodo}: {programa}"
-                    if nome_rotina not in existentes:
-                        sugestoes.append({
-                            "tipo": "sugestao_regra",
-                            "conteudo": {
-                                "nome": nome_rotina,
-                                "skill_id": "automacao_temporal_pc",
-                                "trigger_package": "sistema.periodo",
-                                "action_type": "PC_COMMAND",
-                                "action_parameter": f"abrir_app:{programa}",
-                                "justificativa": f"Hábito detectado: Você usa {programa} frequentemente no período da {periodo} ({it.score} vezes)."
-                            }
-                        })
 
-            # 🧠 NOVO: Busca padrões de Apps Mobile por horário
-            itens_app = await memoria_perfil.obter_top_entidades(categoria=f"APP_USO_{periodo}", limite=3)
-            for it in itens_app:
-                if it.confianca >= min_conf:
-                    pacote = it.valor
-                    if "assistentecell" in pacote: continue
-                    nome_app = pacote.split('.')[-1].capitalize()
-                    nome_rotina = f"Hábito {periodo}: {nome_app}"
-                    
-                    if nome_rotina not in existentes:
-                        sugestoes.append({
-                            "tipo": "sugestao_regra",
-                            "conteudo": {
-                                "nome": nome_rotina,
-                                "skill_id": "automacao_temporal_mobile",
-                                "trigger_package": "sistema.periodo",
-                                "action_type": "OPEN_APP",
-                                "action_parameter": pacote,
-                                "justificativa": f"Notei que você abre muito o {nome_app} no período da {periodo}."
-                            }
-                        })
-        return sugestoes
+        def adicionar(nome, skill, alvo, evidencia, pacote="sistema.periodo", periodo=None):
+            sucessos, total, datas, ultimo = evidencia
+            confianca = sucessos / total if total else 0
+            if (sucessos < self.MIN_SAMPLES or len(datas) < self.MIN_DAYS
+                    or confianca < min_confidence or agora - ultimo > timedelta(days=7)):
+                return
+            sugestoes.append({"tipo": "sugestao_regra", "conteudo": {
+                "nome": nome, "skill_id": skill, "trigger_package": pacote,
+                "action_type": "PC_COMMAND" if skill in {"automacao_cross", "automacao_temporal_pc"} else "OPEN_APP",
+                "action_parameter": f"abrir_app:{alvo}" if skill in {"automacao_cross", "automacao_temporal_pc"} else alvo,
+                "periodo": periodo,
+                "evidencia": {"amostras": sucessos, "oportunidades": total,
+                              "dias_distintos": len(datas), "confianca": round(confianca, 3),
+                              "ultima_observacao": ultimo.isoformat(), "janela_dias": 21},
+                "justificativa": f"Padrão observado em {sucessos} de {total} oportunidades, "
+                                 f"em {len(datas)} dias distintos ({confianca:.0%}).",
+            }})
 
-    async def _scan_strong_habits(self, min_conf: float, existentes: set) -> List[Dict[str, Any]]:
-        sugestoes = []
-        # Apps com score altíssimo
-        top_apps = await memoria_perfil.obter_top_entidades(categoria="APP_USO", limite=5)
-        for it in top_apps:
-            if it.score > 100: # Super hábito
-                pacote = it.valor
-                if "assistentecell" in pacote: continue
-                nome_rotina = f"Favorito: {pacote.split('.')[-1].capitalize()}"
-                
-                if nome_rotina not in existentes:
-                    # Sugere uma automação de boas-vindas ou atalho rápido
-                    sugestoes.append({
-                        "tipo": "insight",
-                        "conteudo": {
-                            "title": f"Destaque: {pacote.split('.')[-1].capitalize()}",
-                            "text": f"Este é seu app mais usado ({it.score} vezes!). Quer que eu crie um atalho de voz personalizado para ele?"
-                        }
-                    })
-        return sugestoes
+        mobile, pc = sessoes["mobile"], sessoes["pc"]
+        for tipo, destinos, skill in (("Fluxo", mobile, "automacao_fluxo"),
+                                      ("Sinergia", pc, "automacao_cross")):
+            totais = Counter()
+            pares = defaultdict(list)
+            ultima_oportunidade = {}
+            indice = 0
+            for ts, pacote in mobile:
+                # Inclui também oportunidades SEM uma abertura subsequente.
+                if agora - ts < timedelta(seconds=60):
+                    continue
+                if pacote in ultima_oportunidade and ts - ultima_oportunidade[pacote] < timedelta(minutes=10):
+                    continue
+                ultima_oportunidade[pacote] = ts
+                totais[pacote] += 1
+                while indice < len(destinos) and destinos[indice][0] <= ts:
+                    indice += 1
+                if indice < len(destinos):
+                    quando, alvo = destinos[indice]
+                    if quando - ts <= timedelta(seconds=60) and alvo != pacote:
+                        pares[pacote, alvo].append(quando)
+            for (pacote, alvo), datas in pares.items():
+                adicionar(f"{tipo}: {pacote} ➔ {alvo}", skill, alvo,
+                          (len(datas), totais[pacote], {horario_local(t).date() for t in datas}, max(datas)), pacote)
+
+        for dispositivo, lista in sessoes.items():
+            dias_periodo = defaultdict(set)
+            usos = defaultdict(list)
+            for ts, alvo in lista:
+                periodo = periodo_do_dia(ts)
+                dias_periodo[periodo].add(horario_local(ts).date())
+                usos[periodo, alvo].append(ts)
+            for (periodo, alvo), datas in usos.items():
+                dias = {horario_local(ts).date() for ts in datas}
+                # Confiança temporal mede presença em dias, não volume de eventos.
+                evidencia = (len(dias), len(dias_periodo[periodo]), dias, max(datas))
+                adicionar(f"Rotina {periodo}: {alvo}", f"automacao_temporal_{dispositivo}",
+                          alvo, evidencia, periodo=periodo)
+        return sorted(sugestoes, key=lambda s: (-s["conteudo"]["evidencia"]["confianca"], s["conteudo"]["nome"]))
+
 
 routine_discovery_service = RoutineDiscoveryService()

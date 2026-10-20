@@ -1,8 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Zap,
-  Cpu,
   Database,
   Activity,
   Terminal,
@@ -18,6 +16,15 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+
+async function authenticatedFetch(url: string, options: RequestInit = {}) {
+  const token = await invoke<string>("get_auth_token");
+  const headers = new Headers(options.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(url, { ...options, headers });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response;
+}
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -82,12 +89,16 @@ export default function App() {
     blacklist: ["jogo", "netflix", "youtube"]
   });
 
+  const policyRef = useRef(policy);
+  policyRef.current = policy;
+  const reconnectRef = useRef<() => void>(() => {});
+
   const [discoveredRoutines, setDiscoveredRoutines] = useState<any[]>([]);
 
   const fetchDiscovered = async () => {
     try {
       const apiUrl = await invoke<string>("get_api_url");
-      const res = await fetch(`${apiUrl}/api/v1/capabilities/discovered`);
+      const res = await authenticatedFetch(`${apiUrl}/api/v1/capabilities/discovered`);
       const data = await res.json();
       setDiscoveredRoutines(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -98,7 +109,7 @@ export default function App() {
   const approveRoutine = async (nome: string) => {
     try {
       const apiUrl = await invoke<string>("get_api_url");
-      const res = await fetch(`${apiUrl}/api/v1/capabilities/approve`, {
+      const res = await authenticatedFetch(`${apiUrl}/api/v1/capabilities/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nome })
@@ -114,7 +125,7 @@ export default function App() {
   const rejectRoutine = async (nome: string) => {
     try {
       const apiUrl = await invoke<string>("get_api_url");
-      const res = await fetch(`${apiUrl}/api/v1/capabilities/discovered/${encodeURIComponent(nome)}`, {
+      const res = await authenticatedFetch(`${apiUrl}/api/v1/capabilities/discovered/${encodeURIComponent(nome)}`, {
         method: "DELETE"
       });
       const data = await res.json();
@@ -128,7 +139,7 @@ export default function App() {
   const fetchPolicy = async () => {
     try {
       const apiUrl = await invoke<string>("get_api_url");
-      const res = await fetch(`${apiUrl}/api/v1/pc/intervention/policy`);
+      const res = await authenticatedFetch(`${apiUrl}/api/v1/pc/intervention/policy`);
       const data = await res.json();
       setPolicy(data);
     } catch (e) {
@@ -139,7 +150,7 @@ export default function App() {
   const updatePolicy = async (newPolicy: any) => {
     try {
       const apiUrl = await invoke<string>("get_api_url");
-      const res = await fetch(`${apiUrl}/api/v1/pc/intervention/policy`, {
+      const res = await authenticatedFetch(`${apiUrl}/api/v1/pc/intervention/policy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newPolicy)
@@ -168,10 +179,10 @@ export default function App() {
   const handleCommand = async (data: any) => {
     try {
       const cmd = data.comando || data.acao || 'CUSTOM';
-      const param = data.url || data.parametro || data.app || data.query || data.macro || "";
+      const param = String(data.url ?? data.parametro ?? data.app ?? data.query ?? data.macro ?? data.valor ?? "");
 
       // 🛡️ CHECK INTERVENTION POLICY (Super Poderes / Auto-Open)
-      if (!policy.auto_open_enabled && (cmd === "open_url" || cmd === "abrir_url" || cmd === "abrir_app" || cmd === "abrir_programa")) {
+      if (data.origem === "IA" && !policyRef.current.auto_open_enabled && (cmd === "open_url" || cmd === "abrir_url" || cmd === "abrir_app" || cmd === "abrir_programa")) {
         addLog(`🛡️ Intervention blocked by policy (Auto-Open OFF): ${cmd} (${param})`, "text-neon-orange");
         return;
       }
@@ -186,71 +197,17 @@ export default function App() {
   };
 
   const sendChat = async () => {
-    if (!chatText.trim() || !wsInstance) return;
+    if (!chatText.trim() || wsInstance?.readyState !== WebSocket.OPEN) return;
     addLog(`👤 USER >> ${chatText}`, "text-white");
 
     wsInstance.send(JSON.stringify({
-      categoria: "SISTEMA_COMANDO_USUARIO",
-      payload: { texto: chatText },
-      origem: "PC"
+      tipo_ws: "CHAT_MESSAGE",
+      texto: chatText,
+      pacote: "pc.chat"
     }));
 
     setChatInput("");
     setMood("thinking");
-  };
-
-  const setupWS = async () => {
-    try {
-      const cloudUrl = await invoke<string>("get_cloud_url");
-      addLog(`Connecting to: ${cloudUrl}`, "text-gray-500 text-[10px]");
-
-      const ws = new WebSocket(cloudUrl);
-      setWs(ws);
-
-      ws.onopen = () => {
-        setIsConnected(true);
-        addLog("📡 Sincronização com Cloud concluída.", "text-neon-cyan");
-        ws.send(JSON.stringify({ tipo_ws: "REGISTRO", id: "PC_MASTER" }));
-      };
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-
-        if (data.tipo_ws === "CHAT_RESPONSE") {
-          addLog(`🤖 OLLIE: ${data.texto}`, "text-neon-purple text-[13px] font-bold");
-          setMood("thinking");
-        }
-
-        if (data.comando) {
-          addLog(`⚡ EXEC_CMD: ${data.comando.toUpperCase()}`, "text-neon-cyan");
-          handleCommand(data);
-        }
-
-        if (data.mood) setMood(data.mood);
-
-        // Se recebermos status do Render, marcamos como conectado
-        if (data.tipo_ws === "STATUS_PC" && data.id === "PC_MASTER") {
-           setIsConnected(true);
-        }
-      };
-
-      ws.onclose = () => {
-        setIsConnected(false);
-        addLog("❌ Falha de link: Cloud connection lost.", "text-red-400");
-        // Re-setup after 5s if still active
-        setTimeout(() => {
-           if (document.visibilityState === 'visible') setupWS();
-        }, 5000);
-      };
-
-      ws.onerror = (err) => {
-        console.error("WS Error:", err);
-        addLog(`WS Error: Connection issues detected.`, "text-red-500");
-      };
-
-    } catch (err) {
-      addLog(`Setup Error: ${err}`, "text-red-400");
-    }
   };
 
   // --- Effects ---
@@ -324,7 +281,9 @@ export default function App() {
         const cloudUrl = await invoke<string>("get_cloud_url");
         addLog(`Connecting to: ${cloudUrl}`, "text-gray-500 text-[10px]");
 
-        const ws = new WebSocket(cloudUrl);
+        const token = await invoke<string>("get_auth_token");
+        if (!isComponentMounted) return;
+        const ws = new WebSocket(cloudUrl, ["ollie", `bearer.${token}`]);
         activeSocket = ws;
         setWs(ws);
 
@@ -338,7 +297,8 @@ export default function App() {
 
         ws.onmessage = (event) => {
           if (!isComponentMounted) return;
-          const data = JSON.parse(event.data);
+          let data;
+          try { data = JSON.parse(event.data); } catch { return; }
 
           if (data.tipo_ws === "CHAT_RESPONSE") {
             addLog(`🤖 OLLIE: ${data.texto}`, "text-neon-purple text-[13px] font-bold");
@@ -384,7 +344,16 @@ export default function App() {
       }
     };
 
-    setupWS();
+    reconnectRef.current = () => {
+      if (reconnectTimeout) window.clearTimeout(reconnectTimeout);
+      if (activeSocket) {
+        activeSocket.onclose = null;
+        activeSocket.close();
+      }
+      isConnecting = false;
+      void setupWS();
+    };
+    void setupWS();
 
     return () => {
       isComponentMounted = false;
@@ -548,7 +517,7 @@ export default function App() {
             <section className="glass rounded-3xl p-4 flex justify-around text-neon-cyan">
               {[
                 { icon: Search, label: "Neural Scan", action: () => handleCommand({ comando: "estudar_pc" }) },
-                { icon: RefreshCw, label: "Reset Link", action: () => setupWS() },
+                { icon: RefreshCw, label: "Reset Link", action: () => reconnectRef.current() },
                 { icon: Database, label: "Hardware Init", action: () => handleCommand({ comando: "inicializar_hardware" }) },
                 { icon: Shield, label: "Intervention Governor", action: () => setShowInterventionModal(true) }
               ].map((item, i) => (

@@ -4,6 +4,7 @@ from banco.database import AsyncSessionLocal
 from banco.models import PerfilUsuarioDB
 from datetime import datetime, timezone
 import math
+from servicos.tempo import periodo_do_dia
 
 # Categorias para o perfil de usuário
 CATEGORIA_CONTATO = "CONTATO_INTERACAO"
@@ -14,14 +15,7 @@ CATEGORIA_WIFI = "WIFI_CONEXAO"
 
 def _get_time_slot(timestamp: datetime) -> str:
     """Determina o período do dia com base no timestamp."""
-    hour = timestamp.hour
-    if 6 <= hour < 12:
-        return "MANHA"
-    if 12 <= hour < 18:
-        return "TARDE"
-    if 18 <= hour < 24:
-        return "NOITE"
-    return "MADRUGADA"
+    return periodo_do_dia(timestamp)
 
 
 class MemoriaPerfil:
@@ -43,12 +37,12 @@ class MemoriaPerfil:
             perfil_db = resultado.scalars().first()
 
             if perfil_db:
-                perfil_db.score += score_increment
+                perfil_db.score = max(0, perfil_db.score + score_increment)
             else:
                 perfil_db = PerfilUsuarioDB(
                     categoria=categoria,
                     valor=valor,
-                    score=score_increment,
+                    score=max(0, score_increment),
                     confianca=0.1,  # Começa com uma confiança baixa
                 )
                 session.add(perfil_db)
@@ -74,6 +68,9 @@ class MemoriaPerfil:
     async def registrar_uso_app(self, pacote: str):
         """Registra o uso de um aplicativo."""
         await self._registrar_interacao(CATEGORIA_APP, pacote)
+
+    async def registrar_uso_por_periodo(self, categoria: str, valor: str, timestamp: datetime):
+        await self._registrar_interacao(f"{categoria}_{_get_time_slot(timestamp)}", valor)
 
     async def registrar_escuta_artista(self, artista: str, timestamp: datetime):
         """Registra a escuta de um artista musical, associando ao horário."""

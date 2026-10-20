@@ -1,185 +1,97 @@
-import logging
+"""Materializa sugestões auditáveis; nenhuma sugestão nasce ativa."""
+import asyncio
 import json
-import os
-from typing import List, Dict, Any
-from servicos.routine_discovery_service import routine_discovery_service
-from servicos.llm import ServicoLLM
 
-logger = logging.getLogger("RoutineGenerator")
+from servicos.routine_discovery_service import routine_discovery_service
+from servicos.routine_paths import ACTIVE_PATH, DISCOVERED_PATH, REJECTED_PATH, salvar_json
+
 
 class RoutineGeneratorService:
     def __init__(self):
-        self.discovered_path = "config/discovered_routines.json"
-        self.active_path = "config/routines.json"
-        if not os.path.exists("config"):
-            if os.path.exists("D:/Programacao/AssistenteCell/config"):
-                self.discovered_path = "D:/Programacao/AssistenteCell/config/discovered_routines.json"
-                self.active_path = "D:/Programacao/AssistenteCell/config/routines.json"
-            else:
-                os.makedirs("config", exist_ok=True)
-        self.llm = ServicoLLM()
+        self.active_path = ACTIVE_PATH
+        self.discovered_path = DISCOVERED_PATH
+        self.rejected_path = REJECTED_PATH
+        self._lock = asyncio.Lock()
 
     async def run_batch_generation(self):
-        """
-        Executa uma varredura completa nos padrões e gera rotinas no arquivo de descoberta.
-        """
-        logger.info("⚡ Iniciando geração de rotinas em lote...")
-        
-        # 1. Obtém sugestões brutas do motor de descoberta
-        sugestoes = await routine_discovery_service.discover_suggestions(min_confidence=0.75)
-        if not sugestoes:
-            logger.info("Nenhuma nova sugestão encontrada para gerar rotinas.")
-            return
+        async with self._lock:
+            sugestoes = await routine_discovery_service.discover_suggestions(min_confidence=0.8)
+            existentes = self._get_all_existing_names()
+            novas = []
+            for sugestao in sugestoes:
+                if sugestao.get("tipo") != "sugestao_regra":
+                    continue
+                conteudo = sugestao["conteudo"]
+                nome = conteudo["nome"].strip().casefold()
+                if nome in existentes:
+                    continue
+                rotina = await self._materialize_routine(conteudo)
+                if rotina:
+                    novas.append(rotina)
+                    existentes.add(nome)
+            if novas:
+                self._save_discovered_routines(novas)
+            return len(novas)
 
-        # 2. Carrega nomes de rotinas já existentes (ativas ou pendentes)
-        existentes = self._get_all_existing_names()
-
-        novas_rotinas = []
-        for sug in sugestoes:
-            if sug["tipo"] != "sugestao_regra": continue
-            
-            conteudo = sug["conteudo"]
-            # Verifica se já geramos algo similar
-            if conteudo.get("nome") in existentes: continue
-
-            # 3. Transforma a sugestão em uma Rotina Completa
-            rotina = await self._materialize_routine(conteudo)
-            if rotina:
-                novas_rotinas.append(rotina)
-                existentes.add(rotina["nome"])
-
-        if novas_rotinas:
-            self._save_discovered_routines(novas_rotinas)
-            logger.info(f"✅ Geradas {len(novas_rotinas)} novas rotinas para verificação.")
+    async def _materialize_routine(self, sugestao):
+        skill = sugestao.get("skill_id")
+        alvo = sugestao["action_parameter"].removeprefix("abrir_app:")
+        rotina = {"nome": sugestao["nome"], "justificativa": sugestao["justificativa"],
+                  "evidencia": sugestao.get("evidencia", {}), "ativa": False,
+                  "cooldown_segundos": 3600}
+        if skill in {"automacao_temporal_pc", "automacao_temporal_mobile"}:
+            periodo = sugestao.get("periodo")
+            if periodo not in {"MANHA", "TARDE", "NOITE", "MADRUGADA"}:
+                return None
+            rotina["gatilho"] = {"tipo": "TIME_RANGE",
+                "inicio": self._get_time_for_period(periodo, "inicio"),
+                "fim": self._get_time_for_period(periodo, "fim"),
+                "evento": "PC_ACTIVITY" if skill.endswith("_pc") else "TICK_ROTINA"}
+            rotina["uma_vez_por_dia"] = True
+        elif skill in {"automacao_cross", "automacao_fluxo"}:
+            rotina["gatilho"] = {"tipo": "APP_OPENED", "pacote": sugestao["trigger_package"]}
         else:
-            logger.info("Nenhuma rotina nova gerada após filtragem.")
+            return None
 
-    async def _materialize_routine(self, sugestao: dict) -> dict | None:
-        """
-        Converte uma sugestão simples em um objeto de rotina rico de forma 100% determinística (sem gargalos de LLM).
-        """
-        try:
-            skill_id = sugestao.get("skill_id")
-            
-            if skill_id == "automacao_temporal_pc":
-                programa = sugestao["action_parameter"].split(":")[-1]
-                periodo = sugestao["nome"].split(" ")[1].replace(":", "")
-                return {
-                    "nome": sugestao["nome"],
-                    "justificativa": sugestao["justificativa"],
-                    "gatilho": {
-                        "tipo": "TIME_RANGE",
-                        "inicio": self._get_time_for_period(periodo, "inicio"),
-                        "fim": self._get_time_for_period(periodo, "fim"),
-                        "evento": "PC_LOGIN"
-                    },
-                    "acoes": [{"alvo": "PC", "comando": "abrir_app", "parametro": programa}],
-                    "ativa": False
-                }
-
-            elif skill_id == "automacao_cross":
-                pacote = sugestao["trigger_package"]
-                programa = sugestao["action_parameter"].split(":")[-1]
-                return {
-                    "nome": sugestao["nome"],
-                    "justificativa": sugestao["justificativa"],
-                    "gatilho": {"tipo": "APP_OPENED", "pacote": pacote},
-                    "acoes": [{"alvo": "PC", "comando": "abrir_app", "parametro": programa}],
-                    "ativa": False
-                }
-
-            elif skill_id == "automacao_fluxo":
-                p1 = sugestao["trigger_package"]
-                p2 = sugestao["action_parameter"]
-                return {
-                    "nome": sugestao["nome"],
-                    "justificativa": sugestao["justificativa"],
-                    "gatilho": {"tipo": "APP_OPENED", "pacote": p1},
-                    "acoes": [{"alvo": "MOBILE", "comando": "open_app", "parametro": p2}],
-                    "ativa": False
-                }
-
-            elif skill_id == "automacao_temporal_mobile":
-                pacote = sugestao["action_parameter"]
-                periodo = sugestao["nome"].split(" ")[1].replace(":", "")
-                return {
-                    "nome": sugestao["nome"],
-                    "justificativa": sugestao["justificativa"],
-                    "gatilho": {
-                        "tipo": "TIME_RANGE",
-                        "inicio": self._get_time_for_period(periodo, "inicio"),
-                        "fim": self._get_time_for_period(periodo, "fim"),
-                        "evento": "SYSTEM_START"
-                    },
-                    "acoes": [{"alvo": "MOBILE", "comando": "open_app", "parametro": pacote}],
-                    "ativa": False
-                }
-
+        if skill in {"automacao_cross", "automacao_temporal_pc"}:
+            rotina["acoes"] = [{"alvo": "PC", "comando": "abrir_app", "parametro": alvo}]
+        else:
+            # Abrir B imediatamente ao entrar em A impede o usuário de usar A.
+            # Oferecemos o próximo passo com uma ação explícita na notificação.
+            nome_app = alvo.rsplit(".", 1)[-1].capitalize()
+            if skill == "automacao_fluxo":
+                origem = sugestao["trigger_package"].rsplit(".", 1)[-1].capitalize()
+                texto = f"Depois de usar {origem}, você costuma abrir {nome_app}. Quer abrir agora?"
             else:
-                return {
-                    "nome": sugestao["nome"],
-                    "justificativa": sugestao["justificativa"],
-                    "gatilho": {"tipo": "MANUAL"},
-                    "acoes": [{"alvo": "MOBILE", "comando": "toast", "parametro": sugestao["nome"]}],
-                    "ativa": False
-                }
+                periodo = {"MANHA": "pela manhã", "TARDE": "à tarde", "NOITE": "à noite", "MADRUGADA": "de madrugada"}[sugestao["periodo"]]
+                texto = f"Você costuma usar {nome_app} {periodo}. Quer abrir agora?"
+            rotina["acoes"] = [{"alvo": "IA", "comando": "NOTIFICAR",
+                "parametro": texto,
+                "acao_tipo": "OPEN_APP", "acao_parametro": alvo, "acao_texto": "Abrir app"}]
+        return rotina
 
-        except Exception as e:
-            logger.error(f"Erro ao materializar rotina: {e}")
-            return None
+    def _get_time_for_period(self, periodo, tipo):
+        mapa = {"MANHA": ("06:00", "11:59"), "TARDE": ("12:00", "17:59"),
+                "NOITE": ("18:00", "23:59"), "MADRUGADA": ("00:00", "05:59")}
+        return mapa[periodo][0 if tipo == "inicio" else 1]
 
-    async def _llm_enhance_routine(self, sugestao: dict) -> dict | None:
-        """Pede para a LLM dar um nome criativo e talvez adicionar ações complementares."""
-        prompt = f"""Converta este padrão de comportamento em uma Rotina de Automação criativa.
-Padrão: {sugestao['justificativa']}
-Gatilho sugerido: {sugestao['trigger_package']}
-Ação sugerida: {sugestao['action_parameter']}
-
-Retorne um JSON no formato:
-{{
-  "nome": "Nome Criativo e Curto",
-  "justificativa": "Explicação do porquê esta rotina existe",
-  "gatilho": {{ "tipo": "APP_OPENED", "pacote": "..." }},
-  "acoes": [ {{ "alvo": "PC|MOBILE", "comando": "...", "parametro": "..." }} ],
-  "ativa": false
-}}"""
-        try:
-            # Usando o método gerar_json simplificado (supondo que exista no ServicoLLM ou similar)
-            res = await self.llm._gerar_json(prompt, "Você é um arquiteto de automações residenciais.")
-            return res
-        except:
-            return None
-
-    def _get_time_for_period(self, periodo: str, tipo: str) -> str:
-        mapa = {
-            "MANHA": {"inicio": "06:00", "fim": "11:59"},
-            "TARDE": {"inicio": "12:00", "fim": "17:59"},
-            "NOITE": {"inicio": "18:00", "fim": "23:59"},
-            "MADRUGADA": {"inicio": "00:00", "fim": "05:59"}
-        }
-        return mapa.get(periodo, {"inicio": "08:00", "fim": "10:00"})[tipo]
-
-    def _get_all_existing_names(self) -> set:
-        names = set()
-        for path in [self.active_path, self.discovered_path]:
-            if os.path.exists(path):
-                try:
-                    with open(path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        for r in data: names.add(r.get("nome"))
-                except: pass
-        return names
-
-    def _save_discovered_routines(self, novas: List[dict]):
-        current = []
-        if os.path.exists(self.discovered_path):
+    def _get_all_existing_names(self):
+        nomes = set()
+        for caminho in (self.active_path, self.discovered_path, self.rejected_path):
             try:
-                with open(self.discovered_path, "r", encoding="utf-8") as f:
-                    current = json.load(f)
-            except: pass
-        
-        current.extend(novas)
-        with open(self.discovered_path, "w", encoding="utf-8") as f:
-            json.dump(current, f, indent=4)
+                with open(caminho, encoding="utf-8") as arquivo:
+                    nomes.update(r["nome"].strip().casefold() for r in json.load(arquivo))
+            except FileNotFoundError:
+                pass
+        return nomes
+
+    def _save_discovered_routines(self, novas):
+        try:
+            with open(self.discovered_path, encoding="utf-8") as arquivo:
+                atuais = json.load(arquivo)
+        except FileNotFoundError:
+            atuais = []
+        salvar_json(self.discovered_path, atuais + novas)
+
 
 routine_generator_service = RoutineGeneratorService()

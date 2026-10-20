@@ -115,3 +115,19 @@ class MemoriaEpisodica:
                 "pacote": evento_db.payload.get("pacote"),
                 "payload": evento_db.payload,
             }
+
+    async def obter_interacao_notificada(self, correlacao_id: str, notificacao_id: str | None = None) -> dict | None:
+        """Feedback refere-se à sugestão mostrada, não ao primeiro sensor da conversa."""
+        async with AsyncSessionLocal() as session:
+            stmt = select(EventoEpisodicoDB).where(
+                EventoEpisodicoDB.correlacao_id == correlacao_id,
+                EventoEpisodicoDB.tipo.in_(["INTENCAO_NOTIFICACAO", "NOTIFICACAO_PRONTA_PARA_ENVIO"]),
+            )
+            if notificacao_id:
+                stmt = stmt.where(EventoEpisodicoDB.id == notificacao_id)
+            resultado = await session.execute(stmt.order_by(EventoEpisodicoDB.timestamp.desc()).limit(1))
+            registro = resultado.scalars().first()
+            if registro is None:
+                return None
+            return {"id": registro.id, "categoria": registro.tipo,
+                    "pacote": registro.payload.get("pacote"), "payload": registro.payload}

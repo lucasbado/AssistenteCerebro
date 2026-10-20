@@ -1,5 +1,7 @@
 import os
 import subprocess
+import shutil
+from urllib.parse import urlparse
 import psutil
 import toml
 import logging
@@ -404,13 +406,29 @@ class PcControlService:
     def executar_comando_direto(self, alvo):
         try:
             if "://" in alvo or alvo.lower().startswith("http"):
+                if urlparse(alvo).scheme not in {"http", "https", "spotify"}:
+                    raise ValueError("Protocolo de URL não permitido")
                 webbrowser.open(alvo)
             elif os.path.exists(alvo):
                 os.startfile(alvo)
             else:
-                subprocess.Popen(alvo, shell=True)
+                executavel = shutil.which(alvo)
+                if not executavel or not executavel.lower().endswith((".exe", ".com")):
+                    raise ValueError("Aplicativo não encontrado ou não permitido")
+                subprocess.Popen([executavel], shell=False)
         except Exception as e:
             logger.error(f"Erro executar {alvo}: {e}")
+            raise
+
+    def abrir_url(self, url):
+        parsed = urlparse(str(url))
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("URL HTTP(S) inválida")
+        if not webbrowser.open(str(url)):
+            raise RuntimeError("Não foi possível abrir o navegador")
+
+    def hibernar_pc(self):
+        subprocess.run(["shutdown", "/h"], check=True)
 
     def trazer_janela_para_frente(self, termo: str) -> bool:
         if not gw or not win32gui: return False

@@ -1,71 +1,47 @@
-# servicos/vector_store.py
-import sqlite3
-import os
+"""Inicialização SQLite compatível com o adaptador assíncrono aiosqlite."""
 import logging
 from sqlalchemy import event
-from sqlalchemy.engine import Engine
 import sqlite_vec
 
 logger = logging.getLogger("VectorStore")
 
+def registrar_hooks_conexao(engine):
+    sync_engine = engine.sync_engine
+    if event.contains(sync_engine, "connect", configurar_pragmas_e_extensoes):
+        return
+    event.listen(sync_engine, "connect", configurar_pragmas_e_extensoes)
+
 def configurar_pragmas_e_extensoes(dbapi_connection, connection_record):
-    """
-    Executado em cada conexão SQLite criada.
-    Garante WAL mode, timeout e carregamento da extensão sqlite-vec.
-    """
-    if isinstance(dbapi_connection, sqlite3.Connection):
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+    finally:
+        cursor.close()
+    async def carregar(connection):
+        await connection.enable_load_extension(True)
         try:
-            dbapi_connection.execute("PRAGMA journal_mode=WAL")
-            dbapi_connection.execute("PRAGMA synchronous=NORMAL")
-            dbapi_connection.execute("PRAGMA busy_timeout=5000")
-            
-            # Carrega sqlite-vec
-            dbapi_connection.enable_load_extension(True)
-            sqlite_vec.load(dbapi_connection)
-            dbapi_connection.enable_load_extension(False)
-        except Exception as e:
-            logger.error(f"⚠️ [VectorStore] Erro ao configurar PRAGMAs ou sqlite-vec: {e}")
+            await connection.load_extension(sqlite_vec.loadable_path())
+        finally:
+            await connection.enable_load_extension(False)
+    try:
+        dbapi_connection.run_async(carregar)
+    except Exception:
+        logger.exception("sqlite-vec indisponível; busca textual continua habilitada")
 
-def inicializar_tabelas_virtuais_e_fts(engine):
-    """
-    Cria tabelas virtuais FTS5 e sqlite-vec (vec0) caso não existam.
-    """
-    with engine.connect() as conn:
-        raw_conn = conn.connection.dbapi_connection
-        if isinstance(raw_conn, sqlite3.Connection):
-            try:
-                # 1. Tabela FTS5 para busca textual em facts
-                raw_conn.execute("""
-                    CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts
-                    USING fts5(text, keywords, content='facts', content_rowid='id')
-                """)
-                
-                # Triggers para manter FTS5 sincronizado com a tabela facts
-                raw_conn.executescript("""
-                    CREATE TRIGGER IF NOT EXISTS facts_ai AFTER INSERT ON facts BEGIN
-                      INSERT INTO facts_fts(rowid, text, keywords) VALUES (new.id, new.text, new.keywords);
-                    END;
-                    CREATE TRIGGER IF NOT EXISTS facts_ad AFTER DELETE ON facts BEGIN
-                      INSERT INTO facts_fts(facts_fts, rowid, text, keywords) VALUES('delete', old.id, old.text, old.keywords);
-                    END;
-                    CREATE TRIGGER IF NOT EXISTS facts_au AFTER UPDATE ON facts BEGIN
-                      INSERT INTO facts_fts(facts_fts, rowid, text, keywords) VALUES('delete', old.id, old.text, old.keywords);
-                      INSERT INTO facts_fts(rowid, text, keywords) VALUES (new.id, new.text, new.keywords);
-                    END;
-                """)
-
-                # 2. Tabela sqlite-vec para embeddings (768 dimensões para nomic-embed-text)
-                raw_conn.execute("""
-                    CREATE VIRTUAL TABLE IF NOT EXISTS facts_vec 
-                    USING vec0(embedding float[768])
-                """)
-                raw_conn.commit()
-                logger.info("✅ [VectorStore] Tabelas virtuais FTS5 e sqlite-vec inicializadas com sucesso.")
-            except Exception as e:
-                logger.error(f"❌ [VectorStore] Erro ao criar FTS5/vec0: {e}")
-
-def registrar_hooks_conexao():
-    from banco.database import async_engine
-    sync_eng = async_engine.sync_engine
-    event.listens_for(sync_eng, "connect")(configurar_pragmas_e_extensoes)
-    inicializar_tabelas_virtuais_e_fts(sync_eng)
+async def inicializar_tabelas_virtuais_e_fts(conn):
+    existente = (await conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE name='facts_fts'")).first()
+    await conn.exec_driver_sql("CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(text, keywords, content='facts', content_rowid='id')")
+    for nome, operacao, corpo in (
+        ("facts_ai", "INSERT", "INSERT INTO facts_fts(rowid,text,keywords) VALUES(new.id,new.text,new.keywords);"),
+        ("facts_ad", "DELETE", "INSERT INTO facts_fts(facts_fts,rowid,text,keywords) VALUES('delete',old.id,old.text,old.keywords);"),
+        ("facts_au", "UPDATE", "INSERT INTO facts_fts(facts_fts,rowid,text,keywords) VALUES('delete',old.id,old.text,old.keywords); INSERT INTO facts_fts(rowid,text,keywords) VALUES(new.id,new.text,new.keywords);"),
+    ):
+        await conn.exec_driver_sql(f"CREATE TRIGGER IF NOT EXISTS {nome} AFTER {operacao} ON facts BEGIN {corpo} END")
+    if not existente:
+        await conn.exec_driver_sql("INSERT INTO facts_fts(facts_fts) VALUES('rebuild')")
+    # O módulo pode faltar em instalações sem suporte a extensões.
+    modules = (await conn.exec_driver_sql("PRAGMA module_list")).scalars().all()
+    if "vec0" in modules:
+        await conn.exec_driver_sql("CREATE VIRTUAL TABLE IF NOT EXISTS facts_vec USING vec0(embedding float[768])")

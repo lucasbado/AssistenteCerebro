@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Float, JSON, DateTime, ForeignKey, LargeBinary, Index, text as sql_text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from datetime import datetime, timezone
 
 Base = declarative_base()
@@ -119,6 +119,7 @@ class TaskQueueDB(Base):
     payload = Column(JSON)
     status = Column(String(20), default="pending", index=True) # "pending" | "processing" | "done" | "dead"
     attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
 class MetaDB(Base):

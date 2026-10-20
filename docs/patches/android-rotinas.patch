@@ -1,0 +1,1250 @@
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -131,6 +131,13 @@
+             android:enabled="true"
+             android:exported="false" />
+ 
++        <activity
++            android:name=".notifications.NotificationActionActivity"
++            android:exported="false"
++            android:noHistory="true"
++            android:excludeFromRecents="true"
++            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
++
+         <service
+             android:name=".wear.WearCommandReceiver"
+             android:exported="true">
+--- a/app/src/main/java/com/example/assistentecell/api/RetrofitClient.kt
++++ b/app/src/main/java/com/example/assistentecell/api/RetrofitClient.kt
+@@ -13,6 +13,7 @@
+ import java.util.concurrent.TimeUnit
+ 
+ object RetrofitClient {
++    private var appContext: Context? = null
+ 
+     private var _currentBaseUrl: String = "https://assistentecellfront.onrender.com/"
+     private var _haBaseUrl: String = "http://homeassistant.local:8123/"
+@@ -21,21 +22,18 @@
+     private var _haRepository: com.example.assistentecell.data.repository.HomeAssistantRepository? = null
+ 
+     fun init(context: Context) {
++        appContext = context.applicationContext
+         val prefs = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
+ 
+-        // Define o padrão automaticamente: Debug = Local (10.0.2.2:8001), Release = Render Cloud
++        // Debug uses the complete main:app service, including events and WebSocket.
+         val isDebug = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+         val defaultUrl = if (isDebug) {
+-            "http://10.0.2.2:8001/"
++            "http://10.0.2.2:8000/"
+         } else {
+             "https://assistentecellfront.onrender.com/"
+         }
+ 
+-        var savedUrl = prefs.getString("server_url", defaultUrl) ?: defaultUrl
+-        if (savedUrl.contains("10.0.2.2:8000")) {
+-            savedUrl = "http://10.0.2.2:8001/"
+-            prefs.edit { putString("server_url", savedUrl) }
+-        }
++        val savedUrl = prefs.getString("server_url", defaultUrl) ?: defaultUrl
+         val savedHaUrl = prefs.getString("ha_url", "http://homeassistant.local:8123/") ?: "http://homeassistant.local:8123/"
+         updateBaseUrl(savedUrl)
+         updateHaBaseUrl(savedHaUrl)
+@@ -86,10 +84,24 @@
+         .pingInterval(10, TimeUnit.SECONDS)
+         .build()
+ 
++    // Backend credentials never go to the separate Home Assistant client.
++    val backendHttpClient: OkHttpClient = okHttpClient.newBuilder()
++        .addInterceptor { chain ->
++            val request = chain.request()
++            val configured = _currentBaseUrl.toHttpUrlOrNull()
++            val sameServer = configured != null && request.url.host == configured.host &&
++                request.url.port == configured.port && request.url.isHttps == configured.isHttps
++            val token = appContext?.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
++                ?.getString("backend_api_token", "")?.trim().orEmpty()
++            val builder = request.newBuilder()
++            if (sameServer && token.isNotEmpty()) builder.header("Authorization", "Bearer $token")
++            chain.proceed(builder.build())
++        }.build()
++
+     private val retrofit: Retrofit
+         get() = Retrofit.Builder()
+             .baseUrl(_currentBaseUrl)
+-            .client(okHttpClient)
++            .client(backendHttpClient)
+             .addConverterFactory(GsonConverterFactory.create(GsonBuilder().setLenient().create()))
+             .build()
+ 
+--- a/app/src/main/java/com/example/assistentecell/AssistenteOverlayService.kt
++++ b/app/src/main/java/com/example/assistentecell/AssistenteOverlayService.kt
+@@ -308,7 +308,7 @@
+ 
+     private fun executarAcao() {
+         enviarFeedback("ACTION_CLICKED")
+-        SystemCommandHandler.executeCommand(this, acaoTipo, acaoParametro)
++        SystemCommandHandler.executeCommand(this, acaoTipo, acaoParametro, userInitiated = true)
+     }
+ 
+     private fun tocarSom() {
+@@ -339,4 +339,4 @@
+         mediaPlayer?.release()
+         overlayView?.let { if (it.isAttachedToWindow) windowManager.removeView(it) }
+     }
+-}+}
+--- a/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
++++ b/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
+@@ -52,17 +52,17 @@
+     /**
+      * Versão simplificada (Legado)
+      */
+-    fun executeCommand(context: Context, type: String?, parameter: String?) {
++    fun executeCommand(context: Context, type: String?, parameter: String?, userInitiated: Boolean = false) {
+         val json = JSONObject()
+         json.put("acao", type)
+         json.put("parametro", parameter)
+-        executeCommand(context, json)
++        executeCommand(context, json, userInitiated)
+     }
+ 
+     /**
+      * Versão Inteligente (Suporta múltiplos parâmetros via JSON)
+      */
+-    fun executeCommand(context: Context, json: JSONObject) {
++    fun executeCommand(context: Context, json: JSONObject, userInitiated: Boolean = false) {
+         // Tenta pegar 'acao', 'acao_tipo' ou 'comando' para compatibilidade total
+         val type = (when {
+             json.has("acao") -> json.optString("acao")
+@@ -95,14 +95,7 @@
+             when (type) {
+                 // --- COMANDOS JÁ EXISTENTES (Alinhados com o Backend) ---
+                 "OPEN_APP", "ABRIR_APP", "ABRIR_APP_MOBILE", "ABRIR_PROGRAMA" -> {
+-                    val paramLower = parameter.lowercase().trim()
+-                    val pcAppKey = pcAppAliases[paramLower] ?: pcAppAliases.entries.find { paramLower.contains(it.key) }?.value
+-                    if (pcAppKey != null) {
+-                        Log.d(TAG, "🖥️ Redirecionando abertura de app de PC: $pcAppKey (original: $parameter)")
+-                        PCCommandSender.enviarComando("abrir_app", context, app = pcAppKey)
+-                    } else {
+-                        openApp(context, parameter)
+-                    }
++                    openApp(context, parameter, userInitiated)
+                 }
+                 "LOCK", "BLOQUEAR", "BLOQUEAR_PC", "LOCK_PC", "TRAVAR_PC" -> PCCommandSender.enviarComando("bloquear_pc", context)
+                 "SUSPEND", "SUSPENDER", "DORMIR", "DORMIR_PC", "HIBERNAR", "HIBERNAR_PC", "HIBERNATE" -> PCCommandSender.enviarComando("hibernar_pc", context)
+@@ -117,7 +110,7 @@
+                             val normalized = parameter.replace("'", "\"")
+                             val innerJson = JSONObject(normalized)
+                             Log.d(TAG, "🔄 Execução recursiva de comando proativo...")
+-                            executeCommand(context, innerJson)
++                            executeCommand(context, innerJson, userInitiated)
+                         } catch (e: Exception) {
+                             Log.e(TAG, "Falha no comando recursivo: ${e.message}")
+                             PCCommandSender.enviarComando(parameter, context)
+@@ -313,10 +306,10 @@
+         }
+     }
+ 
+-    private fun openApp(context: Context, nameOrPackage: String) {
++    private fun openApp(context: Context, nameOrPackage: String, userInitiated: Boolean = false) {
+         val prefs = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
+         val autoOpenEnabled = prefs.getBoolean("auto_open_apps_enabled", false)
+-        if (!autoOpenEnabled) {
++        if (!userInitiated && !autoOpenEnabled) {
+             Log.w(TAG, "🚫 Abertura automática de app bloqueada por preferência do usuário: $nameOrPackage")
+             return
+         }
+@@ -340,8 +333,8 @@
+             context.startActivity(launchIntent)
+             Log.d(TAG, "✅ App local $nameOrPackage aberto com sucesso")
+         } else {
+-            Log.w(TAG, "⚠️ App $nameOrPackage não encontrado no Android. Redirecionando para o PC Master...")
+-            PCCommandSender.enviarComando("abrir_app", context, app = nameOrPackage)
++            Log.w(TAG, "App Android não encontrado: $nameOrPackage; destino permanece MOBILE")
++            android.widget.Toast.makeText(context, "Aplicativo não encontrado neste celular", android.widget.Toast.LENGTH_SHORT).show()
+         }
+     }
+ 
+@@ -349,28 +342,10 @@
+         val pm = context.packageManager
+         val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+         
+-        // 1. Busca exata (ignorando case)
+-        apps.find { pm.getApplicationLabel(it).toString().equals(name, ignoreCase = true) }?.let {
+-            return it.packageName
+-        }
+-        
+-        // 2. Busca por palavra inteira (Evita que "vscode" ou "lol" encontrem pacotes aleatórios)
+-        val nameClean = name.lowercase().trim()
+-        apps.find { appInfo ->
+-            val label = pm.getApplicationLabel(appInfo).toString().lowercase()
+-            label.split(" ", "_", "-").any { word -> word == nameClean }
+-        }?.let {
+-            return it.packageName
+-        }
+-
+-        // 3. Busca por prefixo (se o nome tiver ao menos 4 caracteres)
+-        if (nameClean.length >= 4) {
+-            apps.find { pm.getApplicationLabel(it).toString().lowercase().startsWith(nameClean) }?.let {
+-                return it.packageName
+-            }
+-        }
+-        
+-        return null
++        // A friendly name must match one launchable app exactly; ambiguous names do not launch.
++        return apps.filter { pm.getLaunchIntentForPackage(it.packageName) != null &&
++            pm.getApplicationLabel(it).toString().equals(name.trim(), ignoreCase = true) }
++            .singleOrNull()?.packageName
+     }
+ 
+     private fun openUrl(context: Context, url: String) {
+--- a/app/src/main/java/com/example/assistentecell/ContextSensorWorker.kt
++++ b/app/src/main/java/com/example/assistentecell/ContextSensorWorker.kt
+@@ -25,10 +25,11 @@
+ class ContextSensorWorker(appContext: Context, workerParams: WorkerParameters) :
+     CoroutineWorker(appContext, workerParams) {
+ 
+-    private val client = OkHttpClient()
++    private val client get() = com.example.assistentecell.api.RetrofitClient.backendHttpClient
+     private val gson = Gson()
+ 
+     override suspend fun doWork(): Result {
++        com.example.assistentecell.api.RetrofitClient.init(applicationContext)
+         Log.d("SENSOR_WORKER", "Iniciando coleta de sensores de sistema...")
+ 
+         val event = collectSystemData()
+@@ -132,4 +133,4 @@
+             Log.e("SENSOR_WORKER", "Falha na comunicação com o servidor: ${e.message}")
+         }
+     }
+-}+}
+--- a/app/src/main/java/com/example/assistentecell/data/model/AlertaPayload.kt
++++ b/app/src/main/java/com/example/assistentecell/data/model/AlertaPayload.kt
+@@ -6,5 +6,7 @@
+     val acao_tipo: String?,      // Ex: "OPEN_APP"
+     val acao_parametro: String?, // Ex: "com.spotify.music"
+     val acao_texto: String?,     // Ex: "Ouvir Música"
+-    val correlacao_id: String    // ID para o feedback
++    val correlacao_id: String,   // Conversation lineage, separate from the delivery ID.
++    val id: String? = null,
++    val urgencia: String = "NORMAL"
+ )
+--- a/app/src/main/java/com/example/assistentecell/FeedbackReceiver.kt
++++ b/app/src/main/java/com/example/assistentecell/FeedbackReceiver.kt
+@@ -3,113 +3,62 @@
+ import android.content.BroadcastReceiver
+ import android.content.Context
+ import android.content.Intent
+-import android.util.Log
++import androidx.core.app.NotificationCompat
+ import androidx.core.app.NotificationManagerCompat
+ import androidx.core.app.RemoteInput
++import com.example.assistentecell.command.SystemCommandHandler
++import com.example.assistentecell.notifications.SuggestionFeedback
++import com.example.assistentecell.websocket.ChatBridge
++import com.example.assistentecell.websocket.ChatMessage
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.launch
+-import com.example.assistentecell.command.SystemCommandHandler
+-import com.example.assistentecell.websocket.ChatBridge
+-import com.example.assistentecell.websocket.ChatMessage
++import org.json.JSONObject
+ 
+ class FeedbackReceiver : BroadcastReceiver() {
+-
+     override fun onReceive(context: Context, intent: Intent) {
+-        val correlacaoId = intent.getStringExtra("correlacao_id") ?: return
+-        Log.d("FeedbackReceiver", "📥 Recebido: ${intent.action}")
+-        
++        val correlation = intent.getStringExtra("correlacao_id") ?: return
++        val notification = intent.getStringExtra("notificacao_id")
++        val id = (notification ?: correlation).hashCode()
+         when (intent.action) {
+-            "FEEDBACK_DISMISS" -> {
+-                sendFeedback(correlacaoId, "DISMISS")
++            "FEEDBACK_DISMISS" -> sendFeedback(context, correlation, "DISMISS", notification)
++            "FEEDBACK_ACTION_REJECTED" -> {
++                sendFeedback(context, correlation, "SUGGESTION_REJECTED", notification)
++                NotificationManagerCompat.from(context).cancel(id)
+             }
+             "FEEDBACK_ACTION_CLICKED" -> {
+-                sendFeedback(correlacaoId, "ACTION_CLICKED")
+-                val acaoTipo = intent.getStringExtra("acao_tipo")
+-                val acaoParametro = intent.getStringExtra("acao_parametro")
+-                
+-                if (acaoTipo != null) {
+-                    Log.d("FeedbackReceiver", "🚀 Executando Ação: $acaoTipo | Parâm: $acaoParametro")
+-                    SystemCommandHandler.executeCommand(context, acaoTipo, acaoParametro)
++                // Compatibility with previous overlays. New notifications use an Activity.
++                sendFeedback(context, correlation, "ACTION_CLICKED", notification)
++                SystemCommandHandler.executeCommand(context, intent.getStringExtra("acao_tipo"),
++                    intent.getStringExtra("acao_parametro"), userInitiated = true)
++                NotificationManagerCompat.from(context).cancel(id)
++            }
++            "FEEDBACK_REPLY" -> {
++                val answer = RemoteInput.getResultsFromIntent(intent)
++                    ?.getCharSequence(NotificationHandler.KEY_TEXT_REPLY)?.toString()?.trim()
++                if (answer.isNullOrBlank()) return
++                val message = JSONObject().put("texto", answer).put("pacote", context.packageName)
++                    .put("tipo_ws", "CHAT_MESSAGE").put("correlacao_id", correlation)
++                val sent = ListenerDeNotificacoes.enviarMensagemWebSocket(message.toString())
++                if (sent) CoroutineScope(Dispatchers.Main).launch {
++                    ChatBridge.postMessage(ChatMessage(text = answer, isFromUser = true))
+                 }
+-                
+-                // 🌟 FECHA A NOTIFICAÇÃO: Após clicar em uma ação, remove da barra
+-                NotificationManagerCompat.from(context).cancel(correlacaoId.hashCode())
+-            }
+-            "FEEDBACK_ACTION_REJECTED" -> {
+-                Log.d("FeedbackReceiver", "❌ Sugestão rejeitada pelo usuário.")
+-                sendFeedback(correlacaoId, "SUGGESTION_REJECTED")
+-                
+-                // Envia sinal via WebSocket para a IA aprender com a recusa
+-                CoroutineScope(Dispatchers.IO).launch {
+-                    val json = org.json.JSONObject().apply {
+-                        put("tipo_ws", "SUGGESTION_REJECTED")
+-                        put("correlacao_id", correlacaoId)
+-                    }
+-                    ListenerDeNotificacoes.enviarMensagemWebSocket(json.toString())
+-                }
+-                
+-                // Fecha a notificação
+-                NotificationManagerCompat.from(context).cancel(correlacaoId.hashCode())
++                val updated = NotificationCompat.Builder(context, NotificationHandler.CHANNEL_ID)
++                    .setSmallIcon(R.drawable.ic_launcher_foreground).setSilent(true)
++                    .setContentText(if (sent) "Mensagem encaminhada" else "Sem conexão com o servidor. Tente novamente.")
++                    .apply { if (sent) setTimeoutAfter(1500) }.build()
++                try { NotificationManagerCompat.from(context).notify(id, updated) }
++                catch (_: SecurityException) { }
+             }
+             "FEEDBACK_VOICE_REPLY" -> {
+-                Log.d("FeedbackReceiver", "🎙️ Ativando barra de voz com contexto: $correlacaoId")
+-                
+-                // Dispara o serviço de assistência passando o contexto
+-                val assistIntent = Intent(context, com.example.assistentecell.assistant.OllieAssistantService::class.java).apply {
+-                    action = Intent.ACTION_ASSIST
+-                    putExtra("correlacao_id", correlacaoId)
+-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+-                }
+-                context.startService(assistIntent)
+-                
+-                // Fecha a notificação
+-                NotificationManagerCompat.from(context).cancel(correlacaoId.hashCode())
+-            }
+-            "FEEDBACK_REPLY" -> {
+-                val remoteInput = RemoteInput.getResultsFromIntent(intent)
+-                if (remoteInput != null) {
+-                    val resposta = remoteInput.getCharSequence(NotificationHandler.KEY_TEXT_REPLY)?.toString()
+-                    if (!resposta.isNullOrEmpty()) {
+-                        Log.d("FeedbackReceiver", "💬 Resposta Direta: $resposta")
+-                        
+-                        CoroutineScope(Dispatchers.Main).launch {
+-                            // 1. Atualiza o Chat UI localmente
+-                            ChatBridge.postMessage(ChatMessage(text = resposta, isFromUser = true))
+-                        }
+-                        
+-                        // 2. Envia para o Backend (Ollie) via WebSocket
+-                        CoroutineScope(Dispatchers.IO).launch {
+-                            val json = org.json.JSONObject().apply {
+-                                put("texto", resposta)
+-                                put("pacote", context.packageName)
+-                                put("tipo_ws", "CHAT_MESSAGE")
+-                            }
+-                            ListenerDeNotificacoes.enviarMensagemWebSocket(json.toString())
+-                        }
+-                        
+-                        // 3. Feedback visual (Opcional: Atualiza a notificação para 'Enviado')
+-                        val updatedNotification = androidx.core.app.NotificationCompat.Builder(context, "OLLIE_ASSISTANT_CHANNEL")
+-                            .setSmallIcon(R.drawable.ic_launcher_foreground)
+-                            .setContentText("Resposta enviada!")
+-                            .setSilent(true)
+-                            .build()
+-                        
+-                        NotificationManagerCompat.from(context).notify(correlacaoId.hashCode(), updatedNotification)
+-                        
+-                        // Fecha a notificação após um tempo
+-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+-                            NotificationManagerCompat.from(context).cancel(correlacaoId.hashCode())
+-                        }, 1500)
+-                    }
+-                }
++                context.startService(Intent(context, com.example.assistentecell.assistant.OllieAssistantService::class.java)
++                    .setAction(Intent.ACTION_ASSIST).putExtra("correlacao_id", correlation))
+             }
+         }
+     }
+ 
+-    private fun sendFeedback(correlacaoId: String, tipoFeedback: String) {
+-        CoroutineScope(Dispatchers.IO).launch {
+-            Log.d("FeedbackReceiver", "Enviando feedback: $tipoFeedback para $correlacaoId")
+-        }
++    private fun sendFeedback(context: Context, correlation: String, type: String, notification: String?) {
++        val pending = goAsync()
++        SuggestionFeedback.send(context, correlation, type, notification) { pending.finish() }
+     }
+ }
+--- a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
++++ b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+@@ -39,14 +39,13 @@
+ import java.io.IOException
+ import java.util.concurrent.TimeUnit
+ import kotlin.concurrent.thread
++import com.example.assistentecell.notifications.IncomingMessagePolicy
++import com.example.assistentecell.sensors.ForegroundUsageTracker
+ 
+ class ListenerDeNotificacoes : NotificationListenerService() {
+ 
+-    private val client = OkHttpClient.Builder()
+-        .connectTimeout(15, TimeUnit.SECONDS)
+-        .readTimeout(15, TimeUnit.SECONDS)
+-        .pingInterval(25, TimeUnit.SECONDS)
+-        .build()
++    private val client get() = RetrofitClient.backendHttpClient
++    private val messagePolicy = IncomingMessagePolicy()
+         
+     private var webSocket: WebSocket? = null
+     private var connectionId: String? = null
+@@ -55,7 +54,8 @@
+     private val handlerReconexao = Handler(Looper.getMainLooper())
+     private var voiceManager: VoiceManager? = null
+ 
+-    private var isMonitorando = false
++    @Volatile private var isMonitorando = false
++    @Volatile private var destroyed = false
+     private var ultimoAppAberto = ""
+     private var ultimaVezEnviadoApp: Long = 0
+     private var ultimaMusicaTocada = ""
+@@ -73,7 +73,13 @@
+         private val cofreIntencoes = mutableMapOf<String, android.app.PendingIntent>()
+ 
+         fun reconnect() {
+-            instance?.conectarWebSocket()
++            instance?.let { listener ->
++                listener.connectionId = null
++                listener.isConectando = false
++                listener.webSocket?.cancel()
++                listener.webSocket = null
++                listener.conectarWebSocket()
++            }
+         }
+ 
+         fun abrirNotificacaoPeloId(id: String): Boolean {
+@@ -122,6 +128,11 @@
+     }
+ 
+     override fun onDestroy() {
++        destroyed = true
++        isMonitorando = false
++        connectionId = null
++        handlerReconexao.removeCallbacksAndMessages(null)
++        instance = null
+         super.onDestroy()
+         voiceManager?.shutdown()
+         webSocket?.close(1000, "Serviço destruído")
+@@ -324,6 +335,7 @@
+     }
+ 
+     private fun conectarWebSocket() {
++        if (destroyed) return
+         handlerReconexao.removeCallbacksAndMessages(null)
+         if (isConectando) {
+             Log.d("AGENTE_WS", "⏳ Já existe uma tentativa de conexão em curso. Ignorando.")
+@@ -387,32 +399,10 @@
+                     }
+ 
+                     val correlacaoId = json.optString("correlacao_id", "")
+-                    val textoRaw = json.optString("texto", "")
+-                    val textoNormalizado = normalizeText(textoRaw)
+                     val agora = System.currentTimeMillis()
+-
+-                    // 🛡️ Deduplicação Inteligente: 
+-                    // 1. Notificações/Eventos: Memória de 1 hora
+-                    // 2. Chat Responses: Trava de loop de 30 segundos por conteúdo identico
+-                    
+-                    if (correlacaoId.isNotEmpty()) {
+-                        val jaProcessado = cacheMensagensProcessadas.containsKey(correlacaoId)
+-                        if (jaProcessado && tipoWs != "CHAT_RESPONSE" && tipoWs != "THINKING") {
+-                            Log.d("AGENTE_WS", "♻️ Evento ignorado (ID Repetido): $correlacaoId")
+-                            return
+-                        }
+-                        cacheMensagensProcessadas[correlacaoId] = agora
+-                    }
+-
+-                    if (tipoWs == "CHAT_RESPONSE" && textoNormalizado.isNotEmpty()) {
+-                        val keyChat = "chat_$textoNormalizado"
+-                        val ultimaVez = cacheMensagensProcessadas[keyChat] ?: 0L
+-                        if (agora - ultimaVez < LIMITE_LOOP_CHAT_MS) {
+-                            Log.d("AGENTE_WS", "♻️ Resposta de chat ignorada (Loop detectado): $textoRaw")
+-                            return
+-                        }
+-                        cacheMensagensProcessadas[keyChat] = agora
+-                    }
++                    if (messagePolicy.isDuplicate(tipoWs, json.optString("id"), correlacaoId,
++                            json.optString("texto"), json.optString("acao", json.optString("comando")),
++                            json.optString("parametro", json.optString("acao_parametro")), agora)) return
+                     
+                     if (tipoWs == "SOLICITAR_IDENTIFICACAO") {
+                         val registro = JSONObject().apply {
+@@ -489,13 +479,16 @@
+                         return
+                     }
+ 
+-                    if (tipoWs == "COMANDO_SISTEMA" || tipoWs == "COMANDO_PC") {
++                    if (tipoWs == "COMANDO_PC") return // Desktop commands belong to the PC executor.
++                    if (tipoWs == "COMANDO_SISTEMA") {
+                         val acao = json.optString("acao", json.optString("comando"))
+                         Log.d("AGENTE_WS", "🎮 Comando recebido ($tipoWs): $acao")
+                         if (acao == "ENVIAR_LISTA_APPS") {
+                             enviarListaApps()
+                         } else {
+-                            SystemCommandHandler.executeCommand(this@ListenerDeNotificacoes, json)
++                            Handler(Looper.getMainLooper()).post {
++                                SystemCommandHandler.executeCommand(this@ListenerDeNotificacoes, json)
++                            }
+                         }
+                         return
+                     }
+@@ -509,19 +502,11 @@
+                         // 🔍 FILTRO DE HÁBITOS REFORÇADO: Silencia e oculta notificações redundantes
+                         // Respeita o switch 'habit_filter_enabled'
+                         val habitFilterActive = prefs.getBoolean("habit_filter_enabled", true)
+-                        val keywordsFiltro = listOf(
+-                            "hábito", "favorito", "mais usado", "você abriu", 
+-                            "frequentemente", "costuma", "com frequência"
+-                        )
+-                        val isHabitNoise = habitFilterActive && keywordsFiltro.any { 
+-                            titulo.contains(it, ignoreCase = true) || texto.contains(it, ignoreCase = true) 
+-                        }
++                        val hasAction = json.optString("acao_tipo").isNotBlank() && json.optString("acao_parametro").isNotBlank()
++                        val isHabitNoise = IncomingMessagePolicy.hideHabitMessage(
++                            tipoWs, titulo, texto, hasAction, habitFilterActive)
+ 
+                         if (tipoWs == "CHAT_RESPONSE") {
+-                            if (json.has("comando") && !json.optString("comando").isNullOrEmpty()) {
+-                                Log.d("AGENTE_WS", "🎮 Executando comando embutido no CHAT_RESPONSE: ${json.optString("comando")}")
+-                                SystemCommandHandler.executeCommand(this@ListenerDeNotificacoes, json)
+-                            }
+                             serviceScope.launch {
+                                 val prefs = getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
+                                 val isVoiceActive = prefs.getBoolean("voice_active", false)
+@@ -561,9 +546,6 @@
+                                     Log.d("AGENTE_WS", "🔇 Sessão ativa: Fala de background suprimida")
+                                 }
+ 
+-                                // 🧠 OLLIE LIVRE: Analisa o texto da resposta para executar comandos implícitos
+-                                SystemCommandHandler.parseAndExecuteFromText(this@ListenerDeNotificacoes, texto)
+-
+                                 if (!isHabitNoise) {
+                                     ChatBridge.postMessage(
+                                         ChatMessage(text = texto, isFromUser = false)
+@@ -572,16 +554,7 @@
+                             }
+                         }
+ 
+-                        if (tipoWs == "NOTIFICACAO" || tipoWs == "CHAT_RESPONSE") {
+-                            serviceScope.launch {
+-                                try {
+-                                    val event = Gson().fromJson(text, ApiEventEntry::class.java)
+-                                    EventBridge.postEvent(event)
+-                                } catch (e: Exception) {
+-                                    Log.e("AGENTE_WS", "Erro ao converter para ApiEventEntry: ${e.message}")
+-                                }
+-                            }
+-                        }
++                        // Timeline receives EVENTO_LOG with its own DTO, not alert payloads.
+ 
+                         val acaoTipo = if (json.has("acao_tipo")) json.optString("acao_tipo") else null
+                         val acaoParametro = if (json.has("acao_parametro")) json.optString("acao_parametro") else null
+@@ -596,11 +569,13 @@
+                                     acao_tipo = acaoTipo,
+                                     acao_parametro = acaoParametro,
+                                     acao_texto = acaoTexto,
+-                                    correlacao_id = correlationId
++                                    correlacao_id = correlationId,
++                                    id = json.optString("id").takeIf { it.isNotBlank() },
++                                    urgencia = json.optString("urgencia", "NORMAL")
+                                 )
+                                 
+                                 // 🌟 SILÊNCIO INTELIGENTE: Se o app estiver aberto, não mostra notificação de sistema
+-                                if (!com.example.assistentecell.MainActivity.isAppInForeground) {
++                                if (IncomingMessagePolicy.showSystemNotification(tipoWs, MainActivity.isAppInForeground)) {
+                                     NotificationHandler.showNotification(this@ListenerDeNotificacoes, payload)
+                                 } else {
+                                     Log.d("AgenteSensor", "🔇 App em foco: Notificação de sistema suprimida")
+@@ -608,7 +583,10 @@
+                                 
+                                 // 🛡️ MODO FOCO: Se estiver ativo, não dispara o overlay disruptivo
+                                 // 🛡️ SESSÃO ATIVA: Se a tela de voz estiver aberta, não dispara overlay redundante
+-                                if (!prefs.getBoolean("focus_mode_active", false) && !ChatBridge.isAssistantSessionActive.value) {
++                                if (tipoWs == "NOTIFICACAO" && json.optString("urgencia") == "ALTA" &&
++                                    prefs.getBoolean("urgent_overlay_enabled", false) &&
++                                    !MainActivity.isAppInForeground && !prefs.getBoolean("focus_mode_active", false) &&
++                                    !ChatBridge.isAssistantSessionActive.value) {
+                                     dispararNotificacaoLocal(titulo, texto, acaoTipo, acaoParametro, acaoTexto, correlationId)
+                                 } else {
+                                     Log.d("AgenteSensor", "🔇 Overlay bloqueado: Foco Ativo ou Sessão de Voz Ativa")
+@@ -624,6 +602,7 @@
+             }
+ 
+             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
++                if (destroyed || connectionId != currentConnId) return
+                 isConectando = false
+                 if (this@ListenerDeNotificacoes.webSocket == webSocket) {
+                     this@ListenerDeNotificacoes.webSocket = null
+@@ -638,6 +617,7 @@
+             }
+ 
+             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
++                if (destroyed || connectionId != currentConnId) return
+                 isConectando = false
+                 if (this@ListenerDeNotificacoes.webSocket == webSocket) {
+                     this@ListenerDeNotificacoes.webSocket = null
+@@ -652,6 +632,7 @@
+     }
+ 
+     private fun agendarReconexao() {
++        if (destroyed) return
+         handlerReconexao.removeCallbacksAndMessages(null)
+         handlerReconexao.postDelayed({
+             Log.e("AGENTE_WS", "🔄 Iniciando auto-reconexão...")
+@@ -676,38 +657,39 @@
+         isMonitorando = true
+         thread {
+             val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
++            val power = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
++            val tracker = ForegroundUsageTracker()
++            var cursor = System.currentTimeMillis() - 5000
++            val excluded = setOf("com.android.launcher", "com.google.android.apps.nexuslauncher",
++                "com.sec.android.app.launcher", "com.miui.home", "com.android.systemui",
++                "com.google.android.inputmethod.latin", packageName)
++            fun eligible(pkg: String) = pkg.isNotBlank() && pkg !in excluded
+             while (isMonitorando) {
+-                val tempoAtual = System.currentTimeMillis()
+-                val eventos = usageStatsManager.queryEvents(tempoAtual - 5000, tempoAtual)
+-                val evento = UsageEvents.Event()
+-                var appAtual = ""
+-                while (eventos.hasNextEvent()) {
+-                    eventos.getNextEvent(evento)
+-                    if (evento.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+-                        appAtual = evento.packageName
+-                    }
+-                }
+-                if (appAtual.isNotEmpty() && appAtual != ultimoAppAberto) {
+-                    val tempoDesdeUltimoEnvio = tempoAtual - ultimaVezEnviadoApp
+-                    
+-                    // Blacklist de pacotes que não devem disparar eventos de "abriu app"
+-                    val blacklistApps = listOf(
+-                        "com.android.launcher", "com.google.android.apps.nexuslauncher", 
+-                        "com.sec.android.app.launcher", "com.miui.home", 
+-                        "com.android.systemui", "com.google.android.inputmethod.latin",
+-                        "com.example.assistentecell" // O próprio app
+-                    )
+-
+-                    val isBlacklisted = blacklistApps.any { appAtual.contains(it) }
+-
+-                    if (!isBlacklisted && tempoDesdeUltimoEnvio > 3000L) {
+-                        ultimoAppAberto = appAtual
+-                        ultimaVezEnviadoApp = tempoAtual
+-
+-                        val atributosTela = JSONObject()
+-                        atributosTela.put("acao", "abriu_app")
+-                        enviarParaPC("APP_FOREGROUND", appAtual, atributosTela)
+-                    }
++                try {
++                    val now = System.currentTimeMillis()
++                    val events = usageStatsManager.queryEvents(cursor, now)
++                    val event = UsageEvents.Event()
++                    while (events.hasNextEvent()) {
++                        events.getNextEvent(event)
++                        val pkg = event.packageName.orEmpty()
++                        // MOVE_TO_FOREGROUND/BACKGROUND have the same values on API 24–28.
++                        if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
++                            if (tracker.resumed(pkg, event.timeStamp) && eligible(pkg)) {
++                                enviarParaPC("APP_FOREGROUND", pkg, JSONObject().put("acao", "abriu_app"))
++                            }
++                        } else if (event.eventType == UsageEvents.Event.ACTIVITY_PAUSED) {
++                            tracker.paused(pkg, event.timeStamp)
++                        }
++                    }
++                    cursor = now
++                    if (power.isInteractive) {
++                        tracker.heartbeat(now)?.takeIf { eligible(it) }?.let { pkg ->
++                            enviarParaPC("APP_FOREGROUND", pkg,
++                                JSONObject().put("acao", "uso_ativo").put("heartbeat", true))
++                        }
++                    }
++                } catch (e: Exception) {
++                    Log.e("AgenteSensor", "Falha ao consultar uso: ${e.message}")
+                 }
+                 Thread.sleep(2000)
+             }
+@@ -736,6 +718,7 @@
+                 Log.e("AgenteSensor", "❌ Falha ao conectar no PC: ${e.message}")
+             }
+             override fun onResponse(call: Call, response: Response) {
++                if (!response.isSuccessful) Log.w("AgenteSensor", "Evento recusado pelo servidor: HTTP ${response.code}")
+                 response.close()
+             }
+         })
+--- a/app/src/main/java/com/example/assistentecell/network/PCCommandSender.kt
++++ b/app/src/main/java/com/example/assistentecell/network/PCCommandSender.kt
+@@ -84,7 +84,7 @@
+                 // --- 1. ENVIO VIA WEBSOCKET (COMANDO_SISTEMA) ---
+                 try {
+                     val cloudJson = JSONObject(jsonStr).apply {
+-                        put("tipo_ws", "COMANDO_SISTEMA")
++                        put("tipo_ws", "COMANDO_PC")
+                         put("id", "MOBILE")
+                         put("destino", "PC_MASTER")
+                         put("acao", effectiveAction)
+@@ -96,6 +96,8 @@
+                     val enviado = ListenerDeNotificacoes.enviarMensagemWebSocket(cloudJson.toString())
+                     if (enviado) {
+                         Log.d("PC_COMMAND", "✅ Comando enviado via WebSocket ativo (COMANDO_SISTEMA)")
++                        socket.close()
++                        return@launch // UDP is a fallback, not a second execution.
+                     }
+                 } catch (e: Exception) {
+                     Log.e("PC_COMMAND", "⚠️ Falha ao enviar via WebSocket: ${e.message}")
+--- a/app/src/main/java/com/example/assistentecell/NotificationHandler.kt
++++ b/app/src/main/java/com/example/assistentecell/NotificationHandler.kt
+@@ -1,186 +1,100 @@
+ package com.example.assistentecell
+ 
+-import com.example.assistentecell.data.model.AlertaPayload
+ import android.app.NotificationChannel
+ import android.app.NotificationManager
+ import android.app.PendingIntent
+ import android.content.Context
+ import android.content.Intent
++import android.os.Build
+ import android.widget.RemoteViews
+-import android.os.Build
+ import androidx.core.app.NotificationCompat
+ import androidx.core.app.NotificationManagerCompat
+ import androidx.core.app.RemoteInput
+-import com.example.assistentecell.ui.navigation.Screen
++import com.example.assistentecell.data.model.AlertaPayload
++import com.example.assistentecell.notifications.NotificationActionActivity
+ 
+ object NotificationHandler {
+-
+-    private const val CHANNEL_ID = "OLLIE_ASSISTANT_CHANNEL"
++    const val CHANNEL_ID = "OLLIE_SUGGESTIONS_V2"
++    private const val URGENT_CHANNEL_ID = "OLLIE_URGENT_V2"
+     const val KEY_TEXT_REPLY = "key_text_reply"
+ 
+     fun createNotificationChannel(context: Context) {
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-            val name = "Sugestões Ollie"
+-            val descriptionText = "Sugestões contextuais inteligentes"
+-            val importance = NotificationManager.IMPORTANCE_HIGH
+-            val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
+-                description = descriptionText
+-                setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION), null)
+-                enableVibration(true)
+-                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+-            }
+-            val notificationManager: NotificationManager =
+-                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+-            notificationManager.createNotificationChannel(channel)
++            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
++            manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Sugestões da Ollie",
++                NotificationManager.IMPORTANCE_DEFAULT).apply { description = "Sugestões e próximos passos" })
++            manager.createNotificationChannel(NotificationChannel(URGENT_CHANNEL_ID, "Alertas importantes",
++                NotificationManager.IMPORTANCE_HIGH).apply { description = "Alertas marcados como urgentes" })
+         }
+     }
+ 
+     fun showNotification(context: Context, payload: AlertaPayload) {
++        if (payload.texto.isBlank()) return
+         createNotificationChannel(context)
+         val prefs = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
+-        val quickReplyEnabled = prefs.getBoolean("quick_reply_enabled", true)
+-        val focusModeActive = prefs.getBoolean("focus_mode_active", false)
++        val focus = prefs.getBoolean("focus_mode_active", false)
++        val urgent = payload.urgencia.equals("ALTA", ignoreCase = true)
++        val id = payload.id ?: payload.correlacao_id
++        val channel = if (urgent) URGENT_CHANNEL_ID else CHANNEL_ID
++        fun extras(intent: Intent): Intent = intent.apply {
++            putExtra("correlacao_id", payload.correlacao_id)
++            putExtra("notificacao_id", id)
++        }
++        val open = PendingIntent.getActivity(context, id.hashCode(),
++            Intent(context, MainActivity::class.java).apply {
++                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
++                putExtra("target_screen", "chat")
++            }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
++        val dismiss = PendingIntent.getBroadcast(context, id.hashCode(),
++            extras(Intent(context, FeedbackReceiver::class.java).setAction("FEEDBACK_DISMISS")),
++            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
++        val reject = PendingIntent.getBroadcast(context, (id + "reject").hashCode(),
++            extras(Intent(context, FeedbackReceiver::class.java).setAction("FEEDBACK_ACTION_REJECTED")),
++            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+ 
+-        // --- 1. Intent para abrir o APP direto no CHAT ---
+-        val openAppIntent = Intent(context, MainActivity::class.java).apply {
+-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+-            putExtra("target_screen", "chat") // Passa sinal para abrir o chat
++        val expanded = RemoteViews(context.packageName, R.layout.layout_notificacao_expandida).apply {
++            setTextViewText(R.id.titulo_assistente, payload.titulo)
++            setTextViewText(R.id.texto_longo, payload.texto)
+         }
+-        val openAppPendingIntent = PendingIntent.getActivity(
+-            context,
+-            payload.correlacao_id.hashCode(),
+-            openAppIntent,
+-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+-        )
++        val compact = RemoteViews(context.packageName, R.layout.layout_notificacao_compacta).apply {
++            setTextViewText(R.id.titulo_compacto, payload.titulo)
++            setTextViewText(R.id.texto_compacto, payload.texto)
++        }
++        val builder = NotificationCompat.Builder(context, channel)
++            .setSmallIcon(R.drawable.ic_launcher_foreground)
++            .setContentTitle(payload.titulo).setContentText(payload.texto)
++            .setColor(android.graphics.Color.parseColor("#9D4EDD"))
++            .setPriority(if (urgent) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
++            .setSilent(focus).setOnlyAlertOnce(true)
++            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
++            .setCustomContentView(compact).setCustomBigContentView(expanded)
++            .setContentIntent(open).setDeleteIntent(dismiss).setAutoCancel(true)
++            .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
++            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+ 
+-        // --- 2. Intent de Dismiss ---
+-        val dismissIntent = Intent(context, FeedbackReceiver::class.java).apply {
+-            action = "FEEDBACK_DISMISS"
+-            putExtra("correlacao_id", payload.correlacao_id)
+-        }
+-        val dismissPendingIntent: PendingIntent = PendingIntent.getBroadcast(
+-            context, 
+-            payload.correlacao_id.hashCode(), 
+-            dismissIntent, 
+-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+-        )
+-
+-        // --- 3. Intent de Ação ("Bora!") ---
+-        var actionPendingIntent: PendingIntent? = null
+-        if (payload.acao_tipo != null && payload.acao_parametro != null) {
+-            val actionIntent = Intent(context, FeedbackReceiver::class.java).apply {
+-                action = "FEEDBACK_ACTION_CLICKED"
+-                putExtra("correlacao_id", payload.correlacao_id)
++        // The suggested action must remain usable even while focus mode is on.
++        if (!payload.acao_tipo.isNullOrBlank() && !payload.acao_parametro.isNullOrBlank()) {
++            val action = extras(Intent(context, NotificationActionActivity::class.java)).apply {
+                 putExtra("acao_tipo", payload.acao_tipo)
+                 putExtra("acao_parametro", payload.acao_parametro)
+             }
+-            actionPendingIntent = PendingIntent.getBroadcast(
+-                context,
+-                (payload.correlacao_id + "action").hashCode(),
+-                actionIntent,
+-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+-            )
++            val pending = PendingIntent.getActivity(context, (id + "action").hashCode(), action,
++                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
++            builder.addAction(android.R.drawable.ic_media_play, payload.acao_texto ?: "Abrir", pending)
+         }
+-
+-        // --- 4. Intent de Resposta Direta (Texto) ---
+-        var replyPendingIntent: PendingIntent? = null
+-        if (quickReplyEnabled) {
+-            val replyIntent = Intent(context, FeedbackReceiver::class.java).apply {
+-                action = "FEEDBACK_REPLY"
+-                putExtra("correlacao_id", payload.correlacao_id)
+-            }
+-            replyPendingIntent = PendingIntent.getBroadcast(
+-                context,
+-                (payload.correlacao_id + "reply").hashCode(),
+-                replyIntent,
+-                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+-            )
++        builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Agora não", reject)
++        if (prefs.getBoolean("quick_reply_enabled", true)) {
++            val reply = PendingIntent.getBroadcast(context, (id + "reply").hashCode(),
++                extras(Intent(context, FeedbackReceiver::class.java).setAction("FEEDBACK_REPLY")),
++                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
++            val remoteInput = RemoteInput.Builder(KEY_TEXT_REPLY).setLabel("Responder à Ollie").build()
++            builder.addAction(NotificationCompat.Action.Builder(android.R.drawable.ic_menu_send,
++                "Responder", reply).addRemoteInput(remoteInput).build())
+         }
+-
+-        // --- 5. Intent de Resposta por VOZ (Barra Neon) ---
+-        val voiceReplyIntent = Intent(context, FeedbackReceiver::class.java).apply {
+-            action = "FEEDBACK_VOICE_REPLY"
+-            putExtra("correlacao_id", payload.correlacao_id)
+-        }
+-        val voiceReplyPendingIntent = PendingIntent.getBroadcast(
+-            context,
+-            (payload.correlacao_id + "voice").hashCode(),
+-            voiceReplyIntent,
+-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+-        )
+-
+-        // --- 6. Intent de Rejeição ("Agora não") ---
+-        val rejectIntent = Intent(context, FeedbackReceiver::class.java).apply {
+-            action = "FEEDBACK_ACTION_REJECTED"
+-            putExtra("correlacao_id", payload.correlacao_id)
+-        }
+-        val rejectPendingIntent = PendingIntent.getBroadcast(
+-            context,
+-            (payload.correlacao_id + "reject").hashCode(),
+-            rejectIntent,
+-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+-        )
+-
+-        val expandedView = RemoteViews(context.packageName, R.layout.layout_notificacao_expandida).apply {
+-            setTextViewText(R.id.titulo_assistente, payload.titulo)
+-            setTextViewText(R.id.texto_longo, payload.texto)
+-        }
+-
+-        val compactView = RemoteViews(context.packageName, R.layout.layout_notificacao_compacta).apply {
+-            setTextViewText(R.id.titulo_compacto, payload.titulo)
+-            setTextViewText(R.id.texto_compacto, payload.texto)
+-        }
+-
+-        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+-            .setColor(android.graphics.Color.parseColor("#9D4EDD"))
+-            .setPriority(if (focusModeActive) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MAX)
+-            .setDefaults(if (focusModeActive) 0 else NotificationCompat.DEFAULT_ALL)
+-            .setSilent(focusModeActive)
+-            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+-            .setCustomContentView(compactView)
+-            .setCustomBigContentView(expandedView)
+-            .setContentIntent(openAppPendingIntent)
+-            .setDeleteIntent(dismissPendingIntent)
+-            .setAutoCancel(true)
+-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+-
+-        // No Modo Foco, removemos os botões interativos para não interromper
+-        if (!focusModeActive) {
+-            // Botão de Resposta
+-            if (quickReplyEnabled && replyPendingIntent != null) {
+-                val remoteInput = RemoteInput.Builder(KEY_TEXT_REPLY)
+-                    .setLabel("Responda à Ollie...")
+-                    .build()
+-
+-                val action = NotificationCompat.Action.Builder(
+-                    android.R.drawable.ic_menu_send,
+-                    "Responder",
+-                    replyPendingIntent
+-                ).addRemoteInput(remoteInput).build()
+-
+-                builder.addAction(action)
+-            }
+-
+-            // Botão "Bora!" (Ação sugerida)
+-            if (payload.acao_texto != null && actionPendingIntent != null) {
+-                builder.addAction(android.R.drawable.ic_media_play, payload.acao_texto, actionPendingIntent)
+-            }
+-
+-            // Botão "Responder por Voz" (Barra Neon)
+-            builder.addAction(android.R.drawable.ic_btn_speak_now, "🎙️ Responder", voiceReplyPendingIntent)
+-
+-            // Botão "Agora não" (Rejeição)
+-            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Agora não", rejectPendingIntent)
+-        }
+-
+         try {
+-            with(NotificationManagerCompat.from(context)) {
+-                notify(payload.correlacao_id.hashCode(), builder.build())
+-            }
++            NotificationManagerCompat.from(context).notify(id.hashCode(), builder.build())
+         } catch (e: SecurityException) {
+-            e.printStackTrace()
++            android.util.Log.w("NotificationHandler", "Permissão de notificações não concedida", e)
+         }
+     }
+ }
+--- a/app/src/main/java/com/example/assistentecell/notifications/IncomingMessagePolicy.kt
++++ b/app/src/main/java/com/example/assistentecell/notifications/IncomingMessagePolicy.kt
+@@ -0,0 +1,33 @@
++package com.example.assistentecell.notifications
++
++/** Correlation identifies a conversation; event ID identifies one delivery. */
++class IncomingMessagePolicy {
++    private val received = mutableMapOf<String, Long>()
++
++    @Synchronized
++    fun isDuplicate(type: String, eventId: String, correlationId: String,
++                    text: String, action: String, parameter: String, now: Long): Boolean {
++        received.entries.removeAll { now - it.value >= 3_600_000L }
++        if (type !in setOf("NOTIFICACAO", "CHAT_RESPONSE", "EVENTO_LOG", "COMANDO_SISTEMA", "COMANDO_PC")) return false
++        val identity = if (eventId.isNotBlank()) eventId else {
++            // Never merge responses just because numbers or accents differ.
++            if (correlationId.isBlank()) return false
++            "$correlationId|$text|$action|$parameter"
++        }
++        return received.putIfAbsent("$type|$identity", now) != null
++    }
++
++    companion object {
++        fun hideHabitMessage(type: String, title: String, text: String,
++                             hasAction: Boolean, filterEnabled: Boolean): Boolean {
++            if (type != "NOTIFICACAO" || hasAction || !filterEnabled) return false
++            val content = "$title $text".lowercase()
++            // Only legacy decorative messages; actionable routines remain visible.
++            return listOf("bom te ver por aqui", "boa escolha!", "ótima escolha!", "um dos seus apps mais usados")
++                .any { content.contains(it) }
++        }
++
++        fun showSystemNotification(type: String, appInForeground: Boolean): Boolean =
++            type == "NOTIFICACAO" || (type == "CHAT_RESPONSE" && !appInForeground)
++    }
++}
+--- a/app/src/main/java/com/example/assistentecell/notifications/NotificationActionActivity.kt
++++ b/app/src/main/java/com/example/assistentecell/notifications/NotificationActionActivity.kt
+@@ -0,0 +1,32 @@
++package com.example.assistentecell.notifications
++
++import android.app.Activity
++import android.os.Bundle
++import androidx.core.app.NotificationManagerCompat
++import com.example.assistentecell.command.SystemCommandHandler
++
++/** Launched by a notification PendingIntent.getActivity, not a receiver trampoline. */
++class NotificationActionActivity : Activity() {
++    private var handled = false
++
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        handled = savedInstanceState != null
++    }
++
++    override fun onResume() {
++        super.onResume()
++        if (!handled) {
++            handled = true
++            val correlation = intent.getStringExtra("correlacao_id").orEmpty()
++            val notification = intent.getStringExtra("notificacao_id")
++            SystemCommandHandler.executeCommand(this, intent.getStringExtra("acao_tipo"),
++                intent.getStringExtra("acao_parametro"), userInitiated = true)
++            if (correlation.isNotBlank()) {
++                SuggestionFeedback.send(this, correlation, "ACTION_CLICKED", notification)
++                NotificationManagerCompat.from(this).cancel((notification ?: correlation).hashCode())
++            }
++        }
++        finish()
++    }
++}
+--- a/app/src/main/java/com/example/assistentecell/notifications/SuggestionFeedback.kt
++++ b/app/src/main/java/com/example/assistentecell/notifications/SuggestionFeedback.kt
+@@ -0,0 +1,40 @@
++package com.example.assistentecell.notifications
++
++import android.content.Context
++import android.util.Log
++import com.example.assistentecell.ListenerDeNotificacoes
++import com.example.assistentecell.api.RetrofitClient
++import okhttp3.Call
++import okhttp3.Callback
++import okhttp3.MediaType.Companion.toMediaType
++import okhttp3.Request
++import okhttp3.RequestBody.Companion.toRequestBody
++import okhttp3.Response
++import org.json.JSONObject
++import java.io.IOException
++
++object SuggestionFeedback {
++    fun send(context: Context, correlationId: String, type: String, notificationId: String? = null,
++             onComplete: () -> Unit = {}) {
++        RetrofitClient.init(context)
++        val payload = JSONObject().put("correlacao_id", correlationId).put("tipo_feedback", type)
++        notificationId?.let { payload.put("notificacao_id", it) }
++        val message = JSONObject(payload.toString()).put("tipo_ws", "FEEDBACK")
++        if (ListenerDeNotificacoes.enviarMensagemWebSocket(message.toString())) {
++            onComplete()
++            return
++        }
++        val request = Request.Builder().url(RetrofitClient.getBaseUrl() + "feedback/")
++            .post(payload.toString().toRequestBody("application/json".toMediaType())).build()
++        RetrofitClient.backendHttpClient.newCall(request).enqueue(object : Callback {
++            override fun onFailure(call: Call, e: IOException) {
++                Log.w("SuggestionFeedback", "Feedback não entregue: ${e.message}")
++                onComplete()
++            }
++            override fun onResponse(call: Call, response: Response) {
++                response.use { if (!it.isSuccessful) Log.w("SuggestionFeedback", "Feedback recusado: HTTP ${it.code}") }
++                onComplete()
++            }
++        })
++    }
++}
+--- a/app/src/main/java/com/example/assistentecell/sensors/ForegroundUsageTracker.kt
++++ b/app/src/main/java/com/example/assistentecell/sensors/ForegroundUsageTracker.kt
+@@ -0,0 +1,32 @@
++package com.example.assistentecell.sensors
++
++/** Keeps excluded apps as boundaries, so A -> launcher -> A is a new opening. */
++class ForegroundUsageTracker {
++    var currentPackage: String = ""
++        private set
++    private var lastTimestamp = 0L
++    private var lastHeartbeat = 0L
++    private var pausedAt: Long? = null
++
++    fun resumed(packageName: String, timestamp: Long): Boolean {
++        if (timestamp < lastTimestamp) return false
++        lastTimestamp = timestamp
++        val changed = packageName != currentPackage || pausedAt?.let { timestamp - it > 2000L } == true
++        currentPackage = packageName
++        pausedAt = null
++        if (changed) lastHeartbeat = timestamp
++        return changed
++    }
++
++    fun paused(packageName: String, timestamp: Long) {
++        if (timestamp < lastTimestamp) return
++        lastTimestamp = timestamp
++        if (currentPackage == packageName) pausedAt = timestamp
++    }
++
++    fun heartbeat(now: Long): String? {
++        if (currentPackage.isBlank() || pausedAt != null || now - lastHeartbeat < 60_000L) return null
++        lastHeartbeat = now
++        return currentPackage
++    }
++}
+--- a/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt
+@@ -47,7 +47,7 @@
+     var showImportanceDialog by remember { mutableStateOf(false) }
+ 
+     var pcIp by remember { mutableStateOf(prefs.getString("pc_ip", "192.168.15.22") ?: "192.168.15.22") }
+-    var serverUrl by remember { mutableStateOf(prefs.getString("server_url", "https://assistentecellfront.onrender.com/") ?: "https://assistentecellfront.onrender.com/") }
++    var serverUrl by remember { mutableStateOf(com.example.assistentecell.api.RetrofitClient.getBaseUrl()) }
+     var haUrl by remember { mutableStateOf(prefs.getString("ha_url", "http://homeassistant.local:8123/") ?: "http://homeassistant.local:8123/") }
+     var haToken by remember { mutableStateOf(prefs.getString("ha_token", "") ?: "") }
+     
+@@ -157,23 +157,28 @@
+ 
+     if (showUrlDialog) {
+         var tempUrl by remember { mutableStateOf(serverUrl) }
++        var tempApiToken by remember { mutableStateOf(prefs.getString("backend_api_token", "").orEmpty()) }
+         AlertDialog(
+             onDismissRequest = { showUrlDialog = false },
+             title = { Text("Configurar Servidor") },
+             text = {
+-                OutlinedTextField(
+-                    value = tempUrl,
+-                    onValueChange = { tempUrl = it },
+-                    label = { Text("URL do Backend (ngrok ou IP)") },
+-                    modifier = Modifier.fillMaxWidth()
+-                )
++                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
++                    OutlinedTextField(value = tempUrl, onValueChange = { tempUrl = it },
++                        label = { Text("URL do servidor") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
++                    OutlinedTextField(value = tempApiToken, onValueChange = { tempApiToken = it },
++                        label = { Text("Token de acesso") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
++                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
++                }
+             },
+             confirmButton = {
+                 Button(onClick = {
+                     if (tempUrl.contains(" ") || tempUrl.length > 150) return@Button
+                     
+                     serverUrl = tempUrl
+-                    prefs.edit { putString("server_url", tempUrl) }
++                    prefs.edit {
++                        putString("server_url", tempUrl)
++                        putString("backend_api_token", tempApiToken.trim())
++                    }
+                     com.example.assistentecell.api.RetrofitClient.updateBaseUrl(tempUrl)
+                     com.example.assistentecell.ListenerDeNotificacoes.reconnect()
+                     showUrlDialog = false
+@@ -488,7 +493,7 @@
+                         showSwitch = true,
+                         checked = isDevEnvironment,
+                         onCheckedChange = { dev ->
+-                            val newUrl = if (dev) "http://10.0.2.2:8001/" else "https://assistentecellfront.onrender.com/"
++                            val newUrl = if (dev) "http://10.0.2.2:8000/" else "https://assistentecellfront.onrender.com/"
+                             serverUrl = newUrl
+                             prefs.edit { putString("server_url", newUrl) }
+                             com.example.assistentecell.api.RetrofitClient.updateBaseUrl(newUrl)
+--- a/app/src/main/java/com/example/assistentecell/ui/viewmodel/AutomationViewModel.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/viewmodel/AutomationViewModel.kt
+@@ -32,6 +32,7 @@
+             }.onFailure {
+                 _uiState.value = AutomationUiState.Error(it.message ?: "Erro desconhecido")
+             }
++            _isActionLoading.value = false
+         }
+     }
+ 
+@@ -42,6 +43,7 @@
+                 fetchDiscovered()
+             }.onFailure {
+                 _isActionLoading.value = false
++                _uiState.value = AutomationUiState.Error(it.message ?: "Não foi possível gerar rotinas")
+             }
+         }
+     }
+@@ -53,6 +55,7 @@
+                 fetchDiscovered()
+             }.onFailure {
+                 _isActionLoading.value = false
++                _uiState.value = AutomationUiState.Error(it.message ?: "Não foi possível aprovar a rotina")
+             }
+         }
+     }
+@@ -64,6 +67,7 @@
+                 fetchDiscovered()
+             }.onFailure {
+                 _isActionLoading.value = false
++                _uiState.value = AutomationUiState.Error(it.message ?: "Não foi possível rejeitar a rotina")
+             }
+         }
+     }
+--- a/app/src/test/java/com/example/assistentecell/IncomingMessagePolicyTest.kt
++++ b/app/src/test/java/com/example/assistentecell/IncomingMessagePolicyTest.kt
+@@ -0,0 +1,47 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.notifications.IncomingMessagePolicy
++import com.example.assistentecell.sensors.ForegroundUsageTracker
++import org.junit.Assert.*
++import org.junit.Test
++
++class IncomingMessagePolicyTest {
++    @Test fun correlationDoesNotSuppressDifferentEventsOrChannels() {
++        val policy = IncomingMessagePolicy()
++        assertFalse(policy.isDuplicate("EVENTO_LOG", "log", "conversation", "", "", "", 1000))
++        assertFalse(policy.isDuplicate("NOTIFICACAO", "notification", "conversation", "Abrir?", "", "", 1001))
++        assertTrue(policy.isDuplicate("NOTIFICACAO", "notification", "conversation", "Abrir?", "", "", 1002))
++        assertFalse(policy.isDuplicate("NOTIFICACAO", "another", "conversation", "Abrir?", "", "", 1003))
++    }
++
++    @Test fun fallbackPreservesNumbersAndAccents() {
++        val policy = IncomingMessagePolicy()
++        assertFalse(policy.isDuplicate("CHAT_RESPONSE", "", "same", "Alarme às 10:30", "", "", 1000))
++        assertFalse(policy.isDuplicate("CHAT_RESPONSE", "", "same", "Alarme às 11:30", "", "", 1001))
++        assertFalse(policy.isDuplicate("CHAT_RESPONSE", "", "same", "Avó", "", "", 1002))
++        assertFalse(policy.isDuplicate("CHAT_RESPONSE", "", "same", "Avô", "", "", 1003))
++    }
++
++    @Test fun actionableHabitAndChatRemainVisible() {
++        assertFalse(IncomingMessagePolicy.hideHabitMessage("NOTIFICACAO", "Hábito", "Você costuma abrir Agenda", true, true))
++        assertFalse(IncomingMessagePolicy.hideHabitMessage("CHAT_RESPONSE", "", "Ótima escolha!", false, true))
++        assertTrue(IncomingMessagePolicy.hideHabitMessage("NOTIFICACAO", "", "Boa escolha!", false, true))
++        assertTrue(IncomingMessagePolicy.showSystemNotification("NOTIFICACAO", true))
++        assertFalse(IncomingMessagePolicy.showSystemNotification("CHAT_RESPONSE", true))
++    }
++
++    @Test fun reopeningAfterLauncherAndQuickTransitionsAreNotLost() {
++        val tracker = ForegroundUsageTracker()
++        assertTrue(tracker.resumed("com.a", 1000))
++        assertFalse(tracker.resumed("com.a", 1100))
++        tracker.paused("com.a", 1110)
++        assertFalse(tracker.resumed("com.a", 1120)) // Activity navigation within one app.
++        assertTrue(tracker.resumed("launcher", 1200))
++        assertTrue(tracker.resumed("com.a", 1300))
++        assertTrue(tracker.resumed("com.b", 1400))
++        assertFalse(tracker.resumed("com.old", 1000))
++        assertEquals("com.b", tracker.heartbeat(61_500))
++        tracker.paused("com.b", 62_000)
++        assertNull(tracker.heartbeat(125_000))
++    }
++}

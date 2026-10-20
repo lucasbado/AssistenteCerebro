@@ -2,7 +2,7 @@ import logging
 import os
 import asyncio
 from core.evento import EventoCanonico
-from core.tipos import EstadoEvento, TipoAcao, OrigemEvento
+from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
 from servicos.pc_control_service import pc_control_service
 
 logger = logging.getLogger("AgentePcExecutor")
@@ -15,10 +15,22 @@ class AgentePcExecutor:
     """
     
     async def processar(self, evento: EventoCanonico):
+        comando = evento.payload.get("comando")
+        if evento.origem == OrigemEvento.IA and (
+            comando in {"abrir_app", "abrir_programa", "abrir_url", "open_url"}
+            or evento.acao == TipoAcao.EXECUTAR_PROGRAMA
+        ):
+            from servicos.intervention_governor import intervention_governor
+            alvo = (evento.payload.get("app") or evento.payload.get("url")
+                    or evento.payload.get("parametro") or evento.payload.get("programa"))
+            if not intervention_governor.permitir_abertura_automatica(alvo):
+                return
         # ☁️ ROTEAMENTO CLOUD: Se estivermos no Render ou Linux (Cloud), o comando deve ir via WebSocket para o PC Master
         is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"] or os.name != "nt"
         if is_render:
             comando = evento.payload.get("comando")
+            if evento.acao == TipoAcao.EXECUTAR_PROGRAMA:
+                comando = "abrir_app"
             if comando:
                 logger.info(f"☁️ [Agente PC] Rodando em nuvem. Comando '{comando}' sendo roteado via WebSocket para PC Master.")
                 from api.websocket import central_alertas
@@ -26,13 +38,14 @@ class AgentePcExecutor:
                 payload_ws = {
                     "tipo_ws": "COMANDO_PC",
                     "comando": comando,
-                    "parametro": evento.payload.get("parametro"),
+                    "parametro": evento.payload.get("parametro") or evento.payload.get("programa"),
+                    "origem": evento.origem.value,
                     "valor": evento.payload.get("valor"),
                     "app": evento.payload.get("app"),
                     "url": evento.payload.get("url")
                 }
-                await central_alertas._broadcast(payload_ws)
-                evento.estado = EstadoEvento.CONCLUIDO
+                if central_alertas.pc_master:
+                    await central_alertas._enviar_direto(central_alertas.pc_master, payload_ws)
             return
 
         if evento.acao == TipoAcao.EXECUTAR_PROGRAMA:
@@ -41,7 +54,6 @@ class AgentePcExecutor:
                 logger.info(f"🛠️ [Agente PC] Executando programa por associação aprendida: {programa}")
                 try:
                     pc_control_service.abrir_app(programa)
-                    evento.estado = EstadoEvento.CONCLUIDO
                 except Exception as e:
                     logger.error(f"[Agente PC] Falha ao executar '{programa}': {e}")
             return
@@ -140,7 +152,6 @@ class AgentePcExecutor:
                 
                 if foi_focada:
                     from core.kernel import kernel
-                    from core.tipos import CategoriaEvento, OrigemEvento
                     await kernel.publicar(evento.clonar(
                         categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                         acao=TipoAcao.INTENCAO_INTERACAO,
@@ -174,7 +185,6 @@ class AgentePcExecutor:
                 else:
                     logger.error(f"❌ [Agente PC] Falha ao executar comando Home Assistant: {comando} em {entity_id}")
                     from core.kernel import kernel
-                    from core.tipos import CategoriaEvento, OrigemEvento, TipoAcao
                     await kernel.publicar(evento.clonar(
                         categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                         acao=TipoAcao.INTENCAO_INTERACAO,
@@ -187,7 +197,7 @@ class AgentePcExecutor:
 
             elif comando == "abrir_arquivo":
                 if pc_control_service.abrir_arquivo(param):
-                    evento.estado = EstadoEvento.CONCLUIDO
+                    logger.info("Arquivo aberto: %s", param)
                 else:
                     logger.warning(f"Não foi possível abrir o arquivo: {param}")
 
@@ -197,7 +207,6 @@ class AgentePcExecutor:
                 texto_res = f"📂 Arquivos em {caminho or 'Home'}:\n" + "\n".join(itens[:15]) # Top 15 para não poluir
                 
                 from core.kernel import kernel
-                from core.tipos import CategoriaEvento, OrigemEvento
                 await kernel.publicar(evento.clonar(
                     categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                     acao=TipoAcao.INTENCAO_INTERACAO,
@@ -228,7 +237,6 @@ class AgentePcExecutor:
                 
                 # Feedback via Chat (Ollie responde o resultado da busca)
                 from core.kernel import kernel
-                from core.tipos import CategoriaEvento, OrigemEvento
                 await kernel.publicar(evento.clonar(
                     categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                     acao=TipoAcao.INTENCAO_INTERACAO,
@@ -275,6 +283,5 @@ class AgentePcExecutor:
                 if url:
                     await pc_control_service.abrir_url_mobile(url)
 
-            evento.estado = EstadoEvento.CONCLUIDO
         except Exception as e:
             logger.error(f"[Agente PC] Falha ao executar {comando}: {e}")

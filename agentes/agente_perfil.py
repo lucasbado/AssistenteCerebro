@@ -6,6 +6,8 @@ na memória de perfil de longo prazo, construindo um modelo
 estatístico do usuário.
 """
 import logging
+from datetime import timedelta
+from servicos.tempo import utc
 
 from core.evento import EventoCanonico
 from core.tipos import CategoriaEvento
@@ -24,10 +26,21 @@ class AgentePerfil:
     estatísticas de uso, formando a base do aprendizado de longo prazo
     sobre os hábitos do usuário.
     """
+    def __init__(self):
+        self._ultimo_foreground = None
+
     async def processar(self, evento: EventoCanonico):
         # Registra o uso de um app sempre que ele está em primeiro plano
         if evento.categoria == CategoriaEvento.APP_FOREGROUND:
+            if evento.payload.get("heartbeat"):
+                return
             if evento.pacote:
+                ts = utc(evento.timestamp)
+                anterior = self._ultimo_foreground
+                if anterior and (ts <= anterior[1] or
+                        (evento.pacote == anterior[0] and ts - anterior[1] < timedelta(minutes=30))):
+                    return
+                self._ultimo_foreground = (evento.pacote, ts)
                 await memoria_perfil.registrar_uso_app(evento.pacote)
                 # NOVO: Garante que o app seja conhecido pelo catálogo semântico.
                 # A função obter_app é idempotente e irá classificar/salvar o app
@@ -55,10 +68,10 @@ class AgentePerfil:
             if app_entity and app_entity.atributos:
                 app_nome_canonico = app_entity.atributos.get("nome")
 
-            # Se o remetente da notificação for o próprio nome canônico do app,
-            # registramos como um evento de uso do app.
+            # Notificações do próprio aplicativo não são interações com contatos.
             if app_nome_canonico and remetente.lower() == app_nome_canonico.lower():
-                await memoria_perfil.registrar_uso_app(evento.pacote)
+                # Uma notificação recebida não comprova abertura do aplicativo.
+                return
             else:
                 # Caso contrário (remetente diferente do nome do app ou app não catalogado),
                 # assumimos que é uma interação com um "contato" (pessoa, grupo, etc.).

@@ -28,8 +28,13 @@ class AgenteAprendizagem:
             logger.warning("[Aprendizagem] Feedback recebido sem ID de correlação ou tipo.")
             return
 
+        # Arrastar um aviso pode significar apenas que ele já foi lido.
+        if tipo_feedback == "DISMISS":
+            return
+
         # 1. Recupera o evento original que gerou a notificação
-        evento_original = await self.memoria_episodica.obter_evento_original_por_correlacao(correlacao_id)
+        evento_original = await self.memoria_episodica.obter_interacao_notificada(
+            correlacao_id, feedback.get("notificacao_id"))
         if not evento_original:
             logger.error(f"[Aprendizagem] Não foi possível encontrar o evento original para o ID de correlação {correlacao_id}")
             return
@@ -43,7 +48,7 @@ class AgenteAprendizagem:
         categoria_perfil, valor_perfil = entidade_relevante
 
         # 3. Aplica o aprendizado na Memória de Perfil
-        if tipo_feedback.upper() == "DISMISS":
+        if tipo_feedback.upper() == "SUGGESTION_REJECTED":
             logger.info(f"🧠 [Aprendizagem] Feedback negativo (DISMISS) para '{valor_perfil}'. Diminuindo relevância.")
             await memoria_perfil.registrar_feedback_negativo(categoria_perfil, valor_perfil)
         elif tipo_feedback.upper() == "ACTION_CLICKED":
@@ -61,6 +66,11 @@ class AgenteAprendizagem:
         categoria = evento_dict.get("categoria")
         payload = evento_dict.get("payload", {})
         pacote = evento_dict.get("pacote")
+
+        if categoria in {CategoriaEvento.INTENCAO_NOTIFICACAO.value, CategoriaEvento.NOTIFICACAO_PRONTA_PARA_ENVIO.value}:
+            if payload.get("acao_tipo") == "OPEN_APP" and payload.get("acao_parametro"):
+                return ("APP_USO", payload["acao_parametro"])
+            return None
 
         if categoria == CategoriaEvento.NOTIFICACAO.value and payload.get("titulo"):
             return ("CONTATO_INTERACAO", payload.get("titulo"))

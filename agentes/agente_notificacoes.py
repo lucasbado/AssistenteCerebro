@@ -1,23 +1,29 @@
 # agentes/agente_notificacoes.py
 import logging
-from datetime import datetime, timezone
 from core.evento import EventoCanonico
 from core.tipos import CategoriaEvento
+from core.kernel import kernel
 from api.websocket import central_alertas
+from servicos.notificacoes import PoliticaNotificacoes
 
 logger = logging.getLogger("AgenteNotificacoes")
 
 
 class AgenteNotificacoes:
     def __init__(self):
-        """Este agente agora é um executor puro. Ele não precisa de estado ou configuração."""
-        pass
+        self.politica = PoliticaNotificacoes()
 
     async def processar(self, evento: EventoCanonico):
-        logger.info(f"👂 [AGENTE NOTIFICACOES] Recebi evento APROVADO para envio imediato.")
-
-        # A lógica de cooldown foi movida para o AgenteGestorInterrupcoes.
-        # Este agente agora é "burro" e apenas envia o que recebe.
-        await central_alertas.enviar_alerta(evento.model_dump())
+        payload, motivo = self.politica.preparar(evento)
+        if payload is None:
+            logger.info("Notificação %s suprimida: %s", evento.id, motivo)
+            return
+        dados = evento.model_dump()
+        dados["payload"] = payload
+        await central_alertas.enviar_alerta(dados)
+        # Registra o encaminhamento após o filtro. Intenção suprimida não é entrega.
+        await kernel.publicar(evento.clonar(
+            categoria=CategoriaEvento.NOTIFICACAO_PRONTA_PARA_ENVIO,
+            payload={**payload, "status_envio": "encaminhada"}))
 
         logger.info(f"🔔 Notificação enviada ao dispositivo: {evento.payload.get('titulo', 'Assistente')}")

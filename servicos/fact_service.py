@@ -73,7 +73,10 @@ class FactService:
             
             agora = datetime.now(timezone.utc)
             for fato in fatos:
-                dias = (agora - fato.last_used).days if fato.last_used else 0
+                ultimo_uso = fato.last_used
+                if ultimo_uso and ultimo_uso.tzinfo is None:
+                    ultimo_uso = ultimo_uso.replace(tzinfo=timezone.utc)
+                dias = max(0, (agora - ultimo_uso).days) if ultimo_uso else 0
                 fato.importance = fato.importance * math.exp(-lambda_decay * dias)
             
             await session.commit()

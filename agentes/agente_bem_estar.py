@@ -5,7 +5,8 @@ Agente focado em saúde digital e equilíbrio.
 Monitora o tempo de uso contínuo de aplicativos e sugere pausas ou mudanças de hábito.
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
+from servicos.tempo import utc
 
 from core.evento import EventoCanonico
 from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento, PrioridadeEvento
@@ -19,21 +20,31 @@ class AgenteBemEstar:
         # Dicionário para rastrear o início do uso de cada app
         self._uso_atual = {} # {pacote: timestamp_inicio}
         self._limite_alerta = 30 # minutos para o primeiro alerta
+        self._ultimo_evento = None
 
     async def processar(self, evento: EventoCanonico):
         if evento.categoria != CategoriaEvento.APP_FOREGROUND:
             return
 
-        pacote = evento.payload.get("pacote")
+        pacote = evento.pacote
         if not pacote:
             return
+
+        # Trocar de app encerra a sessão; usos separados não são tempo contínuo.
+        agora = utc(evento.timestamp)
+        if self._ultimo_evento and agora <= self._ultimo_evento:
+            return
+        if pacote not in self._uso_atual or (self._ultimo_evento and agora - self._ultimo_evento > timedelta(minutes=5)):
+            self._uso_atual.clear()
+            self._limite_alerta = 30
+        self._ultimo_evento = agora
 
         # 1. Obter categoria do app para decidir se monitoramos
         entidade = await catalogo.obter_app(pacote)
         categoria = entidade.atributos.get("categoria", "").lower() if entidade else ""
 
         # Apps de entretenimento e redes sociais são os alvos principais
-        monitorar = any(c in categoria for e in ["social", "entretenimento", "jogos", "vídeo", "lazer"])
+        monitorar = any(c in categoria for c in ["social", "entretenimento", "jogos", "vídeo", "lazer"])
         
         if monitorar:
             await self._monitorar_uso(pacote, evento)
@@ -42,7 +53,7 @@ class AgenteBemEstar:
             self._uso_atual.clear()
 
     async def _monitorar_uso(self, pacote: str, evento: EventoCanonico):
-        agora = datetime.now()
+        agora = utc(evento.timestamp)
         
         if pacote not in self._uso_atual:
             self._uso_atual[pacote] = agora
@@ -63,7 +74,8 @@ class AgenteBemEstar:
                     origem=OrigemEvento.IA,
                     payload={
                         "titulo": "Equilíbrio Digital",
-                        "texto": f"Você já está no {pacote.split('.')[-1].capitalize()} há {int(tempo_uso)} minutos.",
+                        "texto": f"Você está no {pacote.split('.')[-1].capitalize()} há {int(tempo_uso)} minutos. Que tal fazer uma pausa?",
+                        "chave_deduplicacao": "pausa_bem_estar",
                         "contexto_extra": {"minutos": int(tempo_uso), "pacote": pacote, "tipo": "BEM_ESTAR"},
                         "tipo_ws": "NOTIFICACAO"
                     }

@@ -8,9 +8,10 @@ from api.main_api import app_api as app
 pytestmark = pytest.mark.asyncio
 
 @pytest.fixture
-async def async_client():
+async def async_client(banco_teste):
     """Cria um cliente de teste assíncrono para a nossa API."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", follow_redirects=True,
+                           headers={"Authorization": "Bearer token-de-teste"}) as client:
         yield client
 
 async def test_get_home_endpoint(async_client: AsyncClient):
@@ -44,12 +45,12 @@ async def test_get_timeline_endpoint(async_client: AsyncClient):
     response = await async_client.get("/api/v1/timeline")
     assert response.status_code == 200
     data = response.json()
-    assert "eventos" in data
-    assert isinstance(data["eventos"], list)
+    assert "events" in data
+    assert isinstance(data["events"], list)
     
     # Verifica a estrutura do primeiro evento, se existir
-    if data["eventos"]:
-        evento = data["eventos"][0]
+    if data["events"]:
+        evento = data["events"][0]
         assert "id" in evento
         assert "timestamp" in evento
         assert "resumo" in evento

@@ -34,7 +34,6 @@ from agentes.agente_pc_profiler import AgentePcProfiler
 from servicos.agente_contexto_sistema import AgenteContextoSistema
 from servicos.pc_control_service import pc_control_service
 from servicos.pc_listener_service import pc_listener_service
-from servicos.routine_generator_service import routine_generator_service
 from banco.database import inicializar_banco, async_engine
 
 # Routers (API)
@@ -132,9 +131,8 @@ async def lifespan(app: FastAPI):
     # 🌟 NOVO: Profiler de PC
     kernel.registrar(lambda e: e.categoria == CategoriaEvento.SISTEMA_COMANDO_PC, agentes_inst["pc_profiler"].processar)
     
-    # 🌟 NOVO: WebSocket ouve comandos do PC para rotear para o PC Master (Nuvem -> Local)
+    # O executor do PC é o único responsável pelo envio de comandos remotos.
     from api.websocket import central_alertas
-    kernel.registrar(lambda e: e.categoria == CategoriaEvento.SISTEMA_COMANDO_PC, central_alertas.processar_evento_kernel)
 
     # Hardware
     pc_control_service.inicializar()
@@ -160,26 +158,25 @@ async def lifespan(app: FastAPI):
                 pacote="sistema.sumarizador"
             ))
 
-    async def loop_gerador_rotinas():
-        """Varre padrões e gera rotinas para verificação a cada 12 horas."""
+    async def loop_relogio_rotinas():
+        """Horários têm um evento próprio; notificações não disparam o relógio."""
         while True:
-            # Espera 1h inicial para carregar dados se necessário
-            await asyncio.sleep(3600)
-            logger.info("🧠 Iniciando ciclo de auto-geração de rotinas...")
-            try:
-                await routine_generator_service.run_batch_generation()
-            except Exception as e:
-                logger.error(f"Erro no loop de geração: {e}")
-            await asyncio.sleep(43200)
+            await kernel.publicar(EventoCanonico(
+                categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO,
+                origem=OrigemEvento.SISTEMA, pacote="sistema.relogio",
+                payload={"tipo": "TICK_ROTINA"}))
+            await asyncio.sleep(60)
 
     tasks = [
         asyncio.create_task(loop_clima()),
         asyncio.create_task(loop_rotina()),
         asyncio.create_task(loop_sumarizador()),
-        asyncio.create_task(loop_gerador_rotinas()),
+        asyncio.create_task(loop_relogio_rotinas()),
         asyncio.create_task(kernel.iniciar()),
         asyncio.create_task(central_alertas.iniciar_monitor())
     ]
+    from servicos.queue_worker import queue_worker
+    tasks.append(asyncio.create_task(queue_worker.iniciar()))
     
     # 🖥️ LOCAL ONLY: Inicia listener UDP apenas se não estiver no Render / Cloud Linux
     is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"] or os.name != "nt"
@@ -188,18 +185,22 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(pc_listener_service.iniciar()))
 
     logger.info("🚀 AI Brain & PC Master Control online!")
-    yield
-    # --- SHUTDOWN ---
-    for t in tasks: t.cancel()
-    if not is_render:
-        pc_listener_service.parar()
-    pc_control_service.encerrar()
-    await async_engine.dispose()
+    try:
+        yield
+    finally:
+        for t in tasks: t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        if not is_render:
+            pc_listener_service.parar()
+        pc_control_service.encerrar()
+        await async_engine.dispose()
 
 # ==========================================
 # 2. APP CONFIGURATION
 # ==========================================
 app = FastAPI(title="AssistenteCell Master", lifespan=lifespan)
+from api.auth import AuthMiddleware
+app.add_middleware(AuthMiddleware)
 
 # Middleware para Logar todas as requisições (ajuda a achar 404)
 @app.middleware("http")
@@ -220,18 +221,6 @@ app.add_middleware(
 @app.head("/")
 async def root():
     return {"status": "AssistenteCell Ecosystem is Live", "version": "0.3.0-beta"}
-
-# 🧠 SNAPSHOT DE CONTEXTO (Direto no Main para evitar 404)
-@app.post("/api/v1/contexto/snapshot", tags=["Contexto"])
-async def receber_snapshot_direto(request: Request):
-    from servicos.consciencia import consciencia
-    try:
-        body = await request.json()
-        consciencia.atualizar(body)
-        return {"status": "ok"}
-    except Exception as e:
-        logger.error(f"Erro no snapshot: {e}")
-        return {"status": "error", "message": str(e)}
 
 app.include_router(eventos_router, tags=["Gateway"])
 app.include_router(ws_router, prefix="/api/v1", tags=["WebSocket"])

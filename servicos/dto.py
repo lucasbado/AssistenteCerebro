@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List
 from datetime import datetime
 
@@ -15,5 +15,4 @@ class TimelineDTO(BaseModel):
     """DTO principal para a tela de timeline."""
     eventos: List[TimelineItemDTO] = Field(..., serialization_alias="events")
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

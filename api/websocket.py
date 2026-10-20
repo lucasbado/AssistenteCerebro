@@ -18,7 +18,8 @@ class GerenciadorNotificacoes:
         self.mobile_client: WebSocket = None
 
     async def conectar(self, websocket: WebSocket):
-        await websocket.accept()
+        protocolos = websocket.headers.get("sec-websocket-protocol", "").split(",")
+        await websocket.accept(subprotocol="ollie" if "ollie" in [p.strip() for p in protocolos] else None)
         # 🛡️ ANTI-DUPLICIDADE PREVENTIVA: Remove referências a websockets que já fecharam
         self.conexoes_ativas = [ws for ws in self.conexoes_ativas if ws.client_state.value == 1]
         self.conexoes_ativas.append(websocket)
@@ -83,6 +84,7 @@ class GerenciadorNotificacoes:
             ts = payload['timestamp']
             dados_para_envio['timestamp'] = ts.isoformat() if isinstance(ts, datetime) else str(ts)
         dados_para_envio['correlacao_id'] = str(payload.get('correlacao_id', ''))
+        dados_para_envio['id'] = str(payload.get('id', ''))
 
         # ROTEAMENTO RESTRITO:
         # 1. MOBILE: Prioridade para comandos de sistema/luz e chat
@@ -239,10 +241,10 @@ async def websocket_endpoint(websocket: WebSocket):
                         msg["tipo_ws"] = "CHAT_RESPONSE"
                         if central_alertas.mobile_client:
                             await central_alertas._enviar_direto(central_alertas.mobile_client, msg)
-                        return
+                        continue
 
                     from core.kernel import kernel
-                    from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
+                    from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento, PrioridadeEvento
                     from core.evento import EventoCanonico
                     logger.info(f"💬 [WS] Mensagem de chat recebida: {msg.get('texto')}")
                     await kernel.publicar(EventoCanonico(
@@ -250,20 +252,16 @@ async def websocket_endpoint(websocket: WebSocket):
                         acao=TipoAcao.NORMAL,
                         origem=OrigemEvento.USUARIO,
                         pacote=msg.get("pacote", "com.example.assistentecell"),
+                        prioridade=PrioridadeEvento.ALTA,
                         payload={"texto": msg.get("texto")}
                     ))
 
-                elif tipo == "SUGGESTION_REJECTED":
-                    from core.kernel import kernel
-                    from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
-                    from core.evento import EventoCanonico
-                    logger.info(f"❌ [WS] Sugestão {msg.get('correlacao_id')} rejeitada pelo usuário.")
-                    await kernel.publicar(EventoCanonico(
-                        categoria=CategoriaEvento.SISTEMA_COMANDO_USUARIO,
-                        acao=TipoAcao.NORMAL,
-                        origem=OrigemEvento.USUARIO,
-                        payload={"tipo": "SUGESTAO_REJEITADA", "id_original": msg.get("correlacao_id")}
-                    ))
+                elif tipo in {"FEEDBACK", "SUGGESTION_REJECTED"}:
+                    from api.feedback import FeedbackUsuario, receber_feedback
+                    feedback = dict(msg)
+                    if tipo == "SUGGESTION_REJECTED":
+                        feedback["tipo_feedback"] = "SUGGESTION_REJECTED"
+                    await receber_feedback(FeedbackUsuario.model_validate(feedback))
                 
                 elif tipo == "LISTA_APPS":
                     from servicos.pc_control_service import pc_control_service
@@ -324,4 +322,6 @@ async def websocket_endpoint(websocket: WebSocket):
         central_alertas.desconectar(websocket)
     except Exception as e:
         logger.error(f"Erro no WebSocket: {e}")
+        central_alertas.desconectar(websocket)
+    finally:
         central_alertas.desconectar(websocket)

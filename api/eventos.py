@@ -106,7 +106,7 @@ async def receber_evento(request: Request):
     )
     
     if evento.correlacao_id:
-        evento_canonico.metadados["correlacao_id"] = evento.correlacao_id
+        evento_canonico = EventoCanonico(**{**evento_canonico.model_dump(), "correlacao_id": evento.correlacao_id})
 
     # 2. O Pipeline de Atenção avalia e enriquece o evento
     resultado_atencao = pipeline_atencao.avaliar(evento_canonico)
@@ -114,7 +114,10 @@ async def receber_evento(request: Request):
         print(f"🛑 [GATEWAY] Evento {evento.categoria} do {evento.pacote} BARRADO PELA ATENÇÃO.")
         return {"status": "ignorado_pelo_pipeline_de_atencao"}
     
-    evento_canonico.metadados["atencao"] = resultado_atencao.model_dump()
+    evento_canonico = EventoCanonico(**{
+        **evento_canonico.model_dump(),
+        "metadados": {**evento_canonico.metadados, "atencao": resultado_atencao.model_dump()},
+    })
 
     # RASTREADOR: O EVENTO PASSOU!
     print(f"✅ [GATEWAY] Evento {evento.categoria} APROVADO! Enviando para o Kernel...")

@@ -16,6 +16,8 @@ class ServicoTimeline:
         
         timeline_items = []
         for evento in eventos_brutos:
+            if evento.get("tipo") not in {"NOTIFICACAO_PRONTA_PARA_ENVIO", "SISTEMA_COMANDO_PC"}:
+                continue
             # O agregador retorna dados brutos; aqui transformamos em conhecimento.
             resumo, icone = self._formatar_resumo_evento(evento)
             
@@ -41,6 +43,14 @@ class ServicoTimeline:
         """
         categoria = evento.get("tipo")
         payload = evento.get("dados", {})
+
+        if categoria == "NOTIFICACAO_PRONTA_PARA_ENVIO":
+            prefixo = "Resposta" if payload.get("tipo_ws") == "CHAT_RESPONSE" else "Sugestão encaminhada"
+            return f"{prefixo}: {payload.get('texto', '')}", "message-circle" if prefixo == "Resposta" else "bell"
+        if categoria == "SISTEMA_COMANDO_PC":
+            comando = payload.get("comando") or "abrir_app"
+            alvo = payload.get("parametro") or payload.get("programa") or ""
+            return f"Ação solicitada no PC: {comando} {alvo}".strip(), "monitor"
         
         if categoria == "NOTIFICACAO":
             titulo = payload.get("titulo", "Notificação")

@@ -5,7 +5,8 @@ Endpoint para receber feedback do usuário sobre as interações do sistema.
 """
 import logging
 from fastapi import APIRouter, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+from typing import Literal
 
 from core.kernel import kernel
 from core.evento import EventoCanonico
@@ -15,8 +16,14 @@ router = APIRouter(prefix="/feedback", tags=["Feedback"])
 logger = logging.getLogger(__name__)
 
 class FeedbackUsuario(BaseModel):
-    correlacao_id: str
-    tipo_feedback: str # Ex: "DISMISS", "ACTION_CLICKED"
+    correlacao_id: str = Field(min_length=1)
+    tipo_feedback: Literal["DISMISS", "ACTION_CLICKED", "SUGGESTION_REJECTED"]
+    notificacao_id: str | None = None
+
+    @field_validator("tipo_feedback", mode="before")
+    @classmethod
+    def normalizar_tipo(cls, valor):
+        return valor.upper() if isinstance(valor, str) else valor
 
 @router.post("/", status_code=status.HTTP_202_ACCEPTED)
 async def receber_feedback(feedback: FeedbackUsuario):

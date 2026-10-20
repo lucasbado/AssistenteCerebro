@@ -1,6 +1,8 @@
 # servicos/context_builder.py
 import logging
 import os
+import re
+from sqlalchemy import or_, case
 from sqlalchemy.future import select
 from banco.database import AsyncSessionLocal
 from banco.models import FactDB, MetaDB
@@ -34,7 +36,12 @@ class ContextBuilder:
         # 2. Obter fatos relevantes (Top 5 ordenados por importância)
         fatos_relevantes = []
         async with AsyncSessionLocal() as session:
-            stmt = select(FactDB).where(FactDB.user_id == user_id).order_by(FactDB.importance.desc()).limit(5)
+            termos = list(dict.fromkeys(re.findall(r"\w{3,}", query.lower())))[:12]
+            stmt = select(FactDB).where(FactDB.user_id == user_id)
+            if termos:
+                condicoes = [FactDB.text.ilike(f"%{termo}%", escape="\\") for termo in termos]
+                stmt = stmt.where(or_(*condicoes)).order_by(sum(case((c, 1), else_=0) for c in condicoes).desc())
+            stmt = stmt.order_by(FactDB.importance.desc()).limit(5)
             result = await session.execute(stmt)
             facts_db = result.scalars().all()
             fatos_relevantes = [f"- {f.text}" for f in facts_db]
@@ -49,6 +56,12 @@ class ContextBuilder:
             "fatos_relevantes": fatos_str,
             "query": query
         }
+        # Limite conservador por bytes UTF-8 (sem depender de tokenizer de provedor).
+        restante = max(0, self.max_tokens - 100)
+        for campo in ("system_prompt", "query", "session_summary", "fatos_relevantes", "global_summary"):
+            dados = str(contexto_montado[campo]).encode("utf-8")[:restante]
+            contexto_montado[campo] = dados.decode("utf-8", errors="ignore")
+            restante -= len(contexto_montado[campo].encode("utf-8"))
 
         logger.info(f"🧱 [ContextBuilder] Contexto construído para query: '{query[:30]}...' (Fatos: {len(fatos_relevantes)})")
         return contexto_montado

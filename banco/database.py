@@ -1,89 +1,60 @@
+import logging
 import os
+from pathlib import Path
+from sqlalchemy import inspect
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
 load_dotenv()
-
-is_render = os.getenv("RENDER", "False").lower() in ["true", "1", "yes"] or os.name != "nt"
-default_sqlite = "sqlite+aiosqlite:///agente_local.db" if is_render else "sqlite+aiosqlite:///D:/Programacao/AssistenteCell/agente_local.db"
-
-# Prioriza a URL da nuvem (Neon.tech/Postgres), senão usa SQLite local
+logger = logging.getLogger(__name__)
+default_sqlite = "sqlite+aiosqlite:///" + (Path(__file__).resolve().parents[1] / "agente_local.db").as_posix()
 DATABASE_URL = os.getenv("DATABASE_URL", default_sqlite)
 
 def _criar_motor(url: str):
+    parsed = make_url(url)
     connect_args = {}
-    if "postgresql" in url:
-        if "?" in url:
-            url = url.split("?")[0]
-        url = url.replace("postgresql://", "postgresql+asyncpg://")
-        connect_args["ssl"] = True
-    else:
-        connect_args["check_same_thread"] = False
-    
-    return create_async_engine(
-        url, 
-        connect_args=connect_args,
-        echo=False
-    )
+    if parsed.drivername in ("postgres", "postgresql", "postgresql+asyncpg"):
+        query = dict(parsed.query)
+        sslmode = query.pop("sslmode", None)
+        query.pop("channel_binding", None)
+        if sslmode and sslmode != "disable":
+            connect_args["ssl"] = "require" if sslmode in ("require", "prefer", "allow") else sslmode
+        parsed = parsed.set(drivername="postgresql+asyncpg", query=query)
+    engine = create_async_engine(parsed, connect_args=connect_args, echo=False)
+    if engine.dialect.name == "sqlite":
+        from servicos.vector_store import registrar_hooks_conexao
+        registrar_hooks_conexao(engine)
+    return engine
 
 async_engine = _criar_motor(DATABASE_URL)
-
-# Fábrica de Sessões assíncronas
-AsyncSessionLocal = sessionmaker(
-    bind=async_engine, 
-    class_=AsyncSession, 
-    autocommit=False, 
-    autoflush=False
-)
+AsyncSessionLocal = sessionmaker(bind=async_engine, class_=AsyncSession,
+                                expire_on_commit=False, autoflush=False)
 
 async def obter_sessao_banco():
-    """Dependency injection ou context manager para os agentes operarem no banco assincronamente."""
     async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
-            
-            
-async def inicializar_banco():
-    """
-    Constrói a estrutura do banco de dados assíncrono caso ela não exista.
-    Faz fallback automático para SQLite local se houver falha no Postgres (ex: quota excedida).
-    """
+        yield session
+
+async def inicializar_banco(engine=None):
+    """Inicializa apenas o banco configurado; falhas não trocam a fonte de dados."""
     from banco.models import Base
-    from servicos.vector_store import registrar_hooks_conexao
-    global async_engine
-    try:
-        async with async_engine.begin() as conn:
-            # run_sync é usado para executar a rotina síncrona de DDL do SQLAlchemy
-            # sem bloquear o Event Loop.
-            await conn.run_sync(Base.metadata.create_all)
-            # Auto-migração segura para colunas novas em tabelas existentes no Postgres/SQLite
-            try:
-                await conn.exec_driver_sql("ALTER TABLE facts ADD COLUMN IF NOT EXISTS source_file VARCHAR(255);")
-                await conn.exec_driver_sql("ALTER TABLE facts ADD COLUMN IF NOT EXISTS source_hash VARCHAR(64);")
-            except Exception:
-                pass
-        
-        # Registra hooks de WAL e tabelas virtuais FTS5/sqlite-vec se for SQLite
-        if "sqlite" in async_engine.url.drivername:
-            registrar_hooks_conexao()
-    except Exception as e:
-        print(f"\n[AVISO CRÍTICO] Falha ao conectar ao banco remoto PostgreSQL ({e}).")
-        print("[AVISO CRÍTICO] O projeto excedeu a cota ou está sem conexão. Realizando fallback automático para SQLite local...\n")
-        
-        fallback_url = default_sqlite
-        async_engine = _criar_motor(fallback_url)
-        AsyncSessionLocal.configure(bind=async_engine)
-        
-        async with async_engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            try:
-                await conn.exec_driver_sql("ALTER TABLE facts ADD COLUMN IF NOT EXISTS source_file VARCHAR(255);")
-                await conn.exec_driver_sql("ALTER TABLE facts ADD COLUMN IF NOT EXISTS source_hash VARCHAR(64);")
-            except Exception:
-                pass
-        if "sqlite" in async_engine.url.drivername:
-            registrar_hooks_conexao()
-        print("[SUCESSO] Fallback para SQLite local ativado com sucesso!\n")
+    from servicos.vector_store import inicializar_tabelas_virtuais_e_fts
+    engine = engine or async_engine
+    async with engine.begin() as conn:
+        # Migra bancos existentes antes de create_all criar índices das colunas novas.
+        def migrar(sync_conn):
+            inspector = inspect(sync_conn)
+            if inspector.has_table("task_queue"):
+                if "locked_until" not in {c["name"] for c in inspector.get_columns("task_queue")}:
+                    tipo_data = "TIMESTAMP WITH TIME ZONE" if sync_conn.dialect.name == "postgresql" else "TIMESTAMP"
+                    sync_conn.exec_driver_sql(f"ALTER TABLE task_queue ADD COLUMN locked_until {tipo_data}")
+            if inspector.has_table("facts"):
+                colunas = {c["name"] for c in inspector.get_columns("facts")}
+                for nome, tipo in (("source_file", "VARCHAR(255)"), ("source_hash", "VARCHAR(64)")):
+                    if nome not in colunas:
+                        sync_conn.exec_driver_sql(f"ALTER TABLE facts ADD COLUMN {nome} {tipo}")
+        await conn.run_sync(migrar)
+        await conn.run_sync(Base.metadata.create_all)
+        if engine.dialect.name == "sqlite":
+            await inicializar_tabelas_virtuais_e_fts(conn)

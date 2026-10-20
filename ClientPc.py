@@ -44,7 +44,7 @@ def get_active_window_info() -> dict | None:
 def command_listener():
     """Escuta comandos vindos do servidor principal."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("0.0.0.0", LISTEN_PORT))
+    sock.bind(("127.0.0.1", LISTEN_PORT))
     
     while True:
         try:
@@ -53,8 +53,8 @@ def command_listener():
             acao = msg.get("acao")
             alvo = msg.get("alvo")
             if acao == "ABRIR":
-                if "\\" in alvo or ":" in alvo: os.startfile(alvo)
-                else: subprocess.Popen(alvo, shell=True)
+                from servicos.pc_control_service import pc_control_service
+                pc_control_service.executar_comando_direto(alvo)
         except: pass
 
 def main():

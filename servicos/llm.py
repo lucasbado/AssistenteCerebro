@@ -36,14 +36,6 @@ class ServicoLLM:
     async def classificar_evento(self, categoria: str, pacote: str, payload: dict, historico: list[str] | None = None, timestamp_dispositivo: datetime | None = None, knowledge: str = "", habits: str = "") -> dict:
         texto_msg = str(payload.get('texto', '')).lower()
 
-        # 1. Verificar Cache Semântico
-        cached_resp = await semantic_cache_service.buscar(texto_msg)
-        if cached_resp:
-            try:
-                return json.loads(cached_resp)
-            except: pass
-
-        # 2. Construir Contexto Enxuto via ContextBuilder (≤ 2k tokens)
         contexto = await context_builder.construir_contexto(texto_msg, session_id=pacote)
 
         agora_dt = timestamp_dispositivo or datetime.now()
@@ -71,17 +63,34 @@ RESPOSTA (JSON):
 
         prompt = f"EVENTO: {categoria} | {pacote} | {json.dumps(payload, ensure_ascii=False)}"
 
-        provider = self._pick_provider()
+        cache_key = json.dumps({"prompt": prompt, "system": system, "historico": historico,
+                                "knowledge": knowledge, "habits": habits},
+                               sort_keys=True, ensure_ascii=False, default=str)
+        if texto_msg.strip():
+            try:
+                cached = await semantic_cache_service.buscar(cache_key)
+                if cached:
+                    data = json.loads(cached)
+                    if not data.get("execucao_direta") and not data.get("memoria_obsidian"):
+                        return data
+            except Exception:
+                logger.warning("Cache indisponível", exc_info=True)
+        provider = None
         try:
+            provider = self._pick_provider()
             resposta_str = await provider.gerar(prompt, system, max_tokens=2000)
             
             # Sucesso: reseta falhas consecutivas
             self._consecutive_failures = 0
 
             # Salva no cache semântico
-            await semantic_cache_service.inserir(texto_msg, resposta_str)
-
-            return json.loads(resposta_str)
+            data = json.loads(resposta_str)
+            if texto_msg.strip() and not data.get("execucao_direta") and not data.get("memoria_obsidian"):
+                try:
+                    await semantic_cache_service.inserir(cache_key, resposta_str)
+                except Exception:
+                    logger.warning("Falha ao salvar cache", exc_info=True)
+            return data
         except Exception as e:
             logger.error(f"❌ [LLM] Erro com provider: {e}")
             self._consecutive_failures += 1

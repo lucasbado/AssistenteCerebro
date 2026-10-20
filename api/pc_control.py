@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 from servicos.pc_control_service import pc_control_service
 from core.evento import EventoCanonico
-from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
+from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento, PrioridadeEvento
 from core.kernel import kernel
 
 router = APIRouter(tags=["PC Control"])
@@ -48,6 +48,7 @@ async def receber_comando(request: Request):
         categoria=CategoriaEvento.SISTEMA_COMANDO_PC,
         acao=TipoAcao.NORMAL,
         origem=OrigemEvento.USUARIO,
+        prioridade=PrioridadeEvento.ALTA,
         payload=dados,
         pacote="pc.http.control"
     )

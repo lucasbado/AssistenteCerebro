@@ -1,183 +1,146 @@
-import logging
+"""Executor de rotinas aprovadas, com recarga e proteção contra repetição."""
+import asyncio
 import json
+import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from core.evento import EventoCanonico
-from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
 from core.kernel import kernel
+from core.tipos import CategoriaEvento, OrigemEvento, TipoAcao
+from servicos.atividade import processo_pc
+from servicos.routine_paths import ACTIVE_PATH, salvar_json
+from servicos.tempo import horario_local, utc
 
 logger = logging.getLogger("AgenteRotina")
 
+
 class AgenteRotina:
-    """
-    Motor de Automação Inteligente.
-    Carrega regras de routines.json e as aplica baseando-se em gatilhos de eventos.
-    """
     def __init__(self):
-        # Caminho dinâmico para funcionar em qualquer diretório (Local ou Render)
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.config_path = os.path.join(base_dir, "config", "routines.json")
+        self.config_path = ACTIVE_PATH
         self.routines = []
+        self._versao = None
+        self._execucoes = {}
+        self._lock = asyncio.Lock()
         self._carregar_rotinas()
 
     def _carregar_rotinas(self):
-        if os.path.exists(self.config_path):
-            try:
-                with open(self.config_path, "r", encoding="utf-8") as f:
-                    self.routines = json.load(f)
-                logger.info(f"📂 [AgenteRotina] {len(self.routines)} rotinas carregadas com sucesso de {self.config_path}")
-            except Exception as e:
-                logger.error(f"Erro ao carregar rotinas: {e}")
-        else:
-            logger.warning(f"⚠️ [AgenteRotina] Arquivo de rotinas não encontrado em: {self.config_path}")
+        try:
+            stat = os.stat(self.config_path)
+            versao = (stat.st_mtime_ns, stat.st_size)
+            if versao == self._versao:
+                return
+            with open(self.config_path, encoding="utf-8") as arquivo:
+                rotinas = json.load(arquivo)
+            if not isinstance(rotinas, list):
+                raise ValueError("O arquivo de rotinas deve conter uma lista.")
+            self.routines = rotinas
+            self._versao = versao
+        except FileNotFoundError:
+            self.routines = []
+            self._versao = None
+        except (ValueError, OSError):
+            logger.exception("Falha ao recarregar rotinas; mantendo a última versão válida")
 
     def _salvar_rotinas(self):
-        try:
-            with open(self.config_path, "w", encoding="utf-8") as f:
-                json.dump(self.routines, f, indent=4)
-        except Exception as e:
-            logger.error(f"Erro ao salvar rotinas: {e}")
+        salvar_json(self.config_path, self.routines)
+        self._versao = None
 
     async def processar(self, evento: EventoCanonico):
-        # 0. Comando para criar nova rotina (Vindo da IA)
-        if evento.acao == TipoAcao.NORMAL and evento.payload.get("comando") == "criar_rotina":
-            nova_rotina = evento.payload.get("rotina")
-            if nova_rotina:
-                self.routines.append(nova_rotina)
-                self._salvar_rotinas()
-                logger.info(f"✅ Nova rotina criada: {nova_rotina['nome']}")
+        if evento.payload.get("tipo") == "REFLEXAO_ROTINA":
+            from servicos.routine_generator_service import routine_generator_service
+            await routine_generator_service.run_batch_generation()
+            return
+        # Replays e respostas produzidas por agentes não são novas aberturas.
+        if evento.acao != TipoAcao.NORMAL or evento.origem == OrigemEvento.IA:
+            return
+        if abs((datetime.now(timezone.utc) - utc(evento.timestamp)).total_seconds()) > 300:
+            return
+        async with self._lock:
+            self._carregar_rotinas()
+            if evento.payload.get("comando") == "criar_rotina":
+                rotina = evento.payload.get("rotina")
+                if rotina and not any(r.get("nome") == rotina.get("nome") for r in self.routines):
+                    self.routines.append(dict(rotina))
+                    self._salvar_rotinas()
                 return
+            agora = utc(evento.timestamp)
+            self._execucoes = {k: ts for k, ts in self._execucoes.items() if agora - ts < timedelta(days=2)}
+            for rotina in self.routines:
+                try:
+                    if not rotina.get("ativa", True) or not self._validar_gatilho(rotina.get("gatilho", {}), evento):
+                        continue
+                    chave = json.dumps([rotina.get("gatilho"), rotina.get("acoes")], sort_keys=True)
+                    ultima = self._execucoes.get(chave)
+                    cooldown = max(60, float(rotina.get("cooldown_segundos", 3600)))
+                    if ultima and ((agora - ultima).total_seconds() < cooldown or
+                            (rotina.get("uma_vez_por_dia") and horario_local(ultima).date() == horario_local(agora).date())):
+                        continue
+                    if await self._executar_acoes(rotina.get("acoes", []), evento, rotina.get("nome", "Rotina")):
+                        self._execucoes[chave] = agora
+                except (ValueError, TypeError, KeyError):
+                    logger.exception("Rotina inválida: %s", rotina.get("nome"))
 
-        # 1. Verifica gatilhos dinâmicos baseados em eventos
-        for rotina in self.routines:
-            if not rotina.get("ativa", True): continue
-            
-            gatilho = rotina.get("gatilho", {})
-            logger.debug(f"🔍 Verificando rotina '{rotina['nome']}' para evento {evento.categoria}")
-            if self._validar_gatilho(gatilho, evento):
-                logger.info(f"🚀 Gatilho de rotina detectado: {rotina['nome']}")
-                await self._executar_acoes(rotina.get("acoes", []), evento)
-
-        # 2. Gatilhos de Status (Bateria baixa, etc)
-        if evento.payload.get("tipo_ws") == "DEVICE_STATUS":
-            await self._verificar_status_dispositivo(evento.payload)
-
-        # 3. Lógica Legada (Compatibilidade)
-        if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO:
-            tipo_comando = evento.payload.get("tipo")
-            if tipo_comando == "MUDANCA_LOCAL":
-                await self._reagir_chegada_local(evento.payload.get("local"), evento)
-            elif tipo_comando == "REFLEXAO_ROTINA":
-                await self._analisar_padroes_gerais()
-
-    def _validar_gatilho(self, gatilho: dict, evento: EventoCanonico) -> bool:
+    def _validar_gatilho(self, gatilho, evento):
         tipo = gatilho.get("tipo")
-        
-        # Gatilho: Abertura de App
-        if tipo == "APP_OPENED" and evento.categoria == CategoriaEvento.APP_FOREGROUND:
-            return evento.pacote == gatilho.get("pacote")
-            
-        # Gatilho: Atividade no PC (Processo)
-        if tipo == "PC_ACTIVITY" and evento.categoria == CategoriaEvento.PC_ACTIVITY:
-            processo_gatilho = str(gatilho.get("processo")).lower()
-            processo_evento = str(evento.payload.get("processo")).lower()
-            logger.debug(f"🧪 [AgenteRotina] Comparando Gatilho '{processo_gatilho}' com Evento '{processo_evento}'")
-            return processo_gatilho in processo_evento
-            
-        # Gatilho: Evento de Sistema (ex: PC_LOGIN)
-        if tipo == "EVENTO_SISTEMA" and evento.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO:
-            return evento.payload.get("alvo") == gatilho.get("evento")
-
-        # Gatilho: Faixa de Horário
+        if tipo == "APP_OPENED":
+            return (evento.categoria == CategoriaEvento.APP_FOREGROUND
+                    and not evento.payload.get("heartbeat")
+                    and bool(gatilho.get("pacote")) and evento.pacote == gatilho["pacote"])
+        if tipo == "PC_ACTIVITY":
+            processo = str(gatilho.get("processo") or "").lower()
+            return bool(processo) and evento.categoria == CategoriaEvento.PC_ACTIVITY and processo_pc(evento.payload) == processo
+        if tipo == "EVENTO_SISTEMA":
+            return (bool(gatilho.get("evento")) and evento.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO
+                    and (evento.payload.get("alvo") or evento.payload.get("tipo")) == gatilho["evento"])
         if tipo == "TIME_RANGE":
-            agora = datetime.now().time()
-            inicio = datetime.strptime(gatilho.get("inicio"), "%H:%M").time()
-            fim = datetime.strptime(gatilho.get("fim"), "%H:%M").time()
-            if inicio <= agora <= fim:
-                # Se for TIME_RANGE, geralmente precisa de um evento secundário (ex: PC_LOGIN)
-                evento_secundario = gatilho.get("evento")
-                if evento_secundario:
-                    return self._validar_gatilho({"tipo": "EVENTO_SISTEMA", "evento": evento_secundario}, evento)
-                return True
-
+            try:
+                inicio = datetime.strptime(gatilho["inicio"], "%H:%M").time()
+                fim = datetime.strptime(gatilho["fim"], "%H:%M").time()
+            except (ValueError, KeyError, TypeError):
+                return False
+            agora = horario_local(evento.timestamp).time().replace(second=0, microsecond=0)
+            dentro = inicio <= agora <= fim if inicio <= fim else agora >= inicio or agora <= fim
+            secundario = gatilho.get("evento") or "TICK_ROTINA"
+            if secundario == "PC_ACTIVITY":
+                return dentro and evento.categoria == CategoriaEvento.PC_ACTIVITY
+            return dentro and self._validar_gatilho({"tipo": "EVENTO_SISTEMA", "evento": secundario}, evento)
         return False
 
-    async def _executar_acoes(self, acoes: list, evento_origem: EventoCanonico):
+    async def _executar_acoes(self, acoes, evento_origem, nome="Rotina"):
+        executou = False
         for acao in acoes:
             try:
-                alvo = acao.get("alvo")
-                comando = acao.get("comando")
-                param = acao.get("parametro")
-
+                alvo, comando, param = acao.get("alvo"), acao.get("comando"), acao.get("parametro")
                 if alvo == "PC":
-                    await kernel.publicar(EventoCanonico(
-                        categoria=CategoriaEvento.SISTEMA_COMANDO_PC,
-                        acao=TipoAcao.NORMAL,
-                        origem=OrigemEvento.SISTEMA,
-                        pacote="sistema.rotina",
-                        payload={"comando": comando, "parametro": param}
-                    ))
-                elif alvo == "IA":
-                    # Gera uma notificação ou interação da IA
-                    # 🌟 AJUSTE: Adicionamos metadados para garantir que chegue como NOTIFICACAO no Android
-                    await kernel.publicar(evento_origem.clonar(
-                        categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                        acao=TipoAcao.INTENCAO_INTERACAO,
-                        origem=OrigemEvento.IA,
-                        pacote="sistema.rotina",
-                        payload={
-                            "texto": param, 
-                            "tipo_interacao": comando,
-                            "tipo_ws": "NOTIFICACAO",  # Força o tipo correto
-                            "urgencia": "ALTA"
-                        },
-                        metadados={"tipo_destino": "NOTIFICACAO"}
-                    ))
-                elif alvo == "MOBILE":
-                    # Comando para o SystemCommandHandler do Android
                     from api.websocket import central_alertas
-                    await central_alertas._broadcast({
-                        "tipo_ws": "COMANDO_SISTEMA",
-                        "acao": comando,
-                        "parametro": param
-                    })
-            except Exception as e:
-                logger.error(f"❌ [AgenteRotina] Erro ao executar ação {acao}: {e}")
-
-    async def _reagir_chegada_local(self, local: str, evento_origem: EventoCanonico):
-        # ... mantida a lógica legada se desejar ...
-        pass
-
-    async def _verificar_status_dispositivo(self, status: dict):
-        bateria = status.get("bateria", 100)
-        carregando = status.get("charging", False)
-        
-        if bateria < 15 and not carregando:
-            await kernel.publicar(EventoCanonico(
-                categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                acao=TipoAcao.INTENCAO_INTERACAO,
-                origem=OrigemEvento.SISTEMA,
-                payload={
-                    "titulo": "Bateria Crítica",
-                    "texto": f"Seu celular está com {bateria}%. Quer que eu ative o modo economia no PC também?",
-                    "acao_tipo": "PC_COMMAND",
-                    "acao_parametro": "modo_imersao", # Exemplo de economia
-                    "acao_texto": "Bora"
-                }
-            ))
-
-    async def _analisar_padroes_gerais(self):
-        """
-        Analisa os padrões aprendidos na memória de perfil e gera rotinas reais
-        no arquivo de descoberta para verificação do usuário.
-        """
-        logger.info("🧠 [AgenteRotina] Iniciando reflexão profunda de hábitos...")
-        from servicos.routine_generator_service import routine_generator_service
-        
-        try:
-            # Em vez de apenas sugerir no Kernel, agora materializamos em arquivo
-            await routine_generator_service.run_batch_generation()
-            logger.info("✅ [AgenteRotina] Novas rotinas materializadas em discovered_routines.json")
-        except Exception as e:
-            logger.error(f"Erro ao processar geração na reflexão: {e}")
+                    nuvem = os.getenv("RENDER", "false").lower() in {"true", "1", "yes"} or os.name != "nt"
+                    if nuvem and not central_alertas.pc_master:
+                        continue
+                    if comando == "abrir_app" and evento_origem.categoria == CategoriaEvento.PC_ACTIVITY and processo_pc(evento_origem.payload) == str(param).lower():
+                        continue
+                    await kernel.publicar(evento_origem.clonar(
+                        categoria=CategoriaEvento.SISTEMA_COMANDO_PC, acao=TipoAcao.NORMAL,
+                        origem=OrigemEvento.SISTEMA, pacote="sistema.rotina",
+                        payload={"comando": comando, "parametro": param},
+                        metadados={"rotina_aprovada": nome}))
+                elif alvo == "IA":
+                    payload = {"titulo": nome, "texto": param, "tipo_ws": "NOTIFICACAO",
+                               "tipo_interacao": comando, "chave_deduplicacao": f"rotina:{nome}"}
+                    payload.update({k: acao[k] for k in ("acao_tipo", "acao_parametro", "acao_texto") if acao.get(k)})
+                    await kernel.publicar(evento_origem.clonar(
+                        categoria=CategoriaEvento.INTENCAO_NOTIFICACAO, acao=TipoAcao.INTENCAO_INTERACAO,
+                        origem=OrigemEvento.IA, pacote="sistema.rotina", payload=payload,
+                        metadados={"tipo_destino": "NOTIFICACAO", "rotina_aprovada": nome}))
+                elif alvo == "MOBILE":
+                    from api.websocket import central_alertas
+                    if not central_alertas.mobile_client:
+                        continue
+                    await central_alertas._enviar_direto(central_alertas.mobile_client,
+                        {"tipo_ws": "COMANDO_SISTEMA", "acao": comando, "parametro": param})
+                else:
+                    continue
+                executou = True
+            except Exception:
+                logger.exception("Erro ao executar ação da rotina %s", nome)
+        return executou

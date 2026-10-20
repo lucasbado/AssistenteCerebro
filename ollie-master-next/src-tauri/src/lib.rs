@@ -22,13 +22,34 @@ struct WindowInfo {
     process: String,
 }
 
+fn backend_dir() -> std::path::PathBuf {
+    std::env::var_os("OLLIE_BACKEND_DIR").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap().to_path_buf())
+}
+
+fn load_config() {
+    dotenvy::from_path(backend_dir().join(".env")).ok();
+}
+
 fn get_python_path() -> String {
-    let venv_path = r"D:\Programacao\AssistenteCell\.venvs\Scripts\python.exe";
-    if std::path::Path::new(venv_path).exists() {
-        venv_path.to_string()
-    } else {
-        "python".to_string()
+    if let Ok(path) = std::env::var("OLLIE_PYTHON") { return path; }
+    for name in [".venvs", ".venv", "venv"] {
+        let path = backend_dir().join(name).join(if cfg!(windows) { "Scripts/python.exe" } else { "bin/python" });
+        if path.exists() { return path.to_string_lossy().into_owned(); }
     }
+    "python".to_string()
+}
+
+fn run_python(comando: &str, parametro: &str) -> Result<String, String> {
+    let output = std::process::Command::new(get_python_path())
+        .arg(backend_dir().join("scripts/pc_command.py"))
+        .args([comando, parametro])
+        .current_dir(backend_dir())
+        .output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).lines().last().unwrap_or("").to_string())
 }
 
 #[tauri::command]
@@ -41,19 +62,14 @@ async fn start_monitoring(app_handle: AppHandle) {
     let app_cpu = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         let mut sys = System::new_all();
-        let py_exe = get_python_path();
         loop {
             sys.refresh_all();
 
             let cpu = sys.global_cpu_info().cpu_usage() as u32;
             let ram = (sys.used_memory() as f64 / sys.total_memory() as f64 * 100.0) as u32;
 
-            let py_code = "import sys, json; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; print(json.dumps(pc_control_service.obter_estado_completo()))";
-
-            let audio_json = match std::process::Command::new(&py_exe).args(["-c", py_code]).output() {
-                Ok(output) => String::from_utf8_lossy(&output.stdout).to_string(),
-                Err(_) => "".to_string(),
-            };
+            let audio_json = tauri::async_runtime::spawn_blocking(|| run_python("snapshot", ""))
+                .await.ok().and_then(Result::ok).unwrap_or_default();
 
             let audio_data: serde_json::Value = serde_json::from_str(&audio_json).unwrap_or(serde_json::json!({}));
 
@@ -125,7 +141,7 @@ async fn maximize_window(app_handle: AppHandle) {
 
 #[tauri::command]
 fn get_cloud_url() -> String {
-    dotenvy::from_path("../../../.env").ok();
+    load_config();
     let env = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "production".to_string());
     if env == "development" {
         std::env::var("OLLIE_LOCAL_URL").unwrap_or_else(|_| "ws://localhost:8000/api/v1/ws/alertas".to_string())
@@ -136,7 +152,7 @@ fn get_cloud_url() -> String {
 
 #[tauri::command]
 fn get_api_url() -> String {
-    dotenvy::from_path("../../../.env").ok();
+    load_config();
     let env = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "production".to_string());
     if env == "development" {
         "http://127.0.0.1:8000".to_string()
@@ -146,133 +162,16 @@ fn get_api_url() -> String {
 }
 
 #[tauri::command]
+fn get_auth_token() -> Result<String, String> {
+    load_config();
+    std::env::var("OLLIE_API_TOKEN").ok().filter(|v| !v.is_empty())
+        .ok_or_else(|| "Configure OLLIE_API_TOKEN no servidor e neste desktop".to_string())
+}
+
+#[tauri::command]
 async fn execute_pc_command(comando: String, parametro: Option<String>) -> Result<String, String> {
-    let param = parametro.unwrap_or_default();
-    println!("⚡ Executing PC Command: {} with param: {}", comando, param);
-
-    let py_exe = get_python_path();
-    let target_macro = if !param.is_empty() { param.as_str() } else { comando.as_str() };
-
-    match comando.as_str() {
-        "executar_macro" | "macro" | "alt_tab" | "win_d" | "print_screen" | "task_mgr" | "alt_f4" | "win_tab" | "media_play_pause" | "media_next" | "media_prev" => {
-            let py_code = format!(
-                "import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.executar_macro('{}')",
-                target_macro
-            );
-            std::process::Command::new(&py_exe).args(["-c", &py_code]).output().map_err(|e| e.to_string())?;
-            Ok(format!("Macro executed: {}", target_macro))
-        }
-        "bloquear_pc" => {
-            let py_code = "import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.bloquear_pc()";
-            std::process::Command::new(&py_exe).args(["-c", py_code]).output().map_err(|e| e.to_string())?;
-            Ok("PC locked".to_string())
-        }
-        "dormir_pc" | "suspender_pc" | "hibernar_pc" => {
-            let py_code = "import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.dormir_pc()";
-            std::process::Command::new(&py_exe).args(["-c", py_code]).output().map_err(|e| e.to_string())?;
-            Ok("PC suspended".to_string())
-        }
-        "desligar_pc" => {
-            let py_code = "import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.desligar_pc()";
-            std::process::Command::new(&py_exe).args(["-c", py_code]).output().map_err(|e| e.to_string())?;
-            Ok("PC shutdown initiated".to_string())
-        }
-        "reiniciar_pc" => {
-            let py_code = "import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.reiniciar_pc()";
-            std::process::Command::new(&py_exe).args(["-c", py_code]).output().map_err(|e| e.to_string())?;
-            Ok("PC restart initiated".to_string())
-        }
-        "abrir_app" | "abrir_programa" | "vscode" | "android_studio" | "spotify" | "discord" | "lol" | "chrome" | "steam" | "clone_hero" => {
-            let target_app = if !param.is_empty() { &param } else { &comando };
-            let py_code = format!(
-                "import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.abrir_app('{}')",
-                target_app
-            );
-            std::process::Command::new(&py_exe).args(["-c", &py_code]).output().map_err(|e| e.to_string())?;
-            Ok(format!("Opened app: {}", target_app))
-        }
-        "abrir_url" | "open_url" => {
-            #[cfg(target_os = "windows")]
-            {
-                std::process::Command::new("cmd")
-                    .args(["/C", "start", &param])
-                    .output()
-                    .map_err(|e| e.to_string())?;
-            }
-            Ok(format!("Opened URL: {}", param))
-        }
-        "mutar_mic" => {
-            let py_code = "import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.inicializar(); pc_control_service.mutar_mic()";
-            std::process::Command::new(&py_exe).args(["-c", py_code]).output().map_err(|e| e.to_string())?;
-            Ok("Mic muted".to_string())
-        }
-        "spotify_play" => {
-            let py_code = format!("import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.inicializar(); pc_control_service.tocar_spotify('{}')", param);
-            std::process::Command::new(&py_exe).args(["-c", &py_code]).output().map_err(|e| e.to_string())?;
-            Ok(format!("Spotify play: {}", param))
-        }
-        "volume_sistema" => {
-            let val = param.parse::<i32>().unwrap_or(50);
-            let py_code = format!("import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.inicializar(); pc_control_service.set_system_volume({})", val);
-            std::process::Command::new(&py_exe).args(["-c", &py_code]).output().map_err(|e| e.to_string())?;
-            Ok(format!("Volume set: {}", val))
-        }
-        "voicemeeter" => {
-            if param.contains('=') {
-                let parts: Vec<&str> = param.splitn(2, '=').collect();
-                let py_code = format!("import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.inicializar(); pc_control_service.set_vm_param('{}', '{}')", parts[0].trim(), parts[1].trim());
-                std::process::Command::new(&py_exe).args(["-c", &py_code]).output().map_err(|e| e.to_string())?;
-            }
-            Ok(format!("Voicemeeter param: {}", param))
-        }
-        "volume_canal" => {
-            let (ch, val) = if param.contains(',') {
-                let parts: Vec<&str> = param.splitn(2, ',').collect();
-                (parts[0].trim().parse::<i32>().unwrap_or(3), parts[1].trim().parse::<i32>().unwrap_or(50))
-            } else {
-                (3, param.parse::<i32>().unwrap_or(50))
-            };
-            let py_code = format!(
-                "import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.inicializar(); pc_control_service.set_gain({}, {})",
-                ch, val
-            );
-            std::process::Command::new(&py_exe).args(["-c", &py_code]).output().map_err(|e| e.to_string())?;
-            Ok(format!("Volume canal {} set: {}", ch, val))
-        }
-        "ciclar_saida" => {
-            let canal = if !param.is_empty() { param.parse::<i32>().unwrap_or(3) } else { 3 };
-            let py_code = format!(
-                "import sys; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.pc_control_service import pc_control_service; pc_control_service.inicializar(); pc_control_service.ciclar_saida({})",
-                canal
-            );
-            std::process::Command::new(&py_exe).args(["-c", &py_code]).output().map_err(|e| e.to_string())?;
-            Ok(format!("Ciclar saída canal {}: executed", canal))
-        }
-        "ligar_luz" | "desligar_luz" | "toggle_luz" => {
-            let entity_id = if !param.is_empty() { &param } else { "light.yeelink_color5_027d_light" };
-            let service_action = match comando.as_str() {
-                "ligar_luz" => "turn_on",
-                "desligar_luz" => "turn_off",
-                _ => "toggle",
-            };
-            let py_code = format!(
-                "import sys, asyncio; sys.path.append(r'D:\\Programacao\\AssistenteCell'); from servicos.home_assistant_service import home_assistant_service; asyncio.run(home_assistant_service.chamar_servico('light', '{}', '{}'))",
-                service_action, entity_id
-            );
-            std::process::Command::new(&py_exe).args(["-c", &py_code]).output().map_err(|e| e.to_string())?;
-            Ok(format!("Home Assistant executed: {} on {}", comando, entity_id))
-        }
-        _ => {
-            #[cfg(target_os = "windows")]
-            {
-                std::process::Command::new("cmd")
-                    .args(["/C", &comando])
-                    .output()
-                    .map_err(|e| e.to_string())?;
-            }
-            Ok(format!("Command executed: {}", comando))
-        }
-    }
+    tauri::async_runtime::spawn_blocking(move || run_python(&comando, &parametro.unwrap_or_default()))
+        .await.map_err(|e| e.to_string())?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -286,6 +185,7 @@ pub fn run() {
             maximize_window,
             get_cloud_url,
             get_api_url,
+            get_auth_token,
             execute_pc_command
         ])
         .run(tauri::generate_context!())
