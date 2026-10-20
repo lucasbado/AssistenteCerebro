@@ -42,18 +42,51 @@ e a [orientação para abrir uma Activity por notificação](https://developer.a
 ## Validação executada
 
 - Backend: **43 testes passando** em SQLite temporário, sem executar hardware.
-- Android: **5 testes unitários passando**, incluindo quatro novos casos para
-  deduplicação, filtro de sugestões e transições de apps.
+- Android: **11 testes unitários passando**, incluindo casos para deduplicação,
+  filtro de sugestões, transições de apps e o crash de autenticação descrito abaixo.
 - `:app:testDebugUnitTest :app:assembleDebug`: **BUILD SUCCESSFUL**, em modo
   offline, utilizando as dependências já presentes na máquina.
 - APK: `D:\Programacao\Projetos\AssistenteCell\app\build\outputs\apk\debug\app-debug.apk`.
 - Permanecem avisos de APIs e recursos de build depreciados; não impediram a
-  compilação. Não houve instalação ou execução dos testes no aparelho.
+  compilação. A atualização que corrige o token foi instalada no celular conectado
+  via ADB, com preservação dos dados; a Activity iniciou e o processo permaneceu
+  ativo. Os testes unitários foram executados no computador.
 
 O [patch do cliente](patches/android-rotinas.patch) registra somente as diferenças
 em relação aos arquivos existentes no início desta revisão. A preparação e a
 aplicação verificaram hashes para evitar sobrescrever edições feitas no meio
 do trabalho. Os snapshots locais ficam em `.artifacts/android-review` no backend.
+
+## Correção do crash ao salvar o token
+
+O log real do celular confirmou `FATAL EXCEPTION: OkHttp Dispatcher`, com
+`IllegalArgumentException: Unexpected char 0x0a at 21 in Authorization value`.
+O caractere `0x0a` é uma quebra de linha dentro do token salvo. A montagem do
+cabeçalho ocorria sem validação e lançava uma exceção não tratada.
+
+O formulário agora valida URL e token antes de gravar ou reconectar, mostrando
+o erro no campo. A validação é compartilhada com `BackendAuthInterceptor`, que
+também protege preferências gravadas por versões anteriores: valor inválido
+retorna uma `IOException` tratável pelo cliente, sem revelar o conteúdo.
+Espaços externos, aspas de uma linha `.env` e os prefixos `OLLIE_API_TOKEN=` ou
+`Bearer ` podem ser normalizados. Quebras de linha dentro do valor, espaços
+internos, controles e caracteres não ASCII são rejeitados.
+
+Os seis testes de regressão verificam normalização, entrada inválida, validação
+de URL, isolamento do servidor, token ausente e o caminho assíncrono do crash.
+Nesse último caso, a falha chega ao callback e a mesma instância do cliente
+continua capaz de executar uma requisição após corrigir a credencial. Não há
+requisições reais nesses testes.
+
+A proteção respeita o comportamento do [código do OkHttp 4.12.0](https://github.com/square/okhttp/blob/parent-4.12.0/okhttp/src/main/kotlin/okhttp3/internal/connection/RealCall.kt):
+falhas de I/O chegam ao callback; exceções inesperadas podem escapar da execução
+assíncrona. A validação evita que dados de configuração gerem essa exceção.
+
+Após instalar a correção, o app permaneceu em execução. A conexão WebSocket
+retornou `403 Forbidden`; uma comparação local, sem exibir credenciais, identificou
+que `backend_api_token` estava ausente nas preferências do app naquele momento.
+É necessário preencher e salvar o token no aplicativo e manter o mesmo valor
+na variável `OLLIE_API_TOKEN` do servidor.
 
 ## Como validar no celular
 

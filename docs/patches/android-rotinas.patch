@@ -16,15 +16,19 @@
              android:exported="true">
 --- a/app/src/main/java/com/example/assistentecell/api/RetrofitClient.kt
 +++ b/app/src/main/java/com/example/assistentecell/api/RetrofitClient.kt
-@@ -13,6 +13,7 @@
+@@ -11,8 +11,11 @@
+ import retrofit2.Retrofit
+ import retrofit2.converter.gson.GsonConverterFactory
  import java.util.concurrent.TimeUnit
++import com.example.assistentecell.network.BackendAuthInterceptor
++import com.example.assistentecell.network.BackendSettings
  
  object RetrofitClient {
 +    private var appContext: Context? = null
  
      private var _currentBaseUrl: String = "https://assistentecellfront.onrender.com/"
      private var _haBaseUrl: String = "http://homeassistant.local:8123/"
-@@ -21,21 +22,18 @@
+@@ -21,43 +24,34 @@
      private var _haRepository: com.example.assistentecell.data.repository.HomeAssistantRepository? = null
  
      fun init(context: Context) {
@@ -50,23 +54,44 @@
          val savedHaUrl = prefs.getString("ha_url", "http://homeassistant.local:8123/") ?: "http://homeassistant.local:8123/"
          updateBaseUrl(savedUrl)
          updateHaBaseUrl(savedHaUrl)
-@@ -86,10 +84,24 @@
+     }
+ 
+-    fun updateBaseUrl(newUrl: String) {
+-        var url = newUrl
+-        if (url.isBlank()) return
+-
+-        if (!url.endsWith("/")) url += "/"
+-        if (!url.startsWith("http")) url = "https://$url"
+-        
+-        val httpUrl = url.toHttpUrlOrNull()
+-        if (httpUrl == null) {
+-            android.util.Log.e("RetrofitClient", "URL base inválida: $url")
+-            return
++    fun updateBaseUrl(newUrl: String): Boolean {
++        val url = BackendSettings.normalizeBaseUrl(newUrl) ?: run {
++            android.util.Log.e("RetrofitClient", "URL do servidor inválida")
++            return false
+         }
+ 
+         _currentBaseUrl = url
+         android.util.Log.d("RetrofitClient", "Nova base URL: $_currentBaseUrl")
+         // Reset repository to force recreation with new URL
+         _cognitiveRepository = null
++        return true
+     }
+ 
+     fun updateHaBaseUrl(newUrl: String) {
+@@ -86,10 +80,18 @@
          .pingInterval(10, TimeUnit.SECONDS)
          .build()
  
 +    // Backend credentials never go to the separate Home Assistant client.
 +    val backendHttpClient: OkHttpClient = okHttpClient.newBuilder()
-+        .addInterceptor { chain ->
-+            val request = chain.request()
-+            val configured = _currentBaseUrl.toHttpUrlOrNull()
-+            val sameServer = configured != null && request.url.host == configured.host &&
-+                request.url.port == configured.port && request.url.isHttps == configured.isHttps
-+            val token = appContext?.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
-+                ?.getString("backend_api_token", "")?.trim().orEmpty()
-+            val builder = request.newBuilder()
-+            if (sameServer && token.isNotEmpty()) builder.header("Authorization", "Bearer $token")
-+            chain.proceed(builder.build())
-+        }.build()
++        .addInterceptor(BackendAuthInterceptor(
++            serverUrl = { _currentBaseUrl },
++            savedToken = { appContext?.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
++                ?.getString("backend_api_token", "").orEmpty() }
++        )).build()
 +
      private val retrofit: Retrofit
          get() = Retrofit.Builder()
@@ -686,6 +711,94 @@
                  response.close()
              }
          })
+--- a/app/src/main/java/com/example/assistentecell/network/BackendAuthInterceptor.kt
++++ b/app/src/main/java/com/example/assistentecell/network/BackendAuthInterceptor.kt
+@@ -0,0 +1,24 @@
++package com.example.assistentecell.network
++
++import java.io.IOException
++import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
++import okhttp3.Interceptor
++import okhttp3.Response
++
++class BackendAuthInterceptor(
++    private val serverUrl: () -> String,
++    private val savedToken: () -> String
++) : Interceptor {
++    override fun intercept(chain: Interceptor.Chain): Response {
++        val request = chain.request()
++        val server = serverUrl().toHttpUrlOrNull()
++        val sameServer = server != null && request.url.host == server.host &&
++            request.url.port == server.port && request.url.isHttps == server.isHttps
++        if (!sameServer) return chain.proceed(request)
++        val raw = savedToken()
++        if (raw.isBlank()) return chain.proceed(request)
++        val token = BackendSettings.normalizeToken(raw)
++            ?: throw IOException("Token de acesso inválido. Corrija o campo nas configurações do servidor.")
++        return chain.proceed(request.newBuilder().header("Authorization", "Bearer $token").build())
++    }
++}
+--- a/app/src/main/java/com/example/assistentecell/network/BackendChatTransport.kt
++++ b/app/src/main/java/com/example/assistentecell/network/BackendChatTransport.kt
+@@ -0,0 +1,28 @@
++package com.example.assistentecell.network
++
++import com.google.gson.Gson
++import okhttp3.Call
++import okhttp3.Callback
++import okhttp3.MediaType.Companion.toMediaType
++import okhttp3.OkHttpClient
++import okhttp3.Request
++import okhttp3.RequestBody.Companion.toRequestBody
++
++/** Chat uses the same authenticated client as sensors and WebSocket. */
++class BackendChatTransport(private val client: OkHttpClient, private val serverUrl: () -> String) {
++    fun enqueue(text: String, packageName: String, callback: Callback): Call {
++        val payload = mapOf("categoria" to "SISTEMA_COMANDO_USUARIO", "origem" to "ANDROID",
++            "pacote" to packageName, "payload" to mapOf("texto" to text))
++        val request = Request.Builder().url(serverUrl() + "eventos")
++            .post(Gson().toJson(payload).toRequestBody("application/json; charset=utf-8".toMediaType())).build()
++        return client.newCall(request).also { it.enqueue(callback) }
++    }
++
++    companion object {
++        fun failureMessage(code: Int): String? = when (code) {
++            in 200..299 -> null
++            401, 403 -> "O servidor recusou o token de acesso. Confira o token nas configurações do servidor."
++            else -> "O servidor não aceitou a mensagem (HTTP $code). Tente novamente em instantes."
++        }
++    }
++}
+--- a/app/src/main/java/com/example/assistentecell/network/BackendSettings.kt
++++ b/app/src/main/java/com/example/assistentecell/network/BackendSettings.kt
+@@ -0,0 +1,27 @@
++package com.example.assistentecell.network
++
++import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
++
++/** Shared by the settings form and transport, including preferences saved by older builds. */
++object BackendSettings {
++    fun normalizeToken(raw: String): String? {
++        var token = raw.trim().removePrefix("\uFEFF").trim()
++        token = token.replaceFirst(Regex("^OLLIE_API_TOKEN\\s*=\\s*", RegexOption.IGNORE_CASE), "").trim()
++        token = token.replaceFirst(Regex("^Bearer\\s+", RegexOption.IGNORE_CASE), "").trim()
++        if (token.length >= 2 && ((token.first() == '"' && token.last() == '"') ||
++                (token.first() == '\'' && token.last() == '\''))) {
++            token = token.substring(1, token.length - 1)
++        }
++        // Reject embedded whitespace/control/non-ASCII characters before Headers.Builder sees them.
++        return token.takeIf { it.isNotEmpty() && it.all { char -> char.code in 33..126 } }
++    }
++
++    fun normalizeBaseUrl(raw: String): String? {
++        val trimmed = raw.trim()
++        if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() || it.isISOControl() }) return null
++        val candidate = if (trimmed.contains("://")) trimmed else "https://$trimmed"
++        val url = candidate.toHttpUrlOrNull() ?: return null
++        if (url.username.isNotEmpty() || url.password.isNotEmpty() || url.query != null || url.fragment != null) return null
++        return if (url.encodedPath.endsWith("/")) url.toString() else url.newBuilder().addPathSegment("").build().toString()
++    }
++}
 --- a/app/src/main/java/com/example/assistentecell/network/PCCommandSender.kt
 +++ b/app/src/main/java/com/example/assistentecell/network/PCCommandSender.kt
 @@ -84,7 +84,7 @@
@@ -1119,11 +1232,13 @@
      var haUrl by remember { mutableStateOf(prefs.getString("ha_url", "http://homeassistant.local:8123/") ?: "http://homeassistant.local:8123/") }
      var haToken by remember { mutableStateOf(prefs.getString("ha_token", "") ?: "") }
      
-@@ -157,23 +157,28 @@
+@@ -157,24 +157,39 @@
  
      if (showUrlDialog) {
          var tempUrl by remember { mutableStateOf(serverUrl) }
 +        var tempApiToken by remember { mutableStateOf(prefs.getString("backend_api_token", "").orEmpty()) }
++        var urlError by remember { mutableStateOf<String?>(null) }
++        var tokenError by remember { mutableStateOf<String?>(null) }
          AlertDialog(
              onDismissRequest = { showUrlDialog = false },
              title = { Text("Configurar Servidor") },
@@ -1135,27 +1250,39 @@
 -                    modifier = Modifier.fillMaxWidth()
 -                )
 +                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-+                    OutlinedTextField(value = tempUrl, onValueChange = { tempUrl = it },
-+                        label = { Text("URL do servidor") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-+                    OutlinedTextField(value = tempApiToken, onValueChange = { tempApiToken = it },
++                    OutlinedTextField(value = tempUrl, onValueChange = { tempUrl = it; urlError = null },
++                        label = { Text("URL do servidor") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
++                        isError = urlError != null,
++                        supportingText = { urlError?.let { Text(it) } })
++                    OutlinedTextField(value = tempApiToken, onValueChange = { tempApiToken = it; tokenError = null },
 +                        label = { Text("Token de acesso") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
++                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
++                        isError = tokenError != null,
++                        supportingText = { tokenError?.let { Text(it) } ?: Text("Cole somente o valor do token, sem espaços ou quebras de linha.") })
 +                }
              },
              confirmButton = {
                  Button(onClick = {
-                     if (tempUrl.contains(" ") || tempUrl.length > 150) return@Button
+-                    if (tempUrl.contains(" ") || tempUrl.length > 150) return@Button
++                    val normalizedUrl = com.example.assistentecell.network.BackendSettings.normalizeBaseUrl(tempUrl)
++                    val normalizedToken = com.example.assistentecell.network.BackendSettings.normalizeToken(tempApiToken)
++                    urlError = if (normalizedUrl == null) "Informe um endereço HTTP ou HTTPS válido." else null
++                    tokenError = if (normalizedToken == null) "Token inválido. Cole o valor sem espaços ou quebras de linha." else null
++                    if (normalizedUrl == null || normalizedToken == null) return@Button
                      
-                     serverUrl = tempUrl
+-                    serverUrl = tempUrl
 -                    prefs.edit { putString("server_url", tempUrl) }
+-                    com.example.assistentecell.api.RetrofitClient.updateBaseUrl(tempUrl)
++                    serverUrl = normalizedUrl
 +                    prefs.edit {
-+                        putString("server_url", tempUrl)
-+                        putString("backend_api_token", tempApiToken.trim())
++                        putString("server_url", normalizedUrl)
++                        putString("backend_api_token", normalizedToken)
 +                    }
-                     com.example.assistentecell.api.RetrofitClient.updateBaseUrl(tempUrl)
++                    com.example.assistentecell.api.RetrofitClient.updateBaseUrl(normalizedUrl)
                      com.example.assistentecell.ListenerDeNotificacoes.reconnect()
                      showUrlDialog = false
-@@ -488,7 +493,7 @@
+                 }) {
+@@ -488,7 +503,7 @@
                          showSwitch = true,
                          checked = isDevEnvironment,
                          onCheckedChange = { dev ->
@@ -1198,6 +1325,292 @@
              }
          }
      }
+--- a/app/src/main/java/com/example/assistentecell/ui/viewmodel/ChatViewModel.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/viewmodel/ChatViewModel.kt
+@@ -4,6 +4,7 @@
+ import androidx.lifecycle.AndroidViewModel
+ import androidx.lifecycle.viewModelScope
+ import com.example.assistentecell.api.RetrofitClient
++import com.example.assistentecell.network.BackendChatTransport
+ import com.example.assistentecell.websocket.ChatBridge
+ import com.example.assistentecell.websocket.ChatMessage
+ import com.example.assistentecell.voice.VoiceManager
+@@ -15,10 +16,6 @@
+ import kotlinx.coroutines.flow.collectLatest
+ import kotlinx.coroutines.launch
+ import okhttp3.*
+-import okhttp3.MediaType.Companion.toMediaTypeOrNull
+-import okhttp3.RequestBody.Companion.toRequestBody
+-import org.json.JSONObject
+-import java.util.concurrent.TimeUnit
+ import kotlin.time.Duration.Companion.seconds
+ import androidx.core.content.edit
+ 
+@@ -51,9 +48,7 @@
+     private val _isWakeWordEnabled = MutableStateFlow(prefs.getBoolean("wakeword_enabled", false))
+     val isWakeWordEnabled: StateFlow<Boolean> = _isWakeWordEnabled.asStateFlow()
+ 
+-    private val client = OkHttpClient.Builder()
+-        .connectTimeout(15, TimeUnit.SECONDS)
+-        .build()
++    private val chatTransport = BackendChatTransport(RetrofitClient.backendHttpClient) { RetrofitClient.getBaseUrl() }
+         
+     private var thinkingJob: Job? = null
+ 
+@@ -89,7 +84,7 @@
+         _isThinking.value = true
+         thinkingJob?.cancel()
+         thinkingJob = viewModelScope.launch {
+-            delay(20.seconds) // Aumentado de 10 para 20 segundos para resiliência
++            delay(60.seconds)
+             _isThinking.value = false
+         }
+     }
+@@ -177,7 +172,7 @@
+         
+         lastMessageSentTime = now
+         android.util.Log.d("ChatViewModel", "🚀 Enviando mensagem única: $text")
+-        _isThinking.value = true
++        iniciarThinking()
+         
+         viewModelScope.launch {
+             val userMsg = ChatMessage(text = text, isFromUser = true)
+@@ -188,37 +183,30 @@
+                 _messages.value = currentList
+             }
+ 
+-            val url = RetrofitClient.getBaseUrl() + "eventos"
+-            val json = JSONObject().apply {
+-                put("categoria", "SISTEMA_COMANDO_USUARIO")
+-                put("origem", "ANDROID")
+-                put("payload", JSONObject().apply {
+-                    put("texto", text)
+-                })
+-            }
+-
+-            val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
+-            val body = json.toString().toRequestBody(mediaType)
+-            
+-            val request = Request.Builder().url(url).post(body).build()
+-            
+-            client.newCall(request).enqueue(object : Callback {
++            chatTransport.enqueue(text, getApplication<Application>().packageName + ".chat", object : Callback {
+                 override fun onFailure(call: Call, e: java.io.IOException) {
+                     android.util.Log.e("ChatViewModel", "Falha no envio: ${e.message}")
+-                    viewModelScope.launch {
+-                        _isThinking.value = false
+-                        val errorList = _messages.value.toMutableList()
+-                        errorList.add(ChatMessage(text = "Erro ao conectar no cérebro. Verifique sua internet.", isFromUser = false))
+-                        _messages.value = errorList
++                    mostrarErroEnvio("Não consegui enviar a mensagem. Confira a conexão e o token nas configurações do servidor.")
++                }
++                override fun onResponse(call: Call, response: Response) {
++                    response.use {
++                        val error = BackendChatTransport.failureMessage(it.code)
++                        if (error != null) {
++                            android.util.Log.w("ChatViewModel", "Mensagem recusada: HTTP ${it.code}")
++                            mostrarErroEnvio(error)
++                        } else {
++                            android.util.Log.d("ChatViewModel", "Mensagem aceita pelo servidor: HTTP ${it.code}")
++                        }
+                     }
+                 }
+-                override fun onResponse(call: Call, response: Response) {
+-                    android.util.Log.d("ChatViewModel", "Evento enviado com sucesso (Code: ${response.code})")
+-                    // Não resetamos o isThinking aqui, esperamos a resposta da IA via WebSocket
+-                    // ou o timeout do job de thinking que já existe no init
+-                    response.close()
+-                }
+             })
+         }
+     }
++
++    private fun mostrarErroEnvio(message: String) {
++        viewModelScope.launch {
++            pararThinking()
++            _messages.value = _messages.value + ChatMessage(text = message, isFromUser = false)
++        }
++    }
+ }
+--- a/app/src/test/java/com/example/assistentecell/BackendAuthTest.kt
++++ b/app/src/test/java/com/example/assistentecell/BackendAuthTest.kt
+@@ -0,0 +1,90 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.network.BackendAuthInterceptor
++import com.example.assistentecell.network.BackendSettings
++import java.io.IOException
++import java.util.concurrent.CountDownLatch
++import java.util.concurrent.TimeUnit
++import java.util.concurrent.atomic.AtomicReference
++import okhttp3.Call
++import okhttp3.Callback
++import okhttp3.OkHttpClient
++import okhttp3.Protocol
++import okhttp3.Request
++import okhttp3.Response
++import okhttp3.ResponseBody.Companion.toResponseBody
++import org.junit.Assert.*
++import org.junit.Test
++
++class BackendAuthTest {
++    @Test fun copiedEnvLineAndBearerPrefixAreNormalized() {
++        assertEquals("example-token", BackendSettings.normalizeToken(" \r\nOLLIE_API_TOKEN=\r\n\"example-token\"\r\n"))
++        assertEquals("example-token", BackendSettings.normalizeToken("Bearer example-token"))
++        assertEquals("example-token", BackendSettings.normalizeToken("'example-token'"))
++    }
++
++    @Test fun malformedTokensAreRejectedBeforeHeaderConstruction() {
++        for (raw in listOf("", " ", "OLLIE_API_TOKEN\nexample", "abc\ndef", "abc\rdef", "abc\tdef", "abc def", "abc\u0000def", "abc\u007fdef", "abc🔑")) {
++            assertNull(BackendSettings.normalizeToken(raw))
++        }
++    }
++
++    @Test fun serverUrlIsValidatedBeforeSaving() {
++        assertEquals("https://example.test/", BackendSettings.normalizeBaseUrl(" example.test "))
++        assertEquals("http://localhost:8000/api/", BackendSettings.normalizeBaseUrl("http://localhost:8000/api"))
++        for (url in listOf("", "https://bad host/", "ftp://example.test", "https://user:pass@example.test/", "https://example.test/?token=oops")) {
++            assertNull(BackendSettings.normalizeBaseUrl(url))
++        }
++    }
++
++    private fun client(server: String, token: () -> String, received: AtomicReference<Request>): OkHttpClient =
++        OkHttpClient.Builder().addInterceptor(BackendAuthInterceptor({ server }, token))
++            .addInterceptor { chain ->
++                received.set(chain.request())
++                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
++                    .code(200).message("OK").body("ok".toResponseBody()).build()
++            }.build()
++
++    @Test fun exactCrashInputUsesFailureCallbackAndDispatcherRemainsUsable() {
++        var token = "OLLIE_API_TOKEN\nnot-a-real-secret"
++        val received = AtomicReference<Request>()
++        val client = client("https://example.test/", { token }, received)
++        try {
++            val request = Request.Builder().url("https://example.test/eventos").build()
++            val failed = CountDownLatch(1)
++            val error = AtomicReference<IOException>()
++            client.newCall(request).enqueue(object : Callback {
++                override fun onFailure(call: Call, e: IOException) { error.set(e); failed.countDown() }
++                override fun onResponse(call: Call, response: Response) { response.close(); failed.countDown() }
++            })
++            assertTrue(failed.await(3, TimeUnit.SECONDS))
++            assertTrue(error.get()?.message?.contains("Token de acesso inválido") == true)
++            assertFalse(error.get()?.message?.contains(token) == true)
++            assertNull(received.get()) // Invalid credentials never reach the next interceptor/network.
++            token = "OLLIE_API_TOKEN=example-token"
++            client.newCall(request).execute().use { assertEquals(200, it.code) }
++            assertEquals("Bearer example-token", received.get().header("Authorization"))
++        } finally {
++            client.dispatcher.executorService.shutdownNow()
++            client.connectionPool.evictAll()
++        }
++    }
++
++    @Test fun tokenIsNotReadOrSentToAnotherServer() {
++        val received = AtomicReference<Request>()
++        val client = client("https://example.test/", { error("Credential provider must not be called") }, received)
++        try {
++            client.newCall(Request.Builder().url("https://homeassistant.test/api").build()).execute().close()
++            assertNull(received.get().header("Authorization"))
++        } finally { client.dispatcher.executorService.shutdownNow() }
++    }
++
++    @Test fun emptySavedTokenDoesNotCrashRequests() {
++        val received = AtomicReference<Request>()
++        val client = client("https://example.test/", { "" }, received)
++        try {
++            client.newCall(Request.Builder().url("https://example.test/").build()).execute().close()
++            assertNull(received.get().header("Authorization"))
++        } finally { client.dispatcher.executorService.shutdownNow() }
++    }
++}
+--- a/app/src/test/java/com/example/assistentecell/BackendChatTransportTest.kt
++++ b/app/src/test/java/com/example/assistentecell/BackendChatTransportTest.kt
+@@ -0,0 +1,83 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.network.BackendAuthInterceptor
++import com.example.assistentecell.network.BackendChatTransport
++import com.google.gson.JsonParser
++import java.io.IOException
++import java.util.concurrent.CountDownLatch
++import java.util.concurrent.TimeUnit
++import java.util.concurrent.atomic.AtomicInteger
++import java.util.concurrent.atomic.AtomicReference
++import okhttp3.Call
++import okhttp3.Callback
++import okhttp3.OkHttpClient
++import okhttp3.Protocol
++import okhttp3.Request
++import okhttp3.Response
++import okhttp3.ResponseBody.Companion.toResponseBody
++import okio.Buffer
++import org.junit.Assert.*
++import org.junit.Test
++
++class BackendChatTransportTest {
++    private fun send(transport: BackendChatTransport): Int {
++        val done = CountDownLatch(1)
++        val code = AtomicInteger(-1)
++        val error = AtomicReference<IOException>()
++        transport.enqueue("Olá, Ollie!", "com.example.assistentecell.chat", object : Callback {
++            override fun onFailure(call: Call, e: IOException) { error.set(e); done.countDown() }
++            override fun onResponse(call: Call, response: Response) {
++                response.use { code.set(it.code) }; done.countDown()
++            }
++        })
++        assertTrue(done.await(3, TimeUnit.SECONDS))
++        assertNull(error.get())
++        return code.get()
++    }
++
++    @Test fun chatIncludesAuthenticationAndCanonicalEvent() {
++        val received = AtomicReference<Request>()
++        val client = OkHttpClient.Builder()
++            .addInterceptor(BackendAuthInterceptor({ "https://example.test/" }, { "example-token" }))
++            .addInterceptor { chain ->
++                received.set(chain.request())
++                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
++                    .code(202).message("Accepted").body("{}".toResponseBody()).build()
++            }.build()
++        try {
++            assertEquals(202, send(BackendChatTransport(client) { "https://example.test/" }))
++            val request = received.get()
++            assertEquals("POST", request.method)
++            assertEquals("/eventos", request.url.encodedPath)
++            assertEquals("Bearer example-token", request.header("Authorization"))
++            val buffer = Buffer()
++            request.body!!.writeTo(buffer)
++            val event = JsonParser.parseString(buffer.readUtf8()).asJsonObject
++            assertEquals("SISTEMA_COMANDO_USUARIO", event["categoria"].asString)
++            assertEquals("com.example.assistentecell.chat", event["pacote"].asString)
++            assertEquals("Olá, Ollie!", event["payload"].asJsonObject["texto"].asString)
++        } finally { client.dispatcher.executorService.shutdownNow() }
++    }
++
++    @Test fun rejectsAreReportedAndUrlChangesAreUsed() {
++        var server = "https://old.example.test/"
++        val received = AtomicReference<Request>()
++        val client = OkHttpClient.Builder()
++            .addInterceptor(BackendAuthInterceptor({ server }, { "example-token" }))
++            .addInterceptor { chain ->
++                received.set(chain.request())
++                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
++                    .code(401).message("Unauthorized").body("{}".toResponseBody()).build()
++            }.build()
++        try {
++            val transport = BackendChatTransport(client) { server }
++            server = "https://new.example.test/"
++            assertEquals(401, send(transport))
++            assertEquals("new.example.test", received.get().url.host)
++            assertEquals("Bearer example-token", received.get().header("Authorization"))
++            assertTrue(BackendChatTransport.failureMessage(401)!!.contains("token"))
++            assertNotNull(BackendChatTransport.failureMessage(503))
++            assertNull(BackendChatTransport.failureMessage(202))
++        } finally { client.dispatcher.executorService.shutdownNow() }
++    }
++}
 --- a/app/src/test/java/com/example/assistentecell/IncomingMessagePolicyTest.kt
 +++ b/app/src/test/java/com/example/assistentecell/IncomingMessagePolicyTest.kt
 @@ -0,0 +1,47 @@
