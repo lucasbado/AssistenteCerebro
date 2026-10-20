@@ -20,7 +20,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      OLLIE_WAKEWORD_WORK: ${{ runner.temp }}/ollie-wakeword
       MPLBACKEND: module://matplotlib_inline.backend_inline
       PYTHONUNBUFFERED: '1'
     steps:
@@ -30,6 +29,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
+      - name: Definir workspace temporario
+        shell: bash
+        run: echo "OLLIE_WAKEWORD_WORK=$RUNNER_TEMP/ollie-wakeword" >> "$GITHUB_ENV"
       - name: Preparar dependencias reais em CPU
         shell: bash
         run: |
