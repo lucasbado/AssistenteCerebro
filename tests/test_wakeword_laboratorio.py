@@ -3,6 +3,7 @@ import ast
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import struct
 import sys
@@ -181,3 +182,48 @@ def test_clone_incompleto_produz_erro_explicito(tmp_path, monkeypatch):
     monkeypatch.setattr(colab, 'WORK', tmp_path)
     with pytest.raises(RuntimeError, match='train.py'):
         colab.configure_sources()
+
+
+def test_subprocesso_nao_herda_backend_grafico_do_colab(tmp_path, monkeypatch):
+    from tools.wakeword.execucao import run_logged
+    inline = 'module://matplotlib_inline.backend_inline'
+    monkeypatch.setenv('MPLBACKEND', inline)
+    log = tmp_path / 'ambiente.log'
+    script = "import os; print(os.environ['MPLBACKEND'])"
+    run_logged([sys.executable, '-c', script], log_path=log)
+    assert log.read_text(encoding='utf-8').strip() == 'Agg'
+    assert os.environ['MPLBACKEND'] == inline  # O notebook mantém seu próprio backend.
+
+
+def test_cli_isolado_prepara_backend_antes_de_importar_dependencias(monkeypatch):
+    from tools.wakeword.colab_ollie import configure_runtime
+    monkeypatch.setenv('MPLBACKEND', 'module://matplotlib_inline.backend_inline')
+    configure_runtime()
+    assert os.environ['MPLBACKEND'] == 'Agg'
+
+
+@pytest.mark.parametrize('explicit_conversion', [False, True])
+def test_treino_so_converte_tflite_com_flag_explicita(tmp_path, explicit_conversion):
+    from tools.wakeword.colab_ollie import onnx_training_source
+    # Reproduz o parser e a condição do commit original, sem importar Torch.
+    source = '''import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--convert_to_tflite', action='store_true', default='False')
+args = parser.parse_args()
+if args.convert_to_tflite:
+    print('TFLITE')
+else:
+    print('ONNX')
+'''
+    script = tmp_path / 'train.py'
+    script.write_text(onnx_training_source(source))
+    arguments = ['--convert_to_tflite'] if explicit_conversion else []
+    result = subprocess.run([sys.executable, str(script), *arguments], text=True,
+                            capture_output=True, check=True)
+    assert result.stdout.strip() == ('TFLITE' if explicit_conversion else 'ONNX')
+
+
+def test_script_treino_alterado_exige_revisao():
+    from tools.wakeword.colab_ollie import onnx_training_source
+    with pytest.raises(RuntimeError, match='script de treino mudou'):
+        onnx_training_source('script diferente')

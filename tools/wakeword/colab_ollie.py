@@ -27,6 +27,11 @@ PIPER_REV = '213d4d5'
 DATA_BASE = 'https://huggingface.co/datasets/davidscripka/openwakeword_features/resolve/main/'
 
 
+def configure_runtime():
+    # Definido antes de torchmetrics/speechbrain importarem Matplotlib.
+    os.environ['MPLBACKEND'] = 'Agg'
+
+
 def run(*command, cwd=None):
     print('Executando:', ' '.join(map(str, command)), flush=True)
     run_logged(command, cwd=cwd, log_path=WORK / 'logs' / f'comando-{time.time_ns()}.log')
@@ -75,6 +80,7 @@ def configure_sources():
 
 
 def setup():
+    configure_runtime()
     if sys.version_info[:2] != (3, 11) or sys.platform != 'linux':
         raise RuntimeError('Use o Python 3.11 isolado criado pela primeira célula.')
     WORK.mkdir(exist_ok=True)
@@ -92,10 +98,48 @@ def setup():
     for name in ('melspectrogram', 'embedding_model'):
         download(f'https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/{name}.onnx',
                  WORK / f'openwakeword/openwakeword/resources/models/{name}.onnx')
+    verify_runtime()
+
+
+def onnx_training_source(source):
+    # O parser original usa a string "False", que é verdadeira em `if valor:`.
+    old = 'if args.convert_to_tflite:'
+    if source.count(old) != 1:
+        raise RuntimeError('O script de treino mudou. Revise a opção de conversão antes de continuar.')
+    return source.replace(old, 'if args.convert_to_tflite is True:', 1)
+
+
+def prepare_training_script():
+    source = WORK / 'openwakeword/openwakeword/train.py'
+    script = WORK / 'train_onnx.py'
+    script.write_text(onnx_training_source(source.read_text(encoding='utf-8')), encoding='utf-8')
+    return script
+
+
+def verify_runtime():
+    print('Verificando imports, gerador de voz e modelos de áudio...', flush=True)
     import torch
+    import matplotlib
+    import numpy as np
     from piper_phonemize import phonemize_espeak
     from openwakeword.train import Model
-    assert phonemize_espeak and Model
+    from openwakeword.utils import AudioFeatures
+    sys.path.insert(0, str(WORK / 'piper-sample-generator'))
+    from generate_samples import generate_samples
+    assert phonemize_espeak and generate_samples
+    features = AudioFeatures(inference_framework='onnx', device='cpu')
+    features(np.zeros(1280, dtype=np.int16))
+    # Uma inferência pequena verifica o modelo de treino, sem iniciar o treinamento.
+    training_model = Model()
+    with torch.no_grad():
+        prediction = training_model.model(torch.zeros(1, 16, 96))
+    if prediction.shape != (1, 1):
+        raise RuntimeError('Formato inesperado na verificação do modelo de treino.')
+    script = prepare_training_script()
+    report = {'python': sys.version.split()[0], 'matplotlib_backend': matplotlib.get_backend(),
+              'gpu_disponivel': torch.cuda.is_available(), 'modelo_audio_carregado': True,
+              'inferencia_de_treino': 'ok', 'script_sha256': hashlib.sha256(script.read_bytes()).hexdigest()}
+    (WORK / 'verificacao-ambiente.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     print(f'Ambiente pronto: Python {sys.version.split()[0]}, GPU disponível: {torch.cuda.is_available()}')
 
 
@@ -187,20 +231,23 @@ def train(phrase, examples, steps):
                   feature_data_files={'ACAV100M_sample': str(WORK / 'dados/openwakeword_features_ACAV100M_2000_hrs_16bit.npy')})
     config_path = output / 'config.yml'
     config_path.write_text(yaml.safe_dump(config), encoding='utf-8')
+    training_script = prepare_training_script()
     for phase in ('generate_clips', 'augment_clips', 'train_model'):
         print(f'Etapa: {phase}', flush=True)
-        run(sys.executable, WORK / 'openwakeword/openwakeword/train.py',
+        run(sys.executable, training_script,
             '--training_config', config_path, '--' + phase, cwd=WORK)
     model = output / 'hey_ollie.onnx'
     ort.InferenceSession(str(model), providers=['CPUExecutionProvider'])
     manifest = {'modelo': str(model), 'frase': phrase, 'exemplos': examples, 'passos': steps,
                 'sha256': hashlib.sha256(model.read_bytes()).hexdigest(), 'openwakeword_commit': OWW_REV,
+                'script_treino_sha256': hashlib.sha256(training_script.read_bytes()).hexdigest(),
                 'validacao': 'Exportação técnica. Reconhecimento da voz real ainda não avaliado.'}
     (WORK / 'ultimo_modelo.json').write_text(json.dumps(manifest, indent=2))
     print(f'Modelo exportado: {model}. Agora teste sua pronúncia no PC.')
 
 
 def main():
+    configure_runtime()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('etapa', choices=['preparar', 'previa', 'dados', 'treinar'])
     parser.add_argument('--frase', default='hey ollie')

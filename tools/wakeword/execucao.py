@@ -13,7 +13,8 @@ def run_logged(command, *, log_path, cwd=None, tail_lines=40):
     log_path = Path(log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     tail = deque(maxlen=tail_lines)
-    environment = dict(os.environ, PYTHONUNBUFFERED='1', PYTHONIOENCODING='utf-8')
+    # O kernel do Colab usa matplotlib_inline; o Python isolado não usa interface gráfica.
+    environment = dict(os.environ, PYTHONUNBUFFERED='1', PYTHONIOENCODING='utf-8', MPLBACKEND='Agg')
     with log_path.open('w', encoding='utf-8') as log:
         with subprocess.Popen(list(map(str, command)), cwd=cwd, env=environment,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

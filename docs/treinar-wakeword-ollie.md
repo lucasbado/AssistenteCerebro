@@ -62,9 +62,27 @@ confirmou que o arquivo `train.py` passou a ser encontrado no processo principal
 e no filho. A importação completa das dependências Linux continua sendo conferida
 na preparação do Colab.
 
+O erro `Key backend: module://matplotlib_inline.backend_inline` é uma variável
+gráfica herdada do kernel do Colab. O helper e seus subprocessos agora usam
+`MPLBACKEND=Agg`, sem alterar o backend do próprio notebook. A falha foi
+reproduzida com Matplotlib 3.11.2 e a correção passou em uma importação e
+renderização reais no ambiente local isolado.
+
+A preparação agora verifica também a importação do gerador Piper, o carregamento
+dos modelos ONNX de áudio e uma pequena inferência do modelo de treino antes de
+informar **Ambiente pronto**. O resultado fica em
+`/content/ollie-wakeword/verificacao-ambiente.json`. Isso ainda não verifica a
+pronúncia sintetizada, nem substitui o treinamento completo.
+
 Ao terminar, execute **5. Baixar modelo ONNX** para baixar `hey_ollie.onnx` e
 `ultimo_modelo.json`. A versão guiada exporta somente ONNX e não instala conversores
 TensorFlow/TFLite. O manifesto registra frase, parâmetros e hash do modelo.
+
+O script original fixado usa a string `"False"` como padrão da flag de conversão,
+que seria verdadeira em uma condição simples. O helper gera uma cópia
+`train_onnx.py` que só converte com a flag explicitamente verdadeira, preservando
+o clone original. O hash dessa cópia também entra no manifesto. Isso evita uma
+falha tardia por falta do TensorFlow depois de já exportar o ONNX.
 
 O notebook usa dados com restrições de uso, assim como a referência original;
 trate o modelo como destinado ao uso pessoal não comercial. Não é preciso enviar suas gravações
@@ -134,10 +152,12 @@ O novo notebook foi validado estruturalmente; o treino completo no Linux e a
 pronúncia da prévia continuam pendentes. Não há um modelo Hey Ollie pronto nesta
 revisão. Se o helper ou as dependências do treino forem alterados, regenere o
 notebook com `python tools/wakeword/gerar_notebook.py` para atualizar seus hashes.
-Os 22 testes locais passaram, cobrindo intervalo de ativação, rejeição de scores
+Os 27 testes locais passaram, cobrindo intervalo de ativação, rejeição de scores
 inválidos, formato de áudio, reinício entre gravações, integridade do notebook e
 propagação de erros reais dos processos para a saída visível. A regressão de
-importação verifica também que um subprocesso encontra o módulo de treino.
+importação verifica também que um subprocesso encontra o módulo de treino. Os
+testes novos cobrem a separação do backend gráfico e a flag de conversão. Também
+foi validado o parser do script original, sem executar o treinamento pesado.
 
 Depois dessa validação, a integração Android deverá reproduzir o processamento
 de áudio, executar os modelos no aparelho, abrir a sessão existente e pausar a
@@ -146,4 +166,5 @@ retomada com tela apagada. O treino no Colab não faz essa integração sozinho.
 
 Fontes: [treinamento oficial](https://github.com/dscripka/openWakeWord#training-new-models),
 [formato de áudio e inferência](https://github.com/dscripka/openWakeWord#usage),
-[ONNX Runtime no Android](https://onnxruntime.ai/docs/tutorials/mobile/).
+[ONNX Runtime no Android](https://onnxruntime.ai/docs/tutorials/mobile/),
+[configuração do Matplotlib](https://matplotlib.org/stable/users/explain/figure/backends.html).

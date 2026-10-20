@@ -9,6 +9,7 @@ piper-phonemize==1.1.0
 webrtcvad==2.0.10
 torchinfo==1.8.0
 torchmetrics==1.2.0
+matplotlib==3.11.2
 speechbrain==0.5.14
 audiomentations==0.33.0
 torch-audiomentations==0.11.0
