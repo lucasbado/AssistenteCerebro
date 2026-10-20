@@ -9,10 +9,15 @@ import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import tarfile
+import time
 import urllib.request
+
+if __package__:
+    from .execucao import run_logged
+else:
+    from execucao import run_logged
 
 WORK = Path('/content/ollie-wakeword')
 OWW_REV = '368c03716d1e92591906a84949bc477f3a834455'
@@ -22,7 +27,7 @@ DATA_BASE = 'https://huggingface.co/datasets/davidscripka/openwakeword_features/
 
 def run(*command, cwd=None):
     print('Executando:', ' '.join(map(str, command)), flush=True)
-    subprocess.run(list(map(str, command)), cwd=cwd, check=True)
+    run_logged(command, cwd=cwd, log_path=WORK / 'logs' / f'comando-{time.time_ns()}.log')
 
 
 def download(url, target):

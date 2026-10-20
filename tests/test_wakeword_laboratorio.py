@@ -5,6 +5,7 @@ import json
 import math
 from pathlib import Path
 import struct
+import sys
 from types import SimpleNamespace
 import wave
 
@@ -120,3 +121,33 @@ def test_avaliacao_reinicia_modelo_por_arquivo_e_conta_chamadas(tmp_path, monkey
     assert detector.resets == 2
     assert report['fracao_de_arquivos_detectados'] == 1
     assert all(len(row['ativacoes']) == 1 for row in report['resultados'])
+
+
+def test_erro_de_subprocesso_inclui_causa_de_stderr_e_log_inteiro(tmp_path):
+    from tools.wakeword.execucao import run_logged, StageError
+    log = tmp_path / 'etapa.log'
+    script = "import sys; print('iniciando'); print('ModuleNotFoundError: exemplo', file=sys.stderr); sys.exit(7)"
+    with pytest.raises(StageError) as error:
+        run_logged([sys.executable, '-c', script], log_path=log)
+    assert 'ModuleNotFoundError: exemplo' in str(error.value)
+    assert 'código 7' in str(error.value)
+    assert 'iniciando' in log.read_text(encoding='utf-8')
+    assert 'ModuleNotFoundError: exemplo' in log.read_text(encoding='utf-8')
+
+
+def test_saida_extensa_limita_erro_final_e_preserva_log(tmp_path):
+    from tools.wakeword.execucao import run_logged, StageError
+    log = tmp_path / 'etapa.log'
+    script = "import sys; [print('linha', i) for i in range(100)]; sys.exit(1)"
+    with pytest.raises(StageError) as error:
+        run_logged([sys.executable, '-c', script], log_path=log, tail_lines=3)
+    assert 'linha 0\n' not in str(error.value)
+    assert 'linha 99' in str(error.value)
+    assert len(log.read_text(encoding='utf-8').splitlines()) == 100
+
+
+def test_subprocesso_sucesso_nao_gera_falso_erro(tmp_path):
+    from tools.wakeword.execucao import run_logged
+    log = tmp_path / 'etapa.log'
+    run_logged([sys.executable, '-c', "print('pronto')"], log_path=log)
+    assert log.read_text(encoding='utf-8').strip() == 'pronto'

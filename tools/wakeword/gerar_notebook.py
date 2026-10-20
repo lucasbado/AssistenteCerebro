@@ -15,9 +15,9 @@ def cell(kind, source):
 
 def generate():
     hashes = {name: hashlib.sha256((HERE / name).read_bytes().replace(b'\r\n', b'\n')).hexdigest()
-              for name in ['colab_ollie.py', 'requirements-treino.txt']}
+              for name in ['colab_ollie.py', 'execucao.py', 'requirements-treino.txt']}
     setup = '''# @title 1. Preparar ambiente compatível (Python 3.11 separado)
-import hashlib, json, subprocess, sys, urllib.request
+import hashlib, json, sys, urllib.request
 from pathlib import Path
 ROOT = Path('/content/ollie-wakeword')
 ROOT.mkdir(exist_ok=True)
@@ -29,12 +29,17 @@ for name, expected in EXPECTED.items():
     if hashlib.sha256(content).hexdigest() != expected:
         raise RuntimeError('O código mudou. Reabra a versão atual do notebook antes de continuar.')
     (ROOT / name).write_bytes(content)
-subprocess.run([sys.executable, '-m', 'pip', 'install', 'uv==0.8.22'], check=True)
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+# Recarrega o helper ao executar novamente após uma atualização do notebook.
+sys.modules.pop('execucao', None)
+from execucao import run_logged
+run_logged([sys.executable, '-m', 'pip', 'install', 'uv==0.8.22'], log_path=ROOT / 'logs/instalar-uv.log')
 PY = ROOT / 'env/bin/python'
 if not PY.exists():
-    subprocess.run([sys.executable, '-m', 'uv', 'venv', '--seed', '--python', '3.11', str(ROOT / 'env')], check=True)
+    run_logged([sys.executable, '-m', 'uv', 'venv', '--seed', '--python', '3.11', str(ROOT / 'env')], log_path=ROOT / 'logs/criar-ambiente.log')
 def etapa(nome, *argumentos):
-    subprocess.run([str(PY), str(ROOT / 'colab_ollie.py'), nome, *map(str, argumentos)], check=True)
+    run_logged([str(PY), str(ROOT / 'colab_ollie.py'), nome, *map(str, argumentos)], log_path=ROOT / 'logs' / (nome + '.log'))
 etapa('preparar')
 '''.replace('HASHES', repr(hashes))
     preview = '''# @title 2. Ouvir a chamada antes de treinar
@@ -74,6 +79,8 @@ usando Python 3.11 separado. O ambiente padrão do Colab não é substituído.
 
 Selecione **Ambiente de execução → Alterar tipo → GPU T4**, se disponível gratuitamente.
 Não contrate créditos para este experimento. Se uma etapa falhar, pare nela e envie o erro.
+O erro final inclui as últimas linhas da causa. Logs completos ficam em
+`/content/ollie-wakeword/logs`, na lateral Arquivos.
 
 O treino usa vozes sintéticas e dados públicos, sem tokens ou gravações pessoais.
 Os dados podem ocupar dezenas de GB. O resultado é um primeiro modelo experimental

@@ -48,6 +48,12 @@ que o kernel do Colab já importou. Não é necessário reiniciá-lo por esse mo
 Se houver erro, pare nesse ponto e guarde o texto do erro; não execute as próximas
 etapas com dados ou dependências incompletos.
 
+Se uma versão antiga mostrar somente `CalledProcessError`, reabra a versão atual
+do notebook e execute a preparação novamente. A execução atual captura a saída
+do processo e inclui as últimas linhas da causa no erro final. Também salva os
+logs completos em `/content/ollie-wakeword/logs`, acessível pela lateral Arquivos
+do Colab. Reabrir o notebook não exige apagar o ambiente já preparado.
+
 Ao terminar, execute **5. Baixar modelo ONNX** para baixar `hey_ollie.onnx` e
 `ultimo_modelo.json`. A versão guiada exporta somente ONNX e não instala conversores
 TensorFlow/TFLite. O manifesto registra frase, parâmetros e hash do modelo.
@@ -120,8 +126,9 @@ O novo notebook foi validado estruturalmente; o treino completo no Linux e a
 pronúncia da prévia continuam pendentes. Não há um modelo Hey Ollie pronto nesta
 revisão. Se o helper ou as dependências do treino forem alterados, regenere o
 notebook com `python tools/wakeword/gerar_notebook.py` para atualizar seus hashes.
-Os 17 testes locais passaram, cobrindo intervalo de ativação, rejeição de scores
-inválidos, formato de áudio, reinício entre gravações e integridade do notebook.
+Os 20 testes locais passaram, cobrindo intervalo de ativação, rejeição de scores
+inválidos, formato de áudio, reinício entre gravações, integridade do notebook e
+propagação de erros reais dos processos para a saída visível.
 
 Depois dessa validação, a integração Android deverá reproduzir o processamento
 de áudio, executar os modelos no aparelho, abrir a sessão existente e pausar a
