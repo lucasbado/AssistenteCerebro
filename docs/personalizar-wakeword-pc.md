@@ -80,3 +80,8 @@ preservando a entrada B1 e a voz ativa. SHA256:
 O modelo sintetico anterior permanece em `.artifacts/wakeword/treino-ouh-lee`.
 Gravacoes e pesos pessoais ficam fora do Git. O relatorio resumido, sem audio,
 esta em [validacao da pronuncia real](validacoes/wakeword-pronuncia-real-2026-10-20.json).
+
+Depois da instalacao, o usuario testou a chamada no app aberto e confirmou:
+**Ativou e respondeu**. Os eventos locais tambem registraram deteccao,
+captura do pedido e retorno a escuta. Essa e uma confirmacao funcional ao vivo,
+sem substituir a medicao de uso prolongado.

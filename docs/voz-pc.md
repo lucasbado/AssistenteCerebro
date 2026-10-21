@@ -83,7 +83,7 @@ o texto reconhecido segue para o chat. O diagnostico de estado em
 - A captura real abriu e confirmou pausa, retomada e encerramento. O app foi
   aberto com a captura B1 ativa, confirmada pelo evento `state=wake` do worker.
 
-O teste de voz real no app e registrado apos a confirmacao do usuario. O
+No teste ao vivo com o modelo pessoal, o usuario confirmou **Ativou e respondeu**. O
 classificador sintetico tinha recall45,4% no corpus da
 [validacao do treino](validacao-wakeword-oov.md) e perdeu as seis chamadas reais
 iniciais. A personalizacao e sua calibracao agora sao avaliadas tambem com

@@ -45,8 +45,8 @@
     "modelo_instalado_e_app_reaberto": true,
     "deteccao_e_transcricao_observadas_nos_eventos_locais": true,
     "exemplo_score_wake": 0.8117282390594482,
-    "resposta_falada_confirmada_pelo_usuario": false,
-    "confirmacao_do_usuario": "Aguardando retorno do teste no app"
+    "ativacao_e_resposta_confirmadas_pelo_usuario": true,
+    "confirmacao_do_usuario": "Ativou e respondeu"
   },
   "privacidade": "Audio e pesos pessoais somente em .artifacts/wakeword, fora do Git; sem upload ou deploy do Render",
   "limites": "Poucos exemplos de um usuario e microfone. Nao mede taxa diaria, musica, TV, outras pessoas ou mudancas de ambiente."
