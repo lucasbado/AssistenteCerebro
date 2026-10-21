@@ -1,0 +1,76 @@
+{
+  "modelo": "/home/runner/work/_temp/ollie-wakeword/treinos/819db304a22a-1000-10000/hey_ollie.onnx",
+  "frase": "hey ouh_lee",
+  "exemplos": 1000,
+  "passos": 10000,
+  "sha256": "59d03446f5901a73efc43f29ca602f3c7564481620e846cdeecceb41889c92cd",
+  "openwakeword_commit": "368c03716d1e92591906a84949bc477f3a834455",
+  "script_treino_sha256": "dbbdedeed382d54d09aab62002bed46de2996f1d0d7205bb8fe2c32c9f576a16",
+  "fonemizador": {
+    "necessario": true,
+    "palavras_fora_do_dicionario": [
+      "ouh_lee"
+    ],
+    "url": "https://huggingface.co/niobures/G2P/resolve/650ef1ac309a58faf82028c13492f7147e42e107/DeepPhonemizer/pretrained/en_us_cmudict_forward.pt?download=true",
+    "sha256": "c2e1fb223d7e027bf7b33052540c6f71d19db6d7fd87ab8671152b8b114501c2",
+    "bytes": 66725366,
+    "fonemas": {
+      "ouh_lee": "[UW][L][IY]"
+    }
+  },
+  "dados": {
+    "fundos": 685,
+    "rir": 270,
+    "audioset_revision": "5a2fa42a1506470d275a47ff8e1fdac5b364e6ef",
+    "mit_revision": "b824a1ef2821f112fda0b9cb26e4278c62b425bb",
+    "features_revision": "985bf1b47e7f19c07741af82bfe32d5a9dc56096",
+    "features": {
+      "openwakeword_features_ACAV100M_2000_hrs_16bit.npy": {
+        "bytes": 17280000128,
+        "shape": [
+          5625000,
+          16,
+          96
+        ],
+        "dtype": "float16"
+      },
+      "validation_set_features.npy": {
+        "bytes": 184836608,
+        "shape": [
+          481345,
+          96
+        ],
+        "dtype": "float32"
+      }
+    }
+  },
+  "validacao": "Exportação técnica. Reconhecimento da voz real ainda não avaliado.",
+  "verificacao_exportacao": {
+    "onnx_checker": "ok",
+    "inferencia_ort": [
+      [
+        0.4468536078929901
+      ]
+    ],
+    "bytes": 205430
+  },
+  "execucao": {
+    "run_id": 39526723300,
+    "job_id": 118983007683,
+    "commit": "042c3057e1fa7c74809aa1f326602c5dafeff9d7",
+    "url": "https://github.com/lucasbado/AssistenteCerebro/actions/runs/39526723300",
+    "python": "3.11.17",
+    "device": "cpu",
+    "sequencias_passos": [
+      10000,
+      1000,
+      1000
+    ]
+  },
+  "metricas_upstream": {
+    "accuracy": 0.7250000238418579,
+    "recall": 0.45399999618530273,
+    "false_positives_per_hour": 1.2389379739761353,
+    "limites": "Métricas reportadas pelo CLI original no corpus de validação; não medem a voz nem o ambiente do usuário."
+  }
+}

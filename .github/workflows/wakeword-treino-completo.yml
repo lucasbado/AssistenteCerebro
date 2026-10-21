@@ -1,9 +1,6 @@
 name: Treinar wake word de ponta a ponta
 
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/wakeword-treino-completo.yml']
   workflow_dispatch:
     inputs:
       frase:

@@ -1,0 +1,505 @@
+{
+  "ok": true,
+  "inicio_utc": "20261021T012136340235Z",
+  "saida": "/home/runner/work/_temp/ollie-wakeword/verificacao-pipeline/20261021T012136340235Z",
+  "runtime": {
+    "python": "3.11.17 (main, Oct  1 2026, 14:32:31) [GCC 13.3.0]",
+    "plataforma": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "matplotlib_backend": "Agg",
+    "torch_cuda_disponivel": false,
+    "dispositivo": "cpu",
+    "threads_torch": 2
+  },
+  "limites": [
+    "Verificacao tecnica de uma unica atualizacao; modelo inutil para uso real.",
+    "Nao avalia a pronuncia do usuario, falsos positivos, Android ou CUDA.",
+    "Nao baixa bases de dados de treino ou capturas pessoais."
+  ],
+  "fontes": {
+    "openwakeword_commit": "368c03716d1e92591906a84949bc477f3a834455",
+    "piper_commit": "213d4d561ab8a84f71de7dddac827cb07e92c031",
+    "helper_sha256": "ae6cf38286814bf28573efbbf1f8207b476833f7610e5b210a8d84eb7b812099"
+  },
+  "imports": [
+    {
+      "modulo": "numpy",
+      "distribuicao": "numpy",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/numpy/__init__.py",
+      "versao": "1.26.4",
+      "segundos": 0.058
+    },
+    {
+      "modulo": "scipy",
+      "distribuicao": "scipy",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/scipy/__init__.py",
+      "versao": "1.12.0",
+      "segundos": 0.013
+    },
+    {
+      "modulo": "scipy.signal",
+      "distribuicao": "scipy",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/scipy/signal/__init__.py",
+      "versao": "1.12.0",
+      "segundos": 0.222
+    },
+    {
+      "modulo": "onnxruntime",
+      "distribuicao": "onnxruntime",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/onnxruntime/__init__.py",
+      "versao": "1.22.1",
+      "segundos": 0.015
+    },
+    {
+      "modulo": "onnx",
+      "distribuicao": "onnx",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/onnx/__init__.py",
+      "versao": "1.16.1",
+      "segundos": 0.251
+    },
+    {
+      "modulo": "google.protobuf",
+      "distribuicao": "protobuf",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/google/protobuf/__init__.py",
+      "versao": "4.25.8",
+      "segundos": 0
+    },
+    {
+      "modulo": "sklearn",
+      "distribuicao": "scikit-learn",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/sklearn/__init__.py",
+      "versao": "1.5.2",
+      "segundos": 0.172
+    },
+    {
+      "modulo": "torch",
+      "distribuicao": "torch",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/torch/__init__.py",
+      "versao": "2.5.0+cpu",
+      "segundos": 0.822
+    },
+    {
+      "modulo": "torchvision",
+      "distribuicao": "torchvision",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/torchvision/__init__.py",
+      "versao": "0.20.0+cpu",
+      "segundos": 0.695
+    },
+    {
+      "modulo": "torchaudio",
+      "distribuicao": "torchaudio",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/torchaudio/__init__.py",
+      "versao": "2.5.0+cpu",
+      "segundos": 0.03
+    },
+    {
+      "modulo": "torchinfo",
+      "distribuicao": "torchinfo",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/torchinfo/__init__.py",
+      "versao": "1.8.0",
+      "segundos": 0.002
+    },
+    {
+      "modulo": "matplotlib",
+      "distribuicao": "matplotlib",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/matplotlib/__init__.py",
+      "versao": "3.11.2",
+      "segundos": 0.05
+    },
+    {
+      "modulo": "matplotlib.pyplot",
+      "distribuicao": "matplotlib",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/matplotlib/pyplot.py",
+      "versao": "3.11.2",
+      "segundos": 0.272
+    },
+    {
+      "modulo": "torchmetrics",
+      "distribuicao": "torchmetrics",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/torchmetrics/__init__.py",
+      "versao": "1.2.0",
+      "segundos": 0.071
+    },
+    {
+      "modulo": "speechbrain",
+      "distribuicao": "speechbrain",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/speechbrain/__init__.py",
+      "versao": "0.5.14",
+      "segundos": 0.072
+    },
+    {
+      "modulo": "speechbrain.dataio.dataio",
+      "distribuicao": "speechbrain",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/speechbrain/dataio/dataio.py",
+      "versao": "0.5.14",
+      "segundos": 0
+    },
+    {
+      "modulo": "speechbrain.processing.signal_processing",
+      "distribuicao": "speechbrain",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/speechbrain/processing/signal_processing.py",
+      "versao": "0.5.14",
+      "segundos": 0
+    },
+    {
+      "modulo": "audiomentations",
+      "distribuicao": "audiomentations",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/audiomentations/__init__.py",
+      "versao": "0.33.0",
+      "segundos": 0.006
+    },
+    {
+      "modulo": "torch_audiomentations",
+      "distribuicao": "torch-audiomentations",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/torch_audiomentations/__init__.py",
+      "versao": "0.11.0",
+      "segundos": 0.005
+    },
+    {
+      "modulo": "acoustics",
+      "distribuicao": "acoustics",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/acoustics/__init__.py",
+      "versao": "0.2.6",
+      "segundos": 0.017
+    },
+    {
+      "modulo": "mutagen",
+      "distribuicao": "mutagen",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/mutagen/__init__.py",
+      "versao": "1.47.0",
+      "segundos": 0.002
+    },
+    {
+      "modulo": "pronouncing",
+      "distribuicao": "pronouncing",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pronouncing/__init__.py",
+      "versao": "0.2.0",
+      "segundos": 0.014
+    },
+    {
+      "modulo": "dp.phonemizer",
+      "distribuicao": "deep-phonemizer",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/dp/phonemizer.py",
+      "versao": "0.0.19",
+      "segundos": 0.002
+    },
+    {
+      "modulo": "huggingface_hub",
+      "distribuicao": "huggingface-hub",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/huggingface_hub/__init__.py",
+      "versao": "0.24.7",
+      "segundos": 0.001
+    },
+    {
+      "modulo": "soundfile",
+      "distribuicao": "soundfile",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/soundfile.py",
+      "versao": "0.12.1",
+      "segundos": 0
+    },
+    {
+      "modulo": "librosa",
+      "distribuicao": "librosa",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/librosa/__init__.py",
+      "versao": "0.10.2.post1",
+      "segundos": 0
+    },
+    {
+      "modulo": "numba",
+      "distribuicao": "numba",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/numba/__init__.py",
+      "versao": "0.61.2",
+      "segundos": 0.078
+    },
+    {
+      "modulo": "pandas",
+      "distribuicao": "pandas",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pandas/__init__.py",
+      "versao": "2.2.3",
+      "segundos": 0.003
+    },
+    {
+      "modulo": "yaml",
+      "distribuicao": "PyYAML",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/yaml/__init__.py",
+      "versao": "6.0.2",
+      "segundos": 0
+    },
+    {
+      "modulo": "requests",
+      "distribuicao": "requests",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/requests/__init__.py",
+      "versao": "2.32.5",
+      "segundos": 0
+    },
+    {
+      "modulo": "tqdm",
+      "distribuicao": "tqdm",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/tqdm/__init__.py",
+      "versao": "4.67.1",
+      "segundos": 0.001
+    },
+    {
+      "modulo": "setuptools",
+      "distribuicao": "setuptools",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/setuptools/__init__.py",
+      "versao": "75.8.0",
+      "segundos": 0
+    },
+    {
+      "modulo": "webrtcvad",
+      "distribuicao": "webrtcvad",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/webrtcvad.py",
+      "versao": "2.0.10",
+      "segundos": 0.001
+    },
+    {
+      "modulo": "piper_phonemize",
+      "distribuicao": "piper-phonemize",
+      "ok": true,
+      "origem": "/opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/piper_phonemize/__init__.py",
+      "versao": "1.1.0",
+      "segundos": 0.002
+    },
+    {
+      "modulo": "piper_train.vits.commons",
+      "distribuicao": null,
+      "ok": true,
+      "origem": "/home/runner/work/_temp/ollie-wakeword/piper-sample-generator/piper_train/vits/commons.py",
+      "segundos": 0.004
+    },
+    {
+      "modulo": "generate_samples",
+      "distribuicao": null,
+      "ok": true,
+      "origem": "/home/runner/work/_temp/ollie-wakeword/piper-sample-generator/generate_samples.py",
+      "segundos": 0
+    },
+    {
+      "modulo": "openwakeword",
+      "distribuicao": "openwakeword",
+      "ok": true,
+      "origem": "/home/runner/work/_temp/ollie-wakeword/openwakeword/openwakeword/__init__.py",
+      "versao": "0.6.0",
+      "segundos": 0.04
+    },
+    {
+      "modulo": "openwakeword.data",
+      "distribuicao": "openwakeword",
+      "ok": true,
+      "origem": "/home/runner/work/_temp/ollie-wakeword/openwakeword/openwakeword/data.py",
+      "versao": "0.6.0",
+      "segundos": 0.001
+    },
+    {
+      "modulo": "openwakeword.utils",
+      "distribuicao": "openwakeword",
+      "ok": true,
+      "origem": "/home/runner/work/_temp/ollie-wakeword/openwakeword/openwakeword/utils.py",
+      "versao": "0.6.0",
+      "segundos": 0
+    },
+    {
+      "modulo": "openwakeword.train",
+      "distribuicao": "openwakeword",
+      "ok": true,
+      "origem": "/home/runner/work/_temp/ollie-wakeword/openwakeword/openwakeword/train.py",
+      "versao": "0.6.0",
+      "segundos": 0.001
+    }
+  ],
+  "piper_modelo_sha256": "e95ee53770bf598c354a6e6dbfc95ccb259aeeb501d35a86be8a767429ab0ff6",
+  "audio_piper": {
+    "canais": 1,
+    "taxa_hz": 16000,
+    "bytes_por_amostra": 2,
+    "frames": 11600,
+    "compressao": "NONE",
+    "duracao_segundos": 0.725,
+    "pico_absoluto": 32767,
+    "rms": 6359.919265861467,
+    "sha256": "a98439f24459cc296c0f0b041681307788da43281156f43eb7b6e2e0d28ed6a9",
+    "caminho": "/home/runner/work/_temp/ollie-wakeword/verificacao-pipeline/20261021T012136340235Z/audio/hey_ollie.wav",
+    "geracao_segundos": 0.497,
+    "amostras_geradas": 1
+  },
+  "fonemizador_oov": {
+    "necessario": true,
+    "palavras_fora_do_dicionario": [
+      "ouh_lee"
+    ],
+    "url": "https://huggingface.co/niobures/G2P/resolve/650ef1ac309a58faf82028c13492f7147e42e107/DeepPhonemizer/pretrained/en_us_cmudict_forward.pt?download=true",
+    "sha256": "c2e1fb223d7e027bf7b33052540c6f71d19db6d7fd87ab8671152b8b114501c2",
+    "bytes": 66725366,
+    "fonemas": {
+      "ouh_lee": "[UW][L][IY]"
+    },
+    "frase": "hey ouh_lee",
+    "texto_adversarial": "heymann polygram's",
+    "audio_adversarial": {
+      "canais": 1,
+      "taxa_hz": 16000,
+      "bytes_por_amostra": 2,
+      "frames": 19760,
+      "compressao": "NONE",
+      "duracao_segundos": 1.235,
+      "pico_absoluto": 32766,
+      "rms": 6747.382131129211,
+      "sha256": "334c2a06d3cf5b9f189aaf9c058453d68d083ad475b0bcce3c50507f0d9d279c",
+      "caminho": "/home/runner/work/_temp/ollie-wakeword/verificacao-pipeline/20261021T012136340235Z/adversarial/negativo.wav"
+    }
+  },
+  "aumentacao": {
+    "lotes": 1,
+    "amostras": 1,
+    "shape": [
+      1,
+      32000
+    ],
+    "dtype": "int16",
+    "probabilidades": {
+      "SevenBandParametricEQ": 0,
+      "TanhDistortion": 0,
+      "PitchShift": 0,
+      "BandStopFilter": 0,
+      "AddColoredNoise": 0,
+      "AddBackgroundNoise": 0,
+      "Gain": 1,
+      "RIR": 0
+    },
+    "fundos_externos": 0,
+    "respostas_de_ambiente": 0
+  },
+  "features": {
+    "shape": [
+      2,
+      16,
+      96
+    ],
+    "dtype": "float32",
+    "finitos": true,
+    "voz_e_silencio_distintos": true,
+    "onnx_provedor": "CPUExecutionProvider"
+  },
+  "treino": {
+    "classe_upstream": "openwakeword.train.Model",
+    "metodo": "model + loss + backward + optimizer.step do upstream",
+    "otimizador": "Adam",
+    "atualizacoes_reais": 1,
+    "passos_adam_por_parametro": [
+      1
+    ],
+    "batch_shape": [
+      2,
+      16,
+      96
+    ],
+    "rotulos": [
+      [
+        1
+      ],
+      [
+        0
+      ]
+    ],
+    "loss_antes": 0.7348998785018921,
+    "loss_depois": 0.5725818276405334,
+    "norma_gradientes": 8.882543563842773,
+    "parametros_alterados": [
+      "layer1.weight",
+      "layer1.bias",
+      "layernorm1.weight",
+      "layernorm1.bias",
+      "blocks.0.fcn_layer.weight",
+      "blocks.0.fcn_layer.bias",
+      "blocks.0.layer_norm.weight",
+      "blocks.0.layer_norm.bias",
+      "last_layer.weight",
+      "last_layer.bias"
+    ],
+    "scores_antes": [
+      [
+        0.4058467745780945
+      ],
+      [
+        0.43335381150245667
+      ]
+    ],
+    "scores_depois": [
+      [
+        0.5222958922386169
+      ],
+      [
+        0.39082071185112
+      ]
+    ]
+  },
+  "exportacao": {
+    "caminho": "/home/runner/work/_temp/ollie-wakeword/verificacao-pipeline/20261021T012136340235Z/apenas_verificacao_hey_ollie.onnx",
+    "sha256": "b8e972034036d862400a427df19bb1554de64393f6542aa103ad4562a29584df",
+    "bytes": 859394,
+    "onnx_checker": "ok",
+    "provedores": [
+      "CPUExecutionProvider"
+    ],
+    "input_name": "onnx::Flatten_0",
+    "input_shape": [
+      1,
+      16,
+      96
+    ],
+    "output_shape": [
+      2,
+      1
+    ],
+    "scores": [
+      [
+        0.5222959518432617
+      ],
+      [
+        0.39082080125808716
+      ]
+    ],
+    "erro_maximo_torch_onnx": 8.940696716308594e-8
+  },
+  "duracao_segundos": 5.886,
+  "execucao": {
+    "run_id": 39526723368,
+    "job_id": 118983008798,
+    "commit": "042c3057e1fa7c74809aa1f326602c5dafeff9d7",
+    "url": "https://github.com/lucasbado/AssistenteCerebro/actions/runs/39526723368",
+    "cache_inicial": "<Error><Code>AccessDenied</Code></Error>"
+  }
+}

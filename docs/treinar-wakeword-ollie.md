@@ -103,6 +103,36 @@ informar **Ambiente pronto**. O resultado fica em
 `/content/ollie-wakeword/verificacao-ambiente.json`. Isso ainda não verifica a
 pronúncia sintetizada, nem substitui o treinamento completo.
 
+Se a chamada incluir uma palavra fora do dicionário, como `hey ouh_lee`, o
+gerador de negativos também precisa do checkpoint CMUDict do DeepPhonemizer.
+A URL S3 original passou a responder `403`; o código externo salvava a resposta
+XML como `.pt`, causando `_pickle.UnpicklingError: invalid load key, '<'`.
+O helper agora prepara esse checkpoint antes da geração dos positivos, usando
+uma cópia pública em revisão fixa e conferindo o SHA256. Um arquivo inválido
+deixado pela tentativa anterior é substituído automaticamente. Os fonemas e
+o hash do checkpoint entram no manifesto do treino.
+O [teste de reparo e o treino completo com `hey ouh_lee`](validacao-wakeword-oov.md)
+foram concluidos em Linux/CPU, incluindo geracao de negativos, treinamento e
+exportacao. O modelo dessa rodada esta em
+`.artifacts/wakeword/treino-ouh-lee/hey_ollie.onnx`, ainda experimental.
+
+Para atualizar um Colab já aberto sem excluir seus dados ou áudios, execute
+esta célula no mesmo ambiente:
+
+```python
+import json, urllib.request
+url = 'https://raw.githubusercontent.com/lucasbado/AssistenteCerebro/main/tools/wakeword/treinar_ollie.ipynb'
+with urllib.request.urlopen(url) as resposta:
+    notebook_atual = json.load(resposta)
+primeira = next(c for c in notebook_atual['cells'] if c['cell_type'] == 'code')
+exec(''.join(primeira['source']))
+```
+
+Ela atualiza os helpers e confere o ambiente, reaproveitando os downloads.
+Depois execute novamente a etapa 4 com a mesma frase e a confirmação de
+pronúncia marcada. O CLI reaproveita os conjuntos de áudios que já atingiram
+a quantidade esperada.
+
 Ao terminar, execute **5. Baixar modelo ONNX** para baixar `hey_ollie.onnx` e
 `ultimo_modelo.json`. A versão guiada exporta somente ONNX e não instala conversores
 TensorFlow/TFLite. O manifesto registra frase, parâmetros e hash do modelo.
