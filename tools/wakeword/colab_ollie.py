@@ -29,6 +29,12 @@ PIPER_REV = '213d4d5'
 MIT_REV = 'b824a1ef2821f112fda0b9cb26e4278c62b425bb'
 AUDIOSET_REV = '5a2fa42a1506470d275a47ff8e1fdac5b364e6ef'
 FEATURES_REV = '985bf1b47e7f19c07741af82bfe32d5a9dc56096'
+# Copia publica do checkpoint CMUDict/ARPAbet, em revisao imutavel.
+# A origem S3 usada pelo upstream responde 403 e grava XML como se fosse .pt.
+PHONEMIZER_URL = ('https://huggingface.co/niobures/G2P/resolve/'
+                  '650ef1ac309a58faf82028c13492f7147e42e107/'
+                  'DeepPhonemizer/pretrained/en_us_cmudict_forward.pt?download=true')
+PHONEMIZER_SHA256 = 'c2e1fb223d7e027bf7b33052540c6f71d19db6d7fd87ab8671152b8b114501c2'
 FEATURE_FILES = {
     'openwakeword_features_ACAV100M_2000_hrs_16bit.npy': (17280000128, (5625000, 16, 96), 'float16'),
     'validation_set_features.npy': (184836608, (481345, 96), 'float32'),
@@ -45,10 +51,21 @@ def run(*command, cwd=None):
     run_logged(command, cwd=cwd, log_path=WORK / 'logs' / f'comando-{time.time_ns()}.log')
 
 
-def download(url, target):
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as source:
+        for block in iter(lambda: source.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def download(url, target, *, expected_sha256=None):
     target = Path(target)
     if target.is_file() and target.stat().st_size:
-        return
+        if expected_sha256 is None or file_sha256(target) == expected_sha256:
+            return
+        print(f'Substituindo arquivo invalido: {target.name}', flush=True)
+        target.unlink()
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_suffix(target.suffix + '.parcial')
     print(f'Baixando {target.name}...', flush=True)
@@ -57,9 +74,32 @@ def download(url, target):
             shutil.copyfileobj(response, output, length=1024 * 1024)
         if not temporary.stat().st_size:
             raise ValueError(f'Download vazio: {target.name}')
+        if expected_sha256 is not None and file_sha256(temporary) != expected_sha256:
+            raise ValueError(f'SHA256 inesperado: {target.name}. O download nao sera usado como modelo.')
         temporary.replace(target)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def prepare_phonemizer(phrase):
+    """Prepara o fallback OOV antes de gastar tempo sintetizando os positivos."""
+    import pronouncing
+    unknown = list(dict.fromkeys(word for word in phrase.split()
+                                 if not pronouncing.phones_for_word(word)))
+    report = {'necessario': bool(unknown), 'palavras_fora_do_dicionario': unknown}
+    if not unknown:
+        return report
+    checkpoint = WORK / 'openwakeword/openwakeword/resources/en_us_cmudict_forward.pt'
+    download(PHONEMIZER_URL, checkpoint, expected_sha256=PHONEMIZER_SHA256)
+    from dp.phonemizer import Phonemizer
+    phonemizer = Phonemizer.from_checkpoint(str(checkpoint))
+    predictions = {word: phonemizer(word, lang='en_us') for word in unknown}
+    if any(not isinstance(phones, str) or not phones.strip() for phones in predictions.values()):
+        raise RuntimeError('O fonemizador nao gerou fonemas para a chamada escolhida.')
+    report.update(url=PHONEMIZER_URL, sha256=PHONEMIZER_SHA256,
+                  bytes=checkpoint.stat().st_size, fonemas=predictions)
+    print(f'Fonemizador pronto para: {", ".join(unknown)}', flush=True)
+    return report
 
 
 def checkout(url, path, revision):
@@ -252,6 +292,7 @@ def train(phrase, examples, steps):
         raise RuntimeError('A frase mudou. Gere e ouça a nova prévia primeiro.')
     if not (WORK / 'dados-prontos.json').is_file():
         raise RuntimeError('Execute a etapa de dados antes do treinamento.')
+    phonemizer_report = prepare_phonemizer(phrase)
     config = yaml.safe_load((WORK / 'openwakeword/examples/custom_model.yml').read_text())
     # Configurações diferentes usam pastas próprias para não reutilizar exemplos de outra frase.
     output = WORK / 'treinos' / f'{phrase_id(phrase)}-{examples}-{steps}'
@@ -277,6 +318,7 @@ def train(phrase, examples, steps):
     manifest = {'modelo': str(model), 'frase': phrase, 'exemplos': examples, 'passos': steps,
                 'sha256': hashlib.sha256(model.read_bytes()).hexdigest(), 'openwakeword_commit': OWW_REV,
                 'script_treino_sha256': hashlib.sha256(training_script.read_bytes()).hexdigest(),
+                'fonemizador': phonemizer_report,
                 'dados': json.loads((WORK / 'dados-prontos.json').read_text()),
                 'validacao': 'Exportação técnica. Reconhecimento da voz real ainda não avaliado.'}
     (WORK / 'ultimo_modelo.json').write_text(json.dumps(manifest, indent=2))

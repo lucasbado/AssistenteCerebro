@@ -38,7 +38,17 @@ jobs:
           mkdir -p "$OLLIE_WAKEWORD_WORK"
           cp tools/wakeword/requirements-treino.txt "$OLLIE_WAKEWORD_WORK/requirements-treino.txt"
           python tools/wakeword/colab_ollie.py preparar --workspace "$OLLIE_WAKEWORD_WORK" --cpu
-      - name: Gerar uma amostra e executar uma atualizacao de pesos
+      - name: Reproduzir arquivo XML invalido deixado pelo erro 403
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path(os.environ['OLLIE_WAKEWORD_WORK']) / 'openwakeword/openwakeword/resources/en_us_cmudict_forward.pt'
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text('<Error><Code>AccessDenied</Code></Error>')
+          PY
+      - name: Testar positivo, negativo OOV, uma atualizacao de pesos e exportacao
         if: always()
         shell: bash
         run: |

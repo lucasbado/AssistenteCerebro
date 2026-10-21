@@ -1,7 +1,7 @@
 """Valida o pipeline real em Linux/Python 3.11, sem treinar um detector utilizavel.
 
-Requer o workspace preparado por colab_ollie.py. Gera uma unica amostra Piper,
-uma aumentacao, um negativo sintetico de silencio e UMA atualizacao Adam real.
+Requer o workspace preparado por colab_ollie.py. Gera um positivo Piper e um
+negativo adversarial OOV, uma aumentacao, silencio e UMA atualizacao Adam real.
 Nao baixa bases de dados, nao usa microfone e nao publica/substitui modelos.
 """
 import argparse
@@ -135,7 +135,7 @@ def pipeline(workspace, output, report):
     import onnxruntime as ort
     import torch
     from generate_samples import generate_samples
-    from openwakeword.data import augment_clips
+    from openwakeword.data import augment_clips, generate_adversarial_texts
     from openwakeword.train import Model as TrainingModel
     from openwakeword.utils import AudioFeatures
 
@@ -164,6 +164,26 @@ def pipeline(workspace, output, report):
     samples, report['audio_piper'] = check_wav(clips[0])
     report['audio_piper']['geracao_segundos'] = round(time.monotonic() - started, 3)
     report['audio_piper']['amostras_geradas'] = 1
+
+    # Reproduz o caminho ausente no teste com "hey ollie": palavra fora do CMUDict.
+    # Verifica download/cache, inferencia DeepPhonemizer, geracao adversarial e Piper.
+    oov_phrase = 'hey ouh_lee'
+    report['fonemizador_oov'] = helper.prepare_phonemizer(oov_phrase)
+    if not report['fonemizador_oov']['necessario']:
+        raise RuntimeError('A frase de regressao deixou de exercitar o fallback OOV.')
+    adversarial = generate_adversarial_texts(oov_phrase, N=1,
+                                           include_partial_phrase=0, include_input_words=0)
+    if not adversarial or not adversarial[0].strip() or adversarial[0] == oov_phrase:
+        raise RuntimeError('O gerador nao produziu o negativo adversarial OOV.')
+    negative_dir = output / 'adversarial'
+    negative_dir.mkdir()
+    generate_samples(text=adversarial[0], model=model_path, output_dir=negative_dir,
+                     max_samples=1, batch_size=1, file_names=['negativo.wav'],
+                     length_scales=[1.1], noise_scales=[0.7], noise_scale_ws=[0.7],
+                     auto_reduce_batch_size=False)
+    _, info = check_wav(negative_dir / 'negativo.wav')
+    report['fonemizador_oov'].update(frase=oov_phrase, texto_adversarial=adversarial[0],
+                                     audio_adversarial=info)
 
     # O mesmo gerador usado pelo treino completo, com uma aumentacao leve de
     # ganho. Backgrounds/RIR externos e seus grandes downloads sao dispensados.

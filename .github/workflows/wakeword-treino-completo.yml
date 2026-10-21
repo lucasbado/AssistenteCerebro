@@ -1,7 +1,15 @@
 name: Treinar wake word de ponta a ponta
 
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/wakeword-treino-completo.yml']
   workflow_dispatch:
+    inputs:
+      frase:
+        description: Chamada a sintetizar e treinar
+        required: true
+        default: 'hey ouh_lee'
 
 permissions:
   contents: read
@@ -19,6 +27,7 @@ jobs:
       OMP_NUM_THREADS: '2'
       MKL_NUM_THREADS: '2'
       HF_HUB_DISABLE_TELEMETRY: '1'
+      OLLIE_TRAINING_PHRASE: ${{ inputs.frase || 'hey ouh_lee' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,12 +52,12 @@ jobs:
           mkdir -p "$OLLIE_WAKEWORD_WORK"
           cp tools/wakeword/requirements-treino.txt "$OLLIE_WAKEWORD_WORK/requirements-treino.txt"
           python tools/wakeword/colab_ollie.py preparar --workspace "$OLLIE_WAKEWORD_WORK" --cpu
-      - name: 2 - Gerar previa hey ollie
-        run: python tools/wakeword/colab_ollie.py previa --workspace "$OLLIE_WAKEWORD_WORK" --frase 'hey ollie'
+      - name: 2 - Gerar previa da chamada
+        run: python tools/wakeword/colab_ollie.py previa --workspace "$OLLIE_WAKEWORD_WORK" --frase "$OLLIE_TRAINING_PHRASE"
       - name: 3 - Preparar todos os dados reais
         run: python tools/wakeword/colab_ollie.py dados --workspace "$OLLIE_WAKEWORD_WORK"
       - name: 4 - Gerar positivos e adversariais, aumentar e treinar
-        run: python tools/wakeword/colab_ollie.py treinar --workspace "$OLLIE_WAKEWORD_WORK" --frase 'hey ollie' --exemplos 1000 --passos 10000
+        run: python tools/wakeword/colab_ollie.py treinar --workspace "$OLLIE_WAKEWORD_WORK" --frase "$OLLIE_TRAINING_PHRASE" --exemplos 1000 --passos 10000
       - name: 5 - Conferir exportacao e registrar resultado
         shell: bash
         run: |
