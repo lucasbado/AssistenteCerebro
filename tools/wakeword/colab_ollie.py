@@ -173,6 +173,8 @@ def preview(phrase):
 
 
 def data():
+    # Uma tentativa nova que falha nao pode conservar a aprovacao da anterior.
+    (WORK / 'dados-prontos.json').unlink(missing_ok=True)
     from huggingface_hub import snapshot_download, hf_hub_download
     import soundfile as sf
     from scipy.signal import resample_poly
@@ -180,8 +182,6 @@ def data():
     import numpy as np
     assets = WORK / 'dados'
     assets.mkdir(exist_ok=True)
-    # Uma tentativa nova que falha nao pode conservar a aprovacao da anterior.
-    (WORK / 'dados-prontos.json').unlink(missing_ok=True)
     rir = snapshot_download(repo_id='davidscripka/MIT_environmental_impulse_responses',
                             repo_type='dataset', allow_patterns=['16khz/*.wav'],
                             revision=MIT_REV, token=False, local_dir=str(assets / 'mit'))
@@ -243,10 +243,10 @@ def data():
 
 
 def train(phrase, examples, steps):
+    (WORK / 'ultimo_modelo.json').unlink(missing_ok=True)
     import yaml
     import onnxruntime as ort
     import torch
-    (WORK / 'ultimo_modelo.json').unlink(missing_ok=True)
     preview_state = json.loads((WORK / 'previa.json').read_text())
     if preview_state['frase'] != phrase:
         raise RuntimeError('A frase mudou. Gere e ouça a nova prévia primeiro.')

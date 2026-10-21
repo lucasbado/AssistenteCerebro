@@ -163,6 +163,20 @@ def test_feature_corrompida_nao_e_aceita_pelo_manifesto(dataset, corruption):
     assert not (dataset.root / 'dados-prontos.json').exists()
 
 
+@pytest.mark.parametrize('method, arguments, dependency, manifest', [
+    ('data', (), 'huggingface_hub', 'dados-prontos.json'),
+    ('train', ('hey ollie', 1000, 10000), 'yaml', 'ultimo_modelo.json'),
+])
+def test_import_ausente_tambem_invalida_resultado_antigo(tmp_path, monkeypatch, method, arguments, dependency, manifest):
+    monkeypatch.setattr(tool, 'WORK', tmp_path)
+    stale = tmp_path / manifest
+    stale.write_text('{"resultado": "antigo"}')
+    monkeypatch.setitem(sys.modules, dependency, None)
+    with pytest.raises(ModuleNotFoundError):
+        getattr(tool, method)(*arguments)
+    assert not stale.exists()
+
+
 def test_sem_respostas_de_ambiente_interrompe_antes_do_corpus_grande(dataset):
     (dataset.rir / 'sala.wav').unlink()
     with pytest.raises(RuntimeError, match='Nenhuma resposta'):
