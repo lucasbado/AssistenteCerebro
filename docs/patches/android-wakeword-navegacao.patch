@@ -1,0 +1,1067 @@
+diff --git a/.gitignore b/.gitignore
+--- a/.gitignore
++++ b/.gitignore
+@@ -18,3 +18,7 @@
+ .kotlin/
+ venv/
+ .venv/
++
++# Modelos pessoais e gravacoes de teste: somente local, nunca publicar no Git.
++/app/src/main/assets/wakeword/
++/app/src/androidTest/assets/wakeword-fixtures/
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -38,7 +38,7 @@
+ }
+ 
+ dependencies {
+-    implementation(libs.androidx.benchmark.common)
++    androidTestImplementation(libs.androidx.benchmark.common)
+     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
+     implementation(composeBom)
+     androidTestImplementation(composeBom)
+@@ -62,6 +62,7 @@
+     implementation("androidx.work:work-runtime-ktx:2.9.0")
+     implementation("com.google.android.gms:play-services-location:21.3.0")
+     implementation(libs.vosk.android)
++    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.0")
+     implementation("com.google.android.gms:play-services-wearable:18.0.0")
+ 
+     testImplementation(libs.junit)
+diff --git a/app/src/androidTest/java/com/example/assistentecell/NavigationTest.kt b/app/src/androidTest/java/com/example/assistentecell/NavigationTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/com/example/assistentecell/NavigationTest.kt
+@@ -0,0 +1,57 @@
++package com.example.assistentecell
++
++import android.content.Intent
++import androidx.compose.ui.test.assertIsDisplayed
++import androidx.compose.ui.test.assertTextContains
++import androidx.compose.ui.test.junit4.createAndroidComposeRule
++import androidx.compose.ui.test.onNodeWithTag
++import androidx.compose.ui.test.performClick
++import androidx.compose.ui.test.performTextInput
++import androidx.test.espresso.Espresso.pressBack
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import org.junit.Assert.assertFalse
++import org.junit.Rule
++import org.junit.Test
++import org.junit.runner.RunWith
++
++@RunWith(AndroidJUnit4::class)
++class NavigationTest {
++    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
++
++    @Test fun tabsOpenChatAndReturnHomeWithoutStackingPages() {
++        listOf("chat", "pc_control", "capabilities", "settings", "chat").forEach { route ->
++            compose.onNodeWithTag("nav-$route").performClick()
++            compose.onNodeWithTag("page-$route").assertIsDisplayed()
++        }
++        // Repeated taps don't stack the same screen; Back returns to Base.
++        compose.onNodeWithTag("nav-chat").performClick()
++        pressBack()
++        compose.onNodeWithTag("page-home").assertIsDisplayed()
++    }
++
++    @Test fun chatIntentWaitsForGraphWhenActivityIsCreated() {
++        compose.activityRule.scenario.onActivity { it.intent.putExtra("target_screen", "chat") }
++        compose.activityRule.scenario.recreate()
++        compose.onNodeWithTag("page-chat").assertIsDisplayed()
++        compose.activityRule.scenario.onActivity { assertFalse(it.intent.hasExtra("target_screen")) }
++    }
++
++    @Test fun chatIntentWorksWhenActivityIsAlreadyOpen() {
++        compose.activityRule.scenario.onActivity {
++            // ActivityScenario matches lifecycle events by the launch intent filter.
++            it.startActivity(Intent(it.intent).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
++                .putExtra("target_screen", "chat"))
++        }
++        compose.onNodeWithTag("page-chat").assertIsDisplayed()
++    }
++
++    @Test fun draftSurvivesTabChangesAndKeyboardKeepsInputVisible() {
++        compose.onNodeWithTag("nav-chat").performClick()
++        compose.onNodeWithTag("chat-input").performClick().performTextInput("Rascunho")
++        compose.onNodeWithTag("chat-input").assertIsDisplayed()
++        pressBack() // Hide the keyboard before selecting another tab.
++        compose.onNodeWithTag("nav-settings").performClick()
++        compose.onNodeWithTag("nav-chat").performClick()
++        compose.onNodeWithTag("chat-input").assertTextContains("Rascunho")
++    }
++}
+diff --git a/app/src/androidTest/java/com/example/assistentecell/OnnxWakeDetectorTest.kt b/app/src/androidTest/java/com/example/assistentecell/OnnxWakeDetectorTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/com/example/assistentecell/OnnxWakeDetectorTest.kt
+@@ -0,0 +1,55 @@
++package com.example.assistentecell
++
++import android.os.SystemClock
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import androidx.test.platform.app.InstrumentationRegistry
++import com.example.assistentecell.voice.OnnxWakeDetector
++import com.example.assistentecell.voice.WakeWordGate
++import org.json.JSONArray
++import org.json.JSONObject
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import java.io.File
++import java.nio.ByteBuffer
++import java.nio.ByteOrder
++import kotlin.math.abs
++
++@RunWith(AndroidJUnit4::class)
++class OnnxWakeDetectorTest {
++    @Test fun androidScoresMatchPythonAndRejectSimilarPhrases() {
++        val instrumentation = InstrumentationRegistry.getInstrumentation()
++        val app = instrumentation.targetContext
++        val fixtures = instrumentation.context.assets
++        val cases = JSONArray(fixtures.open("wakeword-fixtures/expected.json").bufferedReader().use { it.readText() })
++        val reports = JSONArray()
++        OnnxWakeDetector.load { name -> app.assets.open("wakeword/$name").use { it.readBytes() } }.use { detector ->
++            for (i in 0 until cases.length()) {
++                val fixture = cases.getJSONObject(i)
++                val bytes = fixtures.open("wakeword-fixtures/${fixture.getString("file")}").use { it.readBytes() }
++                val source = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
++                val expected = fixture.getJSONArray("scores")
++                val gate = WakeWordGate()
++                val durations = mutableListOf<Double>()
++                detector.reset()
++                var hits = 0
++                var error = 0f
++                for (frameIndex in 0 until expected.length()) {
++                    val frame = ShortArray(OnnxWakeDetector.FRAME)
++                    source.get(frame)
++                    val start = SystemClock.elapsedRealtimeNanos()
++                    val score = detector.predict(frame)
++                    durations.add((SystemClock.elapsedRealtimeNanos() - start) / 1e6)
++                    error = maxOf(error, abs(score - expected.getDouble(frameIndex).toFloat()))
++                    if (gate.accept(score, false, (frameIndex + 1) * 80L)) hits++
++                }
++                assertTrue("Python/Android drift ${fixture.getString("file")}: $error", error < .002f)
++                assertEquals(fixture.getString("file"), fixture.getInt("hits"), hits)
++                val ordered = durations.sorted()
++                reports.put(JSONObject().put("file", fixture.getString("file")).put("hits", hits)
++                    .put("max_score_error", error).put("median_ms", ordered[ordered.size / 2]).put("max_ms", ordered.last()))
++            }
++        }
++        File(app.filesDir, "wakeword-validation.json").writeText(reports.toString(2))
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/MainActivity.kt b/app/src/main/java/com/example/assistentecell/MainActivity.kt
+--- a/app/src/main/java/com/example/assistentecell/MainActivity.kt
++++ b/app/src/main/java/com/example/assistentecell/MainActivity.kt
+@@ -65,6 +65,13 @@
+ import androidx.compose.foundation.layout.offset
+ import androidx.compose.material3.ModalBottomSheet
+ import androidx.compose.material3.rememberModalBottomSheetState
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.ui.platform.LocalDensity
++import androidx.compose.ui.platform.testTag
++import com.example.assistentecell.ui.navigation.OllieNavigationBar
++import com.example.assistentecell.ui.navigation.OlliePageHeader
++import com.example.assistentecell.ui.navigation.openOlliePage
++import kotlinx.coroutines.flow.first
+ import androidx.compose.runtime.collectAsState
+ import androidx.compose.ui.graphics.graphicsLayer
+ import androidx.compose.material3.ExperimentalMaterial3Api
+@@ -108,6 +115,8 @@
+     private val automationViewModel: AutomationViewModel by viewModels {
+         AutomationViewModelFactory(RetrofitClient.cognitiveRepository)
+     }
++
++    private var requestedScreen by mutableStateOf<String?>(null)
+ 
+     private val permissionLauncher: ActivityResultLauncher<Array<String>> =
+         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ -> showAssistantIfRequested() }
+@@ -127,11 +136,13 @@
+     override fun onNewIntent(newIntent: Intent) {
+         super.onNewIntent(newIntent)
+         setIntent(newIntent)
++        requestedScreen = newIntent.getStringExtra("target_screen")
+         showAssistantIfRequested()
+     }
+ 
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
++        requestedScreen = intent?.getStringExtra("target_screen")
+         android.util.Log.e("MainActivity", "🔥 APP INICIADO - VERSÃO COM FIX DE MONITORAMENTO")
+         
+         // Inicializa Infraestrutura Dinâmica
+@@ -143,7 +154,7 @@
+         monitorVM.startMonitoring()
+ 
+         setContent {
+-            AssistenteCellTheme {
++            AssistenteCellTheme(darkTheme = true, dynamicColor = false) {
+                 MainContent(
+                     profileViewModel,
+                     cognitiveViewModel,
+@@ -151,7 +162,12 @@
+                     chatViewModel,
+                     monitorVM,
+                     homeAssistantViewModel,
+-                    automationViewModel
++                    automationViewModel,
++                    requestedScreen = requestedScreen,
++                    onScreenOpened = {
++                        requestedScreen = null
++                        intent?.removeExtra("target_screen")
++                    }
+                 )
+             }
+         }
+@@ -221,22 +237,31 @@
+     chatViewModel: ChatViewModel,
+     systemMonitoringViewModel: com.example.assistentecell.ui.viewmodel.SystemMonitoringViewModel,
+     haViewModel: HomeAssistantViewModel,
+-    automationViewModel: AutomationViewModel
++    automationViewModel: AutomationViewModel,
++    requestedScreen: String? = null,
++    onScreenOpened: () -> Unit = {},
+ ) {
+     val navController = rememberNavController()
+     val context = LocalContext.current
+-    
+-    // 🚀 Redirecionamento de Notificação
+-    LaunchedEffect(Unit) {
+-        val target = (context as? MainActivity)?.intent?.getStringExtra("target_screen")
+-        if (target == "chat") {
+-            navController.navigate(Screen.Chat.route) {
+-                popUpTo(navController.graph.findStartDestination().id)
+-                launchSingleTop = true
+-            }
+-        }
+-    }
+-    
++    val entry by navController.currentBackStackEntryAsState()
++    val route = entry?.destination?.route
++    var showMouseTray by rememberSaveable { mutableStateOf(false) }
++    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
++
++    fun openPage(destination: String) {
++        if (destination == Screen.Mouse.route) showMouseTray = true
++        else navController.openOlliePage(destination)
++    }
++
++    // Notification/session intents can arrive before permissions and NavHost are ready.
++    LaunchedEffect(requestedScreen) {
++        if (requestedScreen == Screen.Chat.route) {
++            navController.currentBackStackEntryFlow.first()
++            navController.openOlliePage(Screen.Chat.route)
++            onScreenOpened()
++        }
++    }
++
+     var hasNotificationPermission by remember { mutableStateOf(false) }
+     var hasUsageStatsPermission by remember { mutableStateOf(false) }
+     var hasOverlayPermission by remember { mutableStateOf(false) }
+@@ -271,116 +296,53 @@
+         checkPermissions()
+     }
+ 
+-    val chatMessages by chatViewModel.messages.collectAsState()
+     val isConnected by chatViewModel.isConnected.collectAsState()
+-    val isThinking by chatViewModel.isThinking.collectAsState()
+-    val isListening by chatViewModel.isListening.collectAsState()
+     val pcStatus by systemMonitoringViewModel.pcStatus.collectAsState()
+-
+     val mood = when {
+         !isConnected -> OllieMood.ALERT
+         pcStatus.isOnline -> OllieMood.HARDWARE_ACTIVE
+         else -> OllieMood.NORMAL
+     }
+-
+-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+-    var showMouseTray by remember { mutableStateOf(false) }
++    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
++    val detail = listOf(Screen.Profile, Screen.Memory, Screen.Reasoning, Screen.Mouse)
++        .firstOrNull { it.route == route }
+ 
+     if (!hasNotificationPermission || !hasUsageStatsPermission || !hasOverlayPermission || !hasWriteSettingsPermission || !hasNotificationPolicyPermission || !hasAccessibilityPermission) {
+         PermissionsScreen(hasNotificationPermission, hasUsageStatsPermission, hasOverlayPermission, hasWriteSettingsPermission, hasNotificationPolicyPermission, hasAccessibilityPermission) {
+             checkPermissions()
+         }
+     } else {
+-        Box(
+-            modifier = Modifier
+-                .fillMaxSize()
+-                .background(Color(0xFF080808))
+-        ) {
++        Box(Modifier.fillMaxSize().background(Color(0xFF080808))) {
+             PremiumBackgroundAuras(mood)
+-            
+-            NavHost(
+-                navController = navController,
+-                startDestination = Screen.Home.route,
+-                modifier = Modifier.fillMaxSize()
+-            ) {
+-                composable(Screen.Home.route) {
+-                    HomeScreen(
+-                        viewModel = cognitiveViewModel,
+-                        monitorViewModel = systemMonitoringViewModel,
+-                        haViewModel = haViewModel,
+-                        chatViewModel = chatViewModel,
+-                        onNavigate = { route ->
+-                            if (route == Screen.Mouse.route) {
+-                                showMouseTray = true
+-                            } else {
+-                                navController.navigate(route) {
+-                                    launchSingleTop = true
+-                                    restoreState = true
+-                                }
+-                            }
+-                        }
+-                    )
+-                }
+-                composable(Screen.Capabilities.route) {
+-                    CapabilitiesScreen(
+-                        viewModel = automationViewModel,
+-                        onNavigate = { navController.navigate(it) {
+-                            launchSingleTop = true
+-                            restoreState = true
+-                        } }
+-                    )
+-                }
+-                composable(Screen.Profile.route) { ProfileScreen(profileViewModel) }
+-                composable(Screen.Memory.route) { MemoryScreen(memoryViewModel) }
+-                composable(Screen.Reasoning.route) { ReasoningMonitorScreen(cognitiveViewModel) }
+-                composable(Screen.Settings.route) { 
+-                    SettingsScreen(
+-                        chatViewModel, 
+-                        onNavigate = { navController.navigate(it) {
+-                            launchSingleTop = true
+-                            restoreState = true
+-                        } }
+-                    ) 
+-                }
+-                composable(Screen.Mouse.route) { MouseScreen() }
+-                composable(Screen.PcControl.route) { PcControlScreen(systemMonitoringViewModel) }
+-            }
+-
+-            // Bandeja de Ferramentas Minimalista (Flutuante)
+-            Surface(
+-                shape = RoundedCornerShape(20.dp),
+-                color = Color.White.copy(alpha = 0.05f),
+-                border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f)),
+-                modifier = Modifier
+-                    .align(Alignment.BottomCenter)
+-                    .padding(bottom = 92.dp)
+-                    .height(40.dp)
+-            ) {
+-                Row(
+-                    modifier = Modifier.padding(horizontal = 8.dp),
+-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+-                    verticalAlignment = Alignment.CenterVertically
++            Scaffold(
++                modifier = Modifier.imePadding(),
++                containerColor = Color.Transparent,
++                contentColor = Color.White,
++                contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
++                topBar = {
++                    if (detail != null) OlliePageHeader(detail.title) { navController.popBackStack() }
++                },
++                bottomBar = {
++                    if (!keyboardVisible) OllieNavigationBar(route, ::openPage)
++                },
++            ) { padding ->
++                NavHost(
++                    navController = navController,
++                    startDestination = Screen.Home.route,
++                    modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
++                        .testTag("page-${route ?: "loading"}"),
+                 ) {
+-                    navItems.filter { it.route != Screen.Home.route && it.route != Screen.Chat.route }.forEach { screen ->
+-                        IconButton(
+-                            onClick = { 
+-                                if (screen.route == Screen.Mouse.route) {
+-                                    showMouseTray = true 
+-                                } else {
+-                                    navController.navigate(screen.route) {
+-                                        popUpTo(navController.graph.findStartDestination().id) {
+-                                            saveState = true
+-                                        }
+-                                        launchSingleTop = true
+-                                        restoreState = true
+-                                    }
+-                                }
+-                            },
+-                            modifier = Modifier.size(32.dp)
+-                        ) {
+-                            Icon(screen.icon, null, tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(20.dp))
+-                        }
++                    composable(Screen.Home.route) {
++                        HomeScreen(cognitiveViewModel, systemMonitoringViewModel, haViewModel, chatViewModel, ::openPage)
+                     }
++                    composable(Screen.Chat.route) { ChatScreen(chatViewModel) }
++                    composable(Screen.Capabilities.route) { CapabilitiesScreen(automationViewModel, ::openPage) }
++                    composable(Screen.Profile.route) { ProfileScreen(profileViewModel) }
++                    composable(Screen.Memory.route) { MemoryScreen(memoryViewModel) }
++                    composable(Screen.Reasoning.route) { ReasoningMonitorScreen(cognitiveViewModel) }
++                    composable(Screen.Settings.route) { SettingsScreen(chatViewModel, ::openPage) }
++                    composable(Screen.Mouse.route) { MouseScreen() }
++                    composable(Screen.PcControl.route) { PcControlScreen(systemMonitoringViewModel) }
+                 }
+             }
+ 
+@@ -391,18 +353,11 @@
+                     containerColor = Color(0xFF0A0A0A).copy(alpha = 0.95f),
+                     scrimColor = Color.Black.copy(alpha = 0.6f),
+                     dragHandle = {
+-                        Box(
+-                            modifier = Modifier
+-                                .padding(vertical = 12.dp)
+-                                .width(40.dp)
+-                                .height(4.dp)
+-                                .background(Color.White.copy(alpha = 0.2f), CircleShape)
+-                        )
+-                    }
++                        Box(Modifier.padding(vertical = 12.dp).width(40.dp).height(4.dp)
++                            .background(Color.White.copy(alpha = 0.2f), CircleShape))
++                    },
+                 ) {
+-                    Box(modifier = Modifier.fillMaxHeight(0.7f)) {
+-                        MouseScreen()
+-                    }
++                    Box(Modifier.fillMaxHeight(0.7f)) { MouseScreen() }
+                 }
+             }
+         }
+diff --git a/app/src/main/java/com/example/assistentecell/ui/navigation/OllieNavigation.kt b/app/src/main/java/com/example/assistentecell/ui/navigation/OllieNavigation.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/ui/navigation/OllieNavigation.kt
+@@ -0,0 +1,80 @@
++package com.example.assistentecell.ui.navigation
++
++import androidx.compose.foundation.BorderStroke
++import androidx.compose.foundation.background
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.selection.selectable
++import androidx.compose.foundation.selection.selectableGroup
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.automirrored.outlined.ArrowBack
++import androidx.compose.material3.*
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.clip
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.platform.testTag
++import androidx.compose.ui.semantics.Role
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.style.TextOverflow
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.unit.sp
++import androidx.navigation.NavGraph.Companion.findStartDestination
++import androidx.navigation.NavHostController
++
++/** Tabs keep one base destination and restore each tab's saved UI state. */
++fun NavHostController.openOlliePage(route: String) {
++    if (currentDestination?.route == route) return
++    val isTab = navItems.any { it.route == route }
++    navigate(route) {
++        launchSingleTop = true
++        if (isTab) {
++            popUpTo(graph.findStartDestination().id) { saveState = true }
++            restoreState = true
++        }
++    }
++}
++
++@Composable
++fun OllieNavigationBar(route: String?, onNavigate: (String) -> Unit) {
++    // Detail pages belong to Sistema, where their shortcuts are located.
++    val active = if (route in listOf(Screen.Profile.route, Screen.Memory.route, Screen.Reasoning.route)) Screen.Settings.route else route
++    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)) {
++        Surface(
++            color = Color(0xFF101015).copy(alpha = .96f),
++            shape = RoundedCornerShape(24.dp),
++            border = BorderStroke(.5.dp, Color.White.copy(alpha = .12f)),
++        ) {
++            Row(Modifier.fillMaxWidth().selectableGroup().padding(5.dp), verticalAlignment = Alignment.CenterVertically) {
++                navItems.forEach { screen ->
++                    val selected = active == screen.route
++                    val tint = if (selected) Color(0xFF00E5FF) else Color.White.copy(alpha = .55f)
++                    Column(
++                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(19.dp))
++                            .background(if (selected) Color(0xFF9D4EDD).copy(alpha = .18f) else Color.Transparent)
++                            .selectable(selected, role = Role.Tab, onClick = { onNavigate(screen.route) })
++                            .heightIn(min = 56.dp).padding(vertical = 7.dp).testTag("nav-${screen.route}"),
++                        horizontalAlignment = Alignment.CenterHorizontally,
++                        verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
++                    ) {
++                        Icon(screen.icon, null, tint = tint, modifier = Modifier.size(21.dp))
++                        Text(screen.title, color = tint, fontSize = 10.sp, lineHeight = 12.sp,
++                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
++                            maxLines = 1, overflow = TextOverflow.Ellipsis)
++                    }
++                }
++            }
++        }
++    }
++}
++
++@Composable
++fun OlliePageHeader(title: String, onBack: () -> Unit) {
++    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
++        IconButton(onClick = onBack) {
++            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Voltar", tint = Color(0xFF00E5FF))
++        }
++        Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White)
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/ui/navigation/Screen.kt b/app/src/main/java/com/example/assistentecell/ui/navigation/Screen.kt
+--- a/app/src/main/java/com/example/assistentecell/ui/navigation/Screen.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/navigation/Screen.kt
+@@ -6,7 +6,7 @@
+ 
+ sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
+     object Home : Screen("home", "Base", Icons.Outlined.Home)
+-    object Chat : Screen("chat", "Papo", Icons.Outlined.ChatBubbleOutline)
++    object Chat : Screen("chat", "Conversa", Icons.Outlined.ChatBubbleOutline)
+     object Capabilities : Screen("capabilities", "Poderes", Icons.Outlined.Lightbulb)
+     object Profile : Screen("profile", "O que eu sei", Icons.Outlined.Analytics)
+     object Memory : Screen("memory", "Memória", Icons.Outlined.Memory)
+@@ -18,8 +18,8 @@
+ 
+ val navItems = listOf(
+     Screen.Home,
++    Screen.Chat,
+     Screen.PcControl,
+     Screen.Capabilities,
+-    Screen.Mouse,
+     Screen.Settings
+ )
+diff --git a/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt b/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt
+--- a/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt
+@@ -14,8 +14,11 @@
+ import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+ import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+ import androidx.compose.material.icons.outlined.Mic
++import androidx.compose.material.icons.outlined.ChatBubbleOutline
+ import androidx.compose.material3.*
+ import androidx.compose.runtime.*
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.ui.platform.testTag
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.draw.clip
+@@ -37,7 +40,7 @@
+     val isConnected by viewModel.isConnected.collectAsState()
+     val isListening by viewModel.isListening.collectAsState()
+     val isVoiceEnabled by viewModel.isVoiceEnabled.collectAsState()
+-    var inputText by remember { mutableStateOf("") }
++    var inputText by rememberSaveable { mutableStateOf("") }
+     val listState = rememberLazyListState()
+ 
+     // 🌟 AUTO-SCROLL: Quando novas mensagens chegam ou o teclado abre
+@@ -67,7 +70,7 @@
+                     horizontalArrangement = Arrangement.SpaceBetween
+                 ) {
+                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+-                        Text("Ollie", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
++                        Text("Conversa", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                         Row(verticalAlignment = Alignment.CenterVertically) {
+                             Box(
+                                 modifier = Modifier
+@@ -103,6 +106,23 @@
+                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                 verticalArrangement = Arrangement.spacedBy(6.dp)
+             ) {
++                if (messages.isEmpty() && !isThinking) {
++                    item {
++                        Column(
++                            Modifier.fillParentMaxSize().padding(horizontal = 28.dp),
++                            horizontalAlignment = Alignment.CenterHorizontally,
++                            verticalArrangement = Arrangement.Center,
++                        ) {
++                            Icon(Icons.Outlined.ChatBubbleOutline, null,
++                                tint = Color(0xFF00E5FF).copy(alpha = .65f), modifier = Modifier.size(40.dp))
++                            Spacer(Modifier.height(16.dp))
++                            Text("Vamos conversar?", style = MaterialTheme.typography.titleMedium, color = Color.White)
++                            Spacer(Modifier.height(8.dp))
++                            Text("Digite uma mensagem ou toque no microfone.",
++                                style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .55f))
++                        }
++                    }
++                }
+                 items(messages, key = { it.id }) { message ->
+                     ChatBubble(message)
+                 }
+@@ -271,7 +291,7 @@
+                                 style = MaterialTheme.typography.bodyMedium
+                             ) 
+                         },
+-                        modifier = Modifier.fillMaxWidth(),
++                        modifier = Modifier.fillMaxWidth().testTag("chat-input"),
+                         colors = TextFieldDefaults.colors(
+                             focusedContainerColor = Color.Transparent,
+                             unfocusedContainerColor = Color.Transparent,
+diff --git a/app/src/main/java/com/example/assistentecell/ui/screens/HomeScreen.kt b/app/src/main/java/com/example/assistentecell/ui/screens/HomeScreen.kt
+--- a/app/src/main/java/com/example/assistentecell/ui/screens/HomeScreen.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/screens/HomeScreen.kt
+@@ -21,6 +21,7 @@
+ import androidx.compose.material.icons.outlined.*
+ import androidx.compose.material3.*
+ import androidx.compose.runtime.*
++import androidx.compose.runtime.saveable.rememberSaveable
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.draw.*
+@@ -64,7 +65,7 @@
+     val isThinking by chatViewModel.isThinking.collectAsState()
+     val isConnected by chatViewModel.isConnected.collectAsState()
+     val isListening by chatViewModel.isListening.collectAsState()
+-    var inputText by remember { mutableStateOf("") }
++    var inputText by rememberSaveable { mutableStateOf("") }
+     
+     var showAppLauncher by remember { mutableStateOf(false) }
+     val sheetState = rememberModalBottomSheetState()
+diff --git a/app/src/main/java/com/example/assistentecell/voice/OnnxWakeDetector.kt b/app/src/main/java/com/example/assistentecell/voice/OnnxWakeDetector.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/voice/OnnxWakeDetector.kt
+@@ -0,0 +1,109 @@
++package com.example.assistentecell.voice
++
++import ai.onnxruntime.OnnxTensor
++import ai.onnxruntime.OrtEnvironment
++import ai.onnxruntime.OrtSession
++import java.io.ByteArrayInputStream
++import java.nio.FloatBuffer
++import java.security.MessageDigest
++import java.util.Properties
++
++/** Streaming PCM16/16kHz, with the same mel -> embedding -> head path as openWakeWord 0.6. */
++class OnnxWakeDetector(melBytes: ByteArray, embeddingBytes: ByteArray, headBytes: ByteArray) : AutoCloseable {
++    companion object {
++        const val FRAME = 1280
++        const val RATE = 16000
++        const val WARMUP_FRAMES = 32
++        val files = listOf("melspectrogram.onnx", "embedding_model.onnx", "hey_ollie.onnx")
++
++        fun load(read: (String) -> ByteArray): OnnxWakeDetector {
++            val hashes = Properties().apply { load(ByteArrayInputStream(read("models.properties"))) }
++            val models = files.map { name ->
++                read(name).also { bytes ->
++                    val actual = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
++                    require(actual == hashes.getProperty(name)) { "Modelo de ativacao incompleto: $name" }
++                }
++            }
++            return OnnxWakeDetector(models[0], models[1], models[2])
++        }
++    }
++
++    private val environment = OrtEnvironment.getEnvironment()
++    private val options = OrtSession.SessionOptions().apply {
++        setIntraOpNumThreads(1)
++        setInterOpNumThreads(1)
++    }
++    private val sessions = mutableListOf<OrtSession>()
++    private val mel: OrtSession
++    private val embedding: OrtSession
++    private val head: OrtSession
++    private var tail = FloatArray(0)
++    private val mels = FloatArray(76 * 32) { 1f }
++    private val embeddings = FloatArray(16 * 96)
++    private var frames = 0
++    private var closed = false
++    val ready: Boolean get() = frames >= WARMUP_FRAMES
++
++    init {
++        try {
++            mel = environment.createSession(melBytes, options).also { sessions.add(it) }
++            embedding = environment.createSession(embeddingBytes, options).also { sessions.add(it) }
++            head = environment.createSession(headBytes, options).also { sessions.add(it) }
++        } catch (error: Throwable) {
++            sessions.forEach { it.close() }
++            options.close()
++            throw error
++        }
++    }
++
++    @Synchronized fun reset() {
++        check(!closed)
++        tail = FloatArray(0)
++        mels.fill(1f)
++        embeddings.fill(0f)
++        frames = 0
++    }
++
++    private fun infer(session: OrtSession, inputName: String, values: FloatArray, shape: LongArray): FloatArray {
++        OnnxTensor.createTensor(environment, FloatBuffer.wrap(values), shape).use { input ->
++            session.run(mapOf(inputName to input)).use { output ->
++                val buffer = (output[0] as OnnxTensor).floatBuffer
++                return FloatArray(buffer.remaining()).also { buffer.get(it) }
++            }
++        }
++    }
++
++    private fun append(buffer: FloatArray, values: FloatArray) {
++        require(values.size <= buffer.size)
++        buffer.copyInto(buffer, 0, values.size, buffer.size)
++        values.copyInto(buffer, buffer.size - values.size)
++    }
++
++    @Synchronized fun predict(pcm: ShortArray): Float {
++        check(!closed)
++        require(pcm.size == FRAME)
++        // The mel graph expects raw int16 amplitudes represented as float, not [-1,1].
++        val audio = FloatArray(tail.size + FRAME)
++        tail.copyInto(audio)
++        for (i in pcm.indices) audio[tail.size + i] = pcm[i].toFloat()
++        tail = audio.copyOfRange(audio.size - 480, audio.size)
++        val spectrum = infer(mel, "input", audio, longArrayOf(1, audio.size.toLong()))
++        require(spectrum.size % 32 == 0)
++        for (i in spectrum.indices) spectrum[i] = spectrum[i] / 10f + 2f
++        append(mels, spectrum)
++        val vector = infer(embedding, "input_1", mels, longArrayOf(1, 76, 32, 1))
++        require(vector.size == 96)
++        append(embeddings, vector)
++        val score = infer(head, "input", embeddings, longArrayOf(1, 16, 96)).single()
++        frames++
++        // After warm-up all initialized history has been replaced with real audio.
++        return if (ready && score.isFinite()) score else 0f
++    }
++
++    @Synchronized override fun close() {
++        if (closed) return
++        closed = true
++        sessions.reversed().forEach { it.close() }
++        options.close()
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/voice/WakeWordPolicy.kt b/app/src/main/java/com/example/assistentecell/voice/WakeWordPolicy.kt
+--- a/app/src/main/java/com/example/assistentecell/voice/WakeWordPolicy.kt
++++ b/app/src/main/java/com/example/assistentecell/voice/WakeWordPolicy.kt
+@@ -1,6 +1,5 @@
+ package com.example.assistentecell.voice
+ 
+-import java.text.Normalizer
+ import kotlinx.coroutines.flow.MutableStateFlow
+ import kotlinx.coroutines.flow.asStateFlow
+ 
+@@ -10,22 +9,21 @@
+     fun update(message: String) { mutable.value = message }
+ }
+ 
+-object WakeWordPolicy {
+-    // Ollie/oli are absent from the bundled Portuguese lexicon. These sound-alikes exist.
+-    val grammar = listOf("ei olhe", "ei olha", "e aí olhe", "e ai olhe", "e aí olha", "ei óleo", "[unk]")
+-    private val phrases = listOf("ei ollie", "ei oli", "e ai ollie", "e ai oli", "ei olhe", "ei olha", "e ai olhe", "e ai olha", "ei oleo")
+-    fun matches(text: String): Boolean {
+-        val normalized = Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD)
+-            .replace(Regex("\\p{M}+"), "").replace(Regex("[^a-z ]"), " ").trim().replace(Regex("\\s+"), " ")
+-        return phrases.any { normalized == it || normalized.startsWith("$it ") }
+-    }
+-}
+-
++/** Two consecutive acoustic scores, rearming and cooldown; no STT sound-alike phrases. */
+ class WakeWordGate {
+     private var last: Long? = null
+-    fun accept(text: String, blocked: Boolean, now: Long): Boolean {
+-        if (blocked || !WakeWordPolicy.matches(text) || last?.let { now - it < 5000 } == true) return false
++    private var count = 0
++    private var armed = true
++    fun reset() { count = 0; armed = true }
++    fun accept(score: Float, blocked: Boolean, now: Long): Boolean {
++        if (blocked || !score.isFinite() || score < .5f) {
++            reset()
++            return false
++        }
++        count = (count + 1).coerceAtMost(2)
++        if (!armed || count < 2 || last?.let { now - it < 5000 } == true) return false
+         last = now
++        armed = false
+         return true
+     }
+ }
+diff --git a/app/src/main/java/com/example/assistentecell/voice/WakeWordRecorder.kt b/app/src/main/java/com/example/assistentecell/voice/WakeWordRecorder.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/voice/WakeWordRecorder.kt
+@@ -0,0 +1,84 @@
++package com.example.assistentecell.voice
++
++import android.annotation.SuppressLint
++import android.media.AudioFormat
++import android.media.AudioRecord
++import android.media.MediaRecorder
++import android.os.SystemClock
++import android.util.Log
++import kotlin.math.sqrt
++
++/** Owns just the wake microphone. stop() yields it before the assistant starts STT. */
++class WakeWordRecorder(
++    private val detector: OnnxWakeDetector,
++    private val onReady: () -> Unit,
++    private val onScore: (Float, Long) -> Unit,
++    private val onError: () -> Unit,
++) : AutoCloseable {
++    @Volatile private var running = false
++    private var recorder: AudioRecord? = null
++    private var thread: Thread? = null
++
++    @SuppressLint("MissingPermission")
++    fun start() {
++        check(!running)
++        detector.reset()
++        val minimum = AudioRecord.getMinBufferSize(OnnxWakeDetector.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
++        require(minimum > 0)
++        val audio = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, OnnxWakeDetector.RATE,
++            AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum, OnnxWakeDetector.FRAME * 8))
++        if (audio.state != AudioRecord.STATE_INITIALIZED) { audio.release(); error("Microfone indisponivel") }
++        try { audio.startRecording() } catch (error: Throwable) { audio.release(); throw error }
++        recorder = audio
++        running = true
++        thread = Thread({
++            try {
++                val frame = ShortArray(OnnxWakeDetector.FRAME)
++                var offset = 0
++                var ready = false
++                var lastStats = SystemClock.elapsedRealtime()
++                var peakScore = 0f
++                var peakLevel = 0.0
++                while (running) {
++                    val count = audio.read(frame, offset, frame.size - offset, AudioRecord.READ_BLOCKING)
++                    if (!running) break
++                    check(count > 0) { "Captura interrompida" }
++                    offset += count
++                    if (offset != frame.size) continue
++                    val score = detector.predict(frame)
++                    val now = SystemClock.elapsedRealtime()
++                    val level = sqrt(frame.sumOf { it.toDouble() * it } / frame.size) / 32768.0
++                    peakScore = maxOf(peakScore, score)
++                    peakLevel = maxOf(peakLevel, level)
++                    if (now - lastStats >= 5000) {
++                        // Numeric diagnostics only: no samples, words or recordings are logged.
++                        Log.d("WakeWordAudio", "peak=$peakScore rms=$peakLevel")
++                        peakScore = 0f; peakLevel = 0.0; lastStats = now
++                    }
++                    offset = 0
++                    if (!ready && detector.ready) { ready = true; onReady() }
++                    if (running && ready) onScore(score, now)
++                }
++            } catch (error: Exception) {
++                if (running) {
++                    Log.w("WakeWordAudio", "Capture failed: ${error.javaClass.simpleName}")
++                    onError()
++                }
++            } finally {
++                running = false
++                try { audio.stop() } catch (_: Exception) { }
++                audio.release()
++            }
++        }, "OllieWakeWord").also { it.start() }
++    }
++
++    override fun close() {
++        running = false
++        // stop() interrupts a blocking read and releases active microphone capture now.
++        try { recorder?.stop() } catch (_: Exception) { }
++        val previous = thread
++        if (previous != null && previous !== Thread.currentThread()) previous.join(500)
++        thread = null
++        recorder = null
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt b/app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt
+--- a/app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt
++++ b/app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt
+@@ -5,7 +5,6 @@
+ import android.content.Intent
+ import android.os.Build
+ import android.os.IBinder
+-import android.os.SystemClock
+ import android.util.Log
+ import androidx.core.app.NotificationCompat
+ import com.example.assistentecell.R
+@@ -13,19 +12,11 @@
+ import com.example.assistentecell.websocket.ChatBridge
+ import kotlinx.coroutines.*
+ import kotlinx.coroutines.flow.combine
+-import org.json.JSONArray
+-import org.json.JSONObject
+-import org.vosk.Model
+-import org.vosk.Recognizer
+-import org.vosk.android.RecognitionListener
+-import org.vosk.android.SpeechService
+-import java.io.File
+ 
+ class WakeWordService : Service() {
+     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+-    private var model: Model? = null
+-    private var recognizer: Recognizer? = null
+-    private var speech: SpeechService? = null
++    private var model: OnnxWakeDetector? = null
++    private var recorder: WakeWordRecorder? = null
+     private var busy = false
+     private var pendingSession = false
+     private var destroyed = false
+@@ -38,7 +29,6 @@
+ 
+     companion object {
+         private const val CHANNEL = "WAKE_WORD_CHANNEL"
+-        private const val MODEL = "model/vosk-model-small-pt-0.3"
+         fun start(context: Context): Boolean {
+             if (context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                 WakeWordRuntime.update("Permita o microfone para ativar por voz")
+@@ -90,17 +80,11 @@
+             }
+         }
+         scope.launch {
+-            var allocated: Model? = null
++            var allocated: OnnxWakeDetector? = null
+             try {
+                 val loaded = withContext(Dispatchers.IO) {
+-                    val target = File(filesDir, "vosk-model")
+-                    val marker = File(target, ".ollie-version")
+-                    val version = "ollie-pt-0.3-internal-v1"
+-                    if (!marker.exists() || marker.readText() != version) {
+-                        copyAssets(MODEL, target)
+-                        marker.writeText(version)
+-                    }
+-                    Model(target.absolutePath).also { allocated = it }
++                    OnnxWakeDetector.load { name -> assets.open("wakeword/$name").use { it.readBytes() } }
++                        .also { allocated = it }
+                 }
+                 if (destroyed) { loaded.close(); return@launch }
+                 model = loaded
+@@ -126,45 +110,33 @@
+             .setContentIntent(open).setOngoing(true).setSilent(true).setOnlyAlertOnce(true).build()
+     }
+ 
+-    private fun copyAssets(path: String, target: File) {
+-        val children = assets.list(path).orEmpty()
+-        if (children.isEmpty()) {
+-            target.parentFile?.mkdirs()
+-            assets.open(path).use { input -> target.outputStream().use { input.copyTo(it) } }
+-        } else {
+-            target.mkdirs()
+-            children.forEach { copyAssets("$path/$it", File(target, it)) }
+-        }
+-    }
+-
+     private fun releaseRecognition() {
+         ++generation
+         retry?.cancel(); retry = null
+-        speech?.cancel(); speech?.shutdown(); speech = null
+-        recognizer?.close(); recognizer = null
++        recorder?.close(); recorder = null
+     }
+ 
+     private fun startListening() {
+-        if (destroyed || busy || pendingSession || model == null || speech != null) return
++        if (destroyed || busy || pendingSession || model == null || recorder != null) return
+         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+             WakeWordRuntime.update("Permita o microfone para ativar por voz")
+             return
+         }
+         val current = ++generation
+         try {
+-            recognizer = Recognizer(model, 16000f).apply { setGrammar(JSONArray(WakeWordPolicy.grammar).toString()) }
+-            speech = SpeechService(recognizer, 16000f)
+-            val listener = object : RecognitionListener {
+-                override fun onPartialResult(hypothesis: String?) {}
+-                override fun onResult(hypothesis: String?) { if (current == generation) checkWake(hypothesis) }
+-                override fun onFinalResult(hypothesis: String?) { if (current == generation) checkWake(hypothesis) }
+-                override fun onError(exception: Exception?) { if (current == generation) recover() }
+-                override fun onTimeout() { if (current == generation) recover() }
+-            }
+-            check(speech!!.startListening(listener))
+-            failures = 0
+-            WakeWordRuntime.update("Ouvindo Ei Ollie no celular")
+-            Log.i("WakeWordService", "Wake listening active")
++            gate.reset()
++            WakeWordRuntime.update("Sintonizando sua chamada...")
++            recorder = WakeWordRecorder(model!!,
++                onReady = { scope.launch {
++                    if (current == generation && !busy && !pendingSession) {
++                        failures = 0
++                        WakeWordRuntime.update("Ouvindo Ei Ollie no celular")
++                        Log.i("WakeWordService", "ONNX wake listening active")
++                    }
++                } },
++                onScore = { score, now -> scope.launch { if (current == generation) checkWake(score, now) } },
++                onError = { scope.launch { if (current == generation) recover() } },
++            ).also { it.start() }
+         } catch (e: Exception) {
+             Log.w("WakeWordService", "Wake microphone failed: ${e.javaClass.simpleName}")
+             recover()
+@@ -179,10 +151,9 @@
+         retry = scope.launch { delay(1000L shl failures); startListening() }
+     }
+ 
+-    private fun checkWake(hypothesis: String?) {
+-        val text = try { JSONObject(hypothesis ?: "{}").optString("text") } catch (_: Exception) { "" }
+-        if (!gate.accept(text, busy || pendingSession || destroyed, SystemClock.elapsedRealtime())) return
+-        Log.i("WakeWordService", "Wake phrase detected")
++    private fun checkWake(score: Float, now: Long) {
++        if (!gate.accept(score, busy || pendingSession || destroyed, now)) return
++        Log.i("WakeWordService", "Acoustic wake detected, score=$score")
+         pendingSession = true
+         releaseRecognition()
+         WakeWordRuntime.update("Chamando a Ollie...")
+diff --git a/app/src/test/java/com/example/assistentecell/WakeWordPolicyTest.kt b/app/src/test/java/com/example/assistentecell/WakeWordPolicyTest.kt
+--- a/app/src/test/java/com/example/assistentecell/WakeWordPolicyTest.kt
++++ b/app/src/test/java/com/example/assistentecell/WakeWordPolicyTest.kt
+@@ -1,24 +1,41 @@
+ package com.example.assistentecell
+ 
+ import com.example.assistentecell.voice.WakeWordGate
+-import com.example.assistentecell.voice.WakeWordPolicy
+ import org.junit.Assert.*
+ import org.junit.Test
+ 
+ class WakeWordPolicyTest {
+-    @Test fun recognizesDisplayedPhraseAndPortugueseModelSoundAlikes() {
+-        listOf("Ei, Ollie!", "e aí oli", "ei olhe", "e aí olha", "ei óleo").forEach { assertTrue(it, WakeWordPolicy.matches(it)) }
+-        listOf("Ollie", "olha", "ei", "e aí", "[unk]", "preciso olhar a luz").forEach { assertFalse(it, WakeWordPolicy.matches(it)) }
++    @Test fun requiresTwoConsecutiveScoresAndDoesNotRepeatSustainedSound() {
++        val gate = WakeWordGate()
++        assertFalse(gate.accept(.9f, false, 10000))
++        assertTrue(gate.accept(.9f, false, 10080))
++        assertFalse(gate.accept(.99f, false, 20000))
++        assertFalse(gate.accept(.1f, false, 20080))
++        assertFalse(gate.accept(.9f, false, 20160))
++        assertTrue(gate.accept(.9f, false, 20240))
+     }
+-    @Test fun grammarUsesExistingPortugueseWordsInsteadOfUnknownNames() {
+-        assertTrue(WakeWordPolicy.grammar.contains("[unk]"))
+-        assertFalse(WakeWordPolicy.grammar.any { it.contains("ollie") || it.contains("[unknown]") })
++    @Test fun isolatedScoresAndBusySpeechCannotActivate() {
++        val gate = WakeWordGate()
++        assertFalse(gate.accept(.9f, false, 10000))
++        assertFalse(gate.accept(.1f, false, 10080))
++        assertFalse(gate.accept(.9f, false, 10160))
++        assertFalse(gate.accept(.9f, true, 10240))
++        assertFalse(gate.accept(.9f, false, 10320))
++        assertTrue(gate.accept(.9f, false, 10400))
+     }
+-    @Test fun pauseAndCooldownPreventDoubleActivationOrWakeDuringSpeech() {
++    @Test fun cooldownAndRestartRequireFreshScores() {
+         val gate = WakeWordGate()
+-        assertFalse(gate.accept("ei olhe", true, 10000))
+-        assertTrue(gate.accept("ei olhe", false, 10001))
+-        assertFalse(gate.accept("ei olhe", false, 10002))
+-        assertTrue(gate.accept("ei olhe", false, 15001))
++        gate.accept(.9f, false, 10000)
++        assertTrue(gate.accept(.9f, false, 10080))
++        gate.reset()
++        assertFalse(gate.accept(.9f, false, 14000))
++        assertFalse(gate.accept(.9f, false, 14080))
++        assertTrue(gate.accept(.9f, false, 15080))
++    }
++    @Test fun invalidScoresDoNotActivate() {
++        val gate = WakeWordGate()
++        listOf(Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY).forEach {
++            assertFalse(gate.accept(it, false, 10000))
++        }
+     }
+ }

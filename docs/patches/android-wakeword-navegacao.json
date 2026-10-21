@@ -1,0 +1,75 @@
+{
+  "base": "Arquivos locais antes desta integracao; patch incremental, sem alteracoes anteriores ou modelos.",
+  "files": [
+    {
+      "path": ".gitignore",
+      "before_sha256": "eb647e6a5173e25deda66867b32173244cb10ac652b761a3403fe34b70ba6d33",
+      "after_sha256": "6a1829c65a5cb524ce844e839e1b487158aecd171e36f07933b971258d3bf401"
+    },
+    {
+      "path": "app/build.gradle.kts",
+      "before_sha256": "55dce6847bba82259308c85b2bcaebd6bb01dcc43dd233cfb092f035966bdf7e",
+      "after_sha256": "f98972249b783661c6ff4b8e609a74ed1afcbe416ebec624bafa601814e5ab20"
+    },
+    {
+      "path": "app/src/androidTest/java/com/example/assistentecell/NavigationTest.kt",
+      "before_sha256": null,
+      "after_sha256": "9fd128944a0ebe940c9e2f9fdacf5ccd67e154548a8592d1c632f977b3085322"
+    },
+    {
+      "path": "app/src/androidTest/java/com/example/assistentecell/OnnxWakeDetectorTest.kt",
+      "before_sha256": null,
+      "after_sha256": "9c0195fc00237a159838b9ddaaa0e58ab734005f9a4f149028d8fdc217c8ccb2"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/MainActivity.kt",
+      "before_sha256": "22a1348d2a149c8fecd8f554f9bfe5c44e3cb52cd70a9e37308924dee39018f4",
+      "after_sha256": "c9b99604da328c3a3059fa6a7d9bcc7e9bcc855664c8b6d7557baca99a696ce6"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ui/navigation/OllieNavigation.kt",
+      "before_sha256": null,
+      "after_sha256": "8c68c3aad6ae299f9213c469965b426c90ce5a9354cb1c29b426e2777726afa3"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ui/navigation/Screen.kt",
+      "before_sha256": "739a17644c3650e27ee9143a47a4dde7aba27c1838dd32c85ce40a9df4a2fe76",
+      "after_sha256": "03f6fc5b2635a60b0f540057f203dde7e9ba351038dbbfa1675e127a6c6adc9d"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt",
+      "before_sha256": "28736f423920e2f0f65a4031f0dd77fa7ab1970a7429402bf0e513321a6b21b4",
+      "after_sha256": "52bf89801efef149a76e1775e8c9e19036c13dc6ce72b8a2651ed1cb43cca45b"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ui/screens/HomeScreen.kt",
+      "before_sha256": "f896ecf4d4cb4fa72ea307e0396c87f074d256a5337b348642483ea2847c3e82",
+      "after_sha256": "07b846e01946cb00ada98b3479e35614b4fc58abc0618b3e3927f9f7b59837fa"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/voice/OnnxWakeDetector.kt",
+      "before_sha256": null,
+      "after_sha256": "5c7c62779e3ed375da420666d57b3cbf12e2cd388a257fa3616cd7136ad2af3d"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/voice/WakeWordPolicy.kt",
+      "before_sha256": "b5fceb6481fbce195fbf062aa653807e2ae5fd0d4e8a04c6cf444860e228a090",
+      "after_sha256": "da93840a3a1e968c0fcc935d4ceef549f295c9c0a7f7295c07c59b2b890ce69e"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/voice/WakeWordRecorder.kt",
+      "before_sha256": null,
+      "after_sha256": "2e66a4a1ee34388e56e6f2b947bb1f0e0c83ac0dc212e29303bf03b0eb14f8b4"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt",
+      "before_sha256": "92d2e88dbf475300a5a72e70fffd4a117b69240ae69c0f7b3fa6857d75576286",
+      "after_sha256": "91edb2240dec83afcc2a0963c0ce76f8a135ff552039fb8b534dbdd1d471c459"
+    },
+    {
+      "path": "app/src/test/java/com/example/assistentecell/WakeWordPolicyTest.kt",
+      "before_sha256": "da94a70b5826a6897bf8cbd85f17d1926676a01dcfa94bea28464eeb1145b19c",
+      "after_sha256": "e1c9602286795a9b9ffbb2d6f60e633387bc7c9398918720de35bdc9b791fb17"
+    }
+  ]
+}

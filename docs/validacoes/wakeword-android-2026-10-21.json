@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-21",
+  "device": "Samsung Galaxy S23 (SM-S911B)",
+  "unit_tests": {
+    "tests": 44,
+    "failures": 0,
+    "errors": 0
+  },
+  "instrumented_tests": {
+    "tests": 5,
+    "failures": 0,
+    "navigation_cases": [
+      "chat_on_create",
+      "tabs_and_back",
+      "draft_and_keyboard",
+      "chat_on_new_intent"
+    ],
+    "wakeword_cases": 8
+  },
+  "wakeword_comparison": [
+    {
+      "file": "positivo-01.pcm",
+      "hits": 1,
+      "max_score_error": 2.3841858e-07,
+      "median_ms": 3.376823,
+      "max_ms": 4.17802
+    },
+    {
+      "file": "positivo-02.pcm",
+      "hits": 1,
+      "max_score_error": 1.013279e-06,
+      "median_ms": 3.365417,
+      "max_ms": 3.927396
+    },
+    {
+      "file": "positivo-03.pcm",
+      "hits": 1,
+      "max_score_error": 4.7683716e-07,
+      "median_ms": 3.357395,
+      "max_ms": 3.718906
+    },
+    {
+      "file": "negativo-01.pcm",
+      "hits": 0,
+      "max_score_error": 8.940697e-08,
+      "median_ms": 3.332605,
+      "max_ms": 3.826927
+    },
+    {
+      "file": "negativo-02.pcm",
+      "hits": 0,
+      "max_score_error": 2.3841858e-07,
+      "median_ms": 3.296094,
+      "max_ms": 3.362136
+    },
+    {
+      "file": "negativo-03.pcm",
+      "hits": 0,
+      "max_score_error": 1.1920929e-07,
+      "median_ms": 3.298437,
+      "max_ms": 3.471562
+    },
+    {
+      "file": "negativo-04.pcm",
+      "hits": 0,
+      "max_score_error": 2.682209e-07,
+      "median_ms": 3.291823,
+      "max_ms": 3.377083
+    },
+    {
+      "file": "negativo-05.pcm",
+      "hits": 0,
+      "max_score_error": 1.1920929e-07,
+      "median_ms": 3.436979,
+      "max_ms": 3.670417
+    }
+  ],
+  "human_checks": {
+    "inside_app": "Abriu a assistente e respondeu",
+    "outside_app": "Sim, abriu e respondeu fora do app"
+  },
+  "pc_wake_restored": true,
+  "limits": [
+    "Conjunto pequeno de audios; nao mede taxa geral de falsos positivos.",
+    "Consumo prolongado e tela bloqueada nao validados."
+  ]
+}
