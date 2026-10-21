@@ -6,6 +6,7 @@ export class DesktopReplies {
     this.pending.set(id, now);
     if (this.pending.size > 100) this.pending.delete(this.pending.keys().next().value!);
   }
+  forget(id: string) { this.pending.delete(id); }
   consume(data: { tipo_ws?: string; correlacao_id?: string; dispositivo_destino?: string; texto?: unknown; id?: string }, now = Date.now()): string | null {
     for (const [id, at] of this.pending) if (now - at > 300000) this.pending.delete(id);
     if (data.tipo_ws !== 'CHAT_RESPONSE' || data.dispositivo_destino === 'MOBILE' ||

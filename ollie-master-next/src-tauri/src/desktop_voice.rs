@@ -23,6 +23,10 @@ fn stop_current(state: &mut Option<Child>) {
     }
 }
 
+pub fn shutdown() {
+    if let Ok(mut state) = SPEECH.lock() { stop_current(&mut state); }
+}
+
 #[tauri::command]
 pub async fn stop_speech() -> Result<(), String> {
     let mut state = SPEECH.lock().map_err(|_| "Não consegui parar a voz")?;

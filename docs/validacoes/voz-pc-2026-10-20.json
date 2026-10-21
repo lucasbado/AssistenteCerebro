@@ -1,0 +1,90 @@
+{
+  "data_local": "2026-10-20",
+  "modelo_sha256": "59d03446f5901a73efc43f29ca602f3c7564481620e846cdeecceb41889c92cd",
+  "modelo_frase": "hey ouh_lee",
+  "python_tests_passed": 255,
+  "desktop_tests_passed": 14,
+  "build": "Tauri Windows debug --no-bundle aprovado",
+  "teste_sintetico": {
+    "eventos": [
+      {
+        "type": "state",
+        "state": "wake"
+      },
+      {
+        "type": "wake",
+        "score": 0.8258089423179626
+      },
+      {
+        "type": "state",
+        "state": "listening"
+      },
+      {
+        "type": "partial",
+        "text": "como"
+      },
+      {
+        "type": "partial",
+        "text": "como esta luz"
+      },
+      {
+        "type": "partial",
+        "text": "como esta luz do"
+      },
+      {
+        "type": "partial",
+        "text": "como esta luz do quarto"
+      },
+      {
+        "type": "state",
+        "state": "thinking"
+      },
+      {
+        "type": "transcript",
+        "text": "como esta luz do quarto"
+      }
+    ],
+    "texto": "como esta luz do quarto"
+  },
+  "captura_controle": [
+    {
+      "type": "state",
+      "state": "wake"
+    },
+    {
+      "type": "level",
+      "level": 1.4324175936053507e-05
+    },
+    {
+      "type": "state",
+      "state": "paused"
+    },
+    {
+      "ack": 1
+    },
+    {
+      "type": "state",
+      "state": "wake"
+    },
+    {
+      "ack": 2
+    },
+    {
+      "type": "state",
+      "state": "paused"
+    },
+    {
+      "ack": 3
+    }
+  ],
+  "entrada_atual": {
+    "name": "Voicemeeter Out B1",
+    "id_mme": 3,
+    "motivo": "Microfone Realtek strip0 roteado para B1 no mixer existente"
+  },
+  "voz_real_confirmada": false,
+  "limites": [
+    "Nao confirma ainda a chamada da voz real do usuario no app.",
+    "O teste sintetico usa arquivos, nao capturas do usuario."
+  ]
+}

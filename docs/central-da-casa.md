@@ -121,6 +121,10 @@ reconhecimento e resposta audível. O teste não cobre os botões físicos do ES
 
 ## ESP32 como mais uma entrada
 
+No PC, o [detector treinado e a captura de comandos em portugues](voz-pc.md)
+agora usam o chat existente. A chamada e o botao `wake_ollie` abrem a mesma
+captura quando a voz local esta ativa. O microfone e pausado durante a resposta.
+
 Um vínculo do tipo `casa` pode ser usado em `config/botoes.json` para levar um
 botão ao mesmo controlador usado na conversa:
 

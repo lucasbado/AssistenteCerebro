@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use std::sync::atomic::{AtomicBool, Ordering};
 mod desktop_voice;
+mod desktop_listening;
 
 static MONITORING_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -198,8 +199,20 @@ pub fn run() {
             get_auth_token,
             desktop_voice::speak_response,
             desktop_voice::stop_speech,
+            desktop_listening::desktop_listening_preferences,
+            desktop_listening::save_desktop_listening_preferences,
+            desktop_listening::desktop_input_devices,
+            desktop_listening::start_desktop_listening,
+            desktop_listening::stop_desktop_listening,
+            desktop_listening::control_desktop_listening,
             execute_pc_command
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                desktop_listening::shutdown();
+                desktop_voice::shutdown();
+            }
+        });
 }

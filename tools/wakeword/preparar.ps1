@@ -13,4 +13,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar openWakeWord.' }
 & $olliePython (Join-Path $PSScriptRoot 'testar.py') preparar
 if ($LASTEXITCODE -ne 0) { throw 'Falha ao preparar os modelos compartilhados.' }
 & $olliePython -m pip freeze | Set-Content -LiteralPath (Join-Path $ollieRoot '.artifacts\wakeword\pacotes-instalados.txt') -Encoding UTF8
-Write-Host 'Pronto. O modelo Hey Ollie ainda precisa ser treinado no Colab.'
+if (Test-Path -LiteralPath (Join-Path $ollieRoot '.artifacts\wakeword\modelos\hey_ollie.onnx')) {
+    Write-Host 'Ambiente pronto. O modelo de ativacao do PC esta instalado.'
+} else {
+    Write-Host 'Ambiente pronto. Informe o modelo treinado para instalar a ativacao do PC.'
+}

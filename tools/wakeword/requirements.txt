@@ -7,3 +7,4 @@ scikit-learn
 tqdm
 requests
 sounddevice
+vosk==0.3.45

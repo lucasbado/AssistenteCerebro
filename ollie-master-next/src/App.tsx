@@ -12,7 +12,9 @@ import {
   Shield,
   Maximize2,
   Volume2,
-  VolumeX
+  VolumeX,
+  Mic,
+  MicOff
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -20,6 +22,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { DesktopReplies } from './desktopReplies';
 import { DesktopVoice } from './desktopVoice';
+import { DesktopListening, type ListeningEvent, type ListeningPhase } from './desktopListening';
 
 async function authenticatedFetch(url: string, options: RequestInit = {}) {
   const token = await invoke<string>("get_auth_token");
@@ -107,6 +110,63 @@ export default function App() {
     stopLocal: () => invoke('stop_speech'),
   });
   const [wsInstance, setWs] = useState<WebSocket | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
+  const [listeningPhase, setListeningPhase] = useState<ListeningPhase>('off');
+  const [microphoneLevel, setMicrophoneLevel] = useState(0);
+  const [heardText, setHeardText] = useState('');
+  const [inputDevices, setInputDevices] = useState<{id: number; name: string; default: boolean}[]>([]);
+  const [inputDevice, setInputDevice] = useState<number | null>(null);
+  const inputDeviceRef = useRef<number | null>(null);
+  const pendingVoice = useRef(new Map<string, { resolve: (text: string) => void; reject: (error: Error) => void }>());
+  const listening = useRef<DesktopListening | null>(null);
+  if (!listening.current) listening.current = new DesktopListening({
+    newId: () => crypto.randomUUID(),
+    start: (instanceId, device) => invoke('start_desktop_listening', { instanceId, device }),
+    stop: instanceId => invoke('stop_desktop_listening', { instanceId }),
+    control: (instanceId, action) => invoke('control_desktop_listening', { instanceId, action }),
+    send: (text, signal) => sendVoiceChat(text, signal),
+    speak: text => voiceEnabledRef.current ? desktopVoice.current!.speak(text) : Promise.resolve(),
+    stopSpeech: () => desktopVoice.current!.stop(),
+    phase: phase => setListeningPhase(phase),
+    partial: setHeardText,
+    level: setMicrophoneLevel,
+    wake: () => { void invoke('activate_window'); addLog('Pode falar seu comando.', 'text-neon-cyan'); },
+    error: message => addLog(`Voz: ${message}`, 'text-neon-orange'),
+  });
+
+  const sendVoiceChat = (text: string, signal: AbortSignal): Promise<string> => {
+    const socket = socketRef.current;
+    if (socket?.readyState !== WebSocket.OPEN) return Promise.reject(new Error('Sem conexão com a Ollie.'));
+    return new Promise((resolve, reject) => {
+      const id = crypto.randomUUID();
+      const cleanup = () => {
+        clearTimeout(timeout); signal.removeEventListener('abort', cancel);
+        pendingVoice.current.delete(id); desktopReplies.current.forget(id);
+      };
+      const cancel = () => { cleanup(); reject(new Error('Conversa cancelada.')); };
+      const timeout = window.setTimeout(() => { cleanup(); reject(new Error('A resposta demorou. Chame a Ollie novamente.')); }, 45000);
+      pendingVoice.current.set(id, {
+        resolve: reply => { cleanup(); resolve(reply); },
+        reject: error => { cleanup(); reject(error); },
+      });
+      signal.addEventListener('abort', cancel, { once: true });
+      if (signal.aborted) { cancel(); return; }
+      desktopReplies.current.expect(id);
+      addLog(`Você: ${text}`, 'text-white');
+      setMood('thinking');
+      try {
+        socket.send(JSON.stringify({ tipo_ws: 'CHAT_MESSAGE', texto: text, pacote: 'pc.chat', correlacao_id: id, canal: 'voz' }));
+      } catch (error) { cleanup(); reject(error); }
+    });
+  };
+
+  const changeListening = async (enabled: boolean, device = inputDeviceRef.current) => {
+    try {
+      await invoke('save_desktop_listening_preferences', { enabled, device });
+      if (enabled) await listening.current!.start(device);
+      else await listening.current!.stop();
+    } catch (error) { addLog(`Não consegui ativar a voz: ${error}`, 'text-neon-orange'); }
+  };
   const [showInterventionModal, setShowInterventionModal] = useState(false);
   const [policy, setPolicy] = useState({
     auto_open_enabled: false,
@@ -246,9 +306,10 @@ export default function App() {
 
       if (cmd === 'wake_ollie') {
         await invoke('activate_window');
+        if (listening.current!.enabled) await listening.current!.listenNow();
         chatInputRef.current?.focus();
         setMood('idle');
-        addLog('Ollie pronta. Digite seu comando.', 'text-neon-cyan');
+        if (!listening.current!.enabled) addLog('Ollie pronta. Digite seu comando.', 'text-neon-cyan');
       } else if (cmd === 'executar_cenario') {
         if (scenarioBusyRef.current) throw new Error('Já há um cenário em execução.');
         scenarioBusyRef.current = true;
@@ -293,6 +354,29 @@ export default function App() {
   };
 
   // --- Effects ---
+
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+    void (async () => {
+      const dispose = await listen<ListeningEvent>('desktop-listening', event => listening.current!.receive(event.payload));
+      if (!mounted) { dispose(); return; }
+      unlisten = dispose;
+      const [preferences, devices] = await Promise.all([
+        invoke<{enabled: boolean; device: number | null}>('desktop_listening_preferences'),
+        invoke<{id: number; name: string; default: boolean}[]>('desktop_input_devices'),
+      ]);
+      if (!mounted) return;
+      setInputDevices(devices);
+      setInputDevice(preferences.device); inputDeviceRef.current = preferences.device;
+      if (preferences.enabled) await listening.current!.start(preferences.device);
+    })().catch(error => { if (mounted) addLog(`Voz local indisponível: ${error}`, 'text-neon-orange'); });
+    return () => {
+      mounted = false; unlisten?.();
+      for (const request of pendingVoice.current.values()) request.reject(new Error('Conversa encerrada.'));
+      void listening.current?.stop();
+    };
+  }, []);
 
   useEffect(() => {
     const logContainer = document.querySelector('.custom-scrollbar');
@@ -370,6 +454,7 @@ export default function App() {
         if (!isComponentMounted) return;
         const ws = new WebSocket(cloudUrl, ["ollie", `bearer.${token}`]);
         activeSocket = ws;
+        socketRef.current = ws;
         setWs(ws);
 
         ws.onopen = () => {
@@ -389,8 +474,13 @@ export default function App() {
             addLog(`🤖 OLLIE: ${data.texto}`, "text-neon-purple text-[13px] font-bold");
             setMood("idle");
             const reply = desktopReplies.current.consume(data);
+            const voiceRequest = pendingVoice.current.get(data.correlacao_id);
+            if (reply && voiceRequest) {
+              voiceRequest.resolve(reply);
+              return;
+            }
             if (reply && voiceEnabledRef.current) {
-              void desktopVoice.current!.speak(reply).catch(() =>
+              void listening.current!.speakExternal(reply).catch(() =>
                 addLog('Não consegui reproduzir a voz. A resposta continua no chat.', 'text-neon-orange'));
             }
           }
@@ -413,6 +503,7 @@ export default function App() {
         };
 
         ws.onclose = () => {
+          for (const request of pendingVoice.current.values()) request.reject(new Error('A conexão com a Ollie foi interrompida.'));
           isConnecting = false;
           if (!isComponentMounted) return;
           setIsConnected(false);
@@ -435,6 +526,7 @@ export default function App() {
     };
 
     reconnectRef.current = () => {
+      for (const request of pendingVoice.current.values()) request.reject(new Error('Conexão reiniciada.'));
       if (reconnectTimeout) window.clearTimeout(reconnectTimeout);
       void desktopVoice.current?.stop().catch(() => {});
       if (activeSocket) {
@@ -634,7 +726,7 @@ export default function App() {
                     setVoiceEnabled(true);
                     localStorage.setItem('ollie.desktopVoice', 'true');
                   }
-                  void desktopVoice.current!.speak('Oi! Sou a Ollie. Essa é minha voz mais natural no computador.')
+                  void listening.current!.speakExternal('Oi! Sou a Ollie. Essa é minha voz mais natural no computador.')
                     .catch(() => addLog('Não consegui reproduzir o teste de voz.', 'text-neon-orange'));
                 }}>Testar voz</button>
                 <button title={voiceEnabled ? 'Silenciar respostas da Ollie' : 'Ouvir respostas da Ollie'}
@@ -650,6 +742,37 @@ export default function App() {
                 </button>
                 <Terminal className="w-5 h-5 text-neon-cyan" />
               </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <button className="text-sm text-neon-cyan flex items-center gap-2" onClick={() => void changeListening(!listening.current!.enabled)}>
+                  {listening.current.enabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                  {listening.current.enabled ? 'Desativar Ei Ollie' : 'Ativar Ei Ollie'}
+                </button>
+                <select aria-label="Microfone da Ollie" value={inputDevice ?? ''} className="bg-black text-xs rounded p-1 max-w-[230px]"
+                  onChange={event => {
+                    const device = event.target.value === '' ? null : Number(event.target.value);
+                    setInputDevice(device); inputDeviceRef.current = device;
+                    void changeListening(listening.current!.enabled, device);
+                  }}>
+                  <option value="">Padrão: {inputDevices.find(device => device.default)?.name || 'Windows'}</option>
+                  {inputDevices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}
+                </select>
+                <button className="text-xs disabled:text-gray-600" disabled={!listening.current.enabled || listeningPhase !== 'wake'}
+                  onClick={() => void listening.current!.listenNow()}>Falar agora</button>
+                {['listening', 'thinking', 'speaking'].includes(listeningPhase) && <button className="text-xs text-neon-orange"
+                  onClick={() => void listening.current!.cancel()}>Cancelar</button>}
+              </div>
+              <div className="flex items-center gap-3 text-xs text-gray-300" role="status" aria-live="polite">
+                <span>{{off:'Ativação por voz desligada', starting:'Preparando a voz…', wake:'Diga “Ei Ollie”, espere e faça seu pedido',
+                  listening:'Pode falar…', thinking:'Aguardando resposta…', speaking:'Ollie está respondendo', paused:'Microfone pausado',
+                  error:'Confira o microfone e ative novamente'}[listeningPhase]}</span>
+                <div className="w-16 h-1 bg-white/10 rounded overflow-hidden" aria-label="Nível do microfone">
+                  <div className="h-full bg-neon-cyan transition-all" style={{width:`${Math.min(100, microphoneLevel * 800)}%`}} />
+                </div>
+              </div>
+              {heardText && <div className="text-xs text-neon-cyan break-words">{heardText}</div>}
             </div>
 
             <div className="flex-1 glass-dark rounded-2xl p-4 overflow-y-auto custom-scrollbar">
