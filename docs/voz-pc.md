@@ -3,7 +3,9 @@
 O desktop usa um modelo ONNX local para detectar a chamada. Nesta instalacao,
 o modelo sintetico `hey ouh_lee` foi substituido pelo candidato pessoal descrito
 em [Chamada com a pronuncia real](personalizar-wakeword-pc.md).
-Depois da deteccao, o Vosk reconhece o comando em portugues, localmente. O texto
+Depois da deteccao, o Whisper small multilingue transcreve o comando localmente,
+em CPU/int8. O Vosk fornece parciais e detecta o fim da fala; seu resultado nao
+e enviado como pedido quando a transcricao multilingue esta preparada. O texto
 segue pelo WebSocket do chat existente, com origem `pc.chat`, canal `voz` e um
 ID de correlacao proprio. A resposta correspondente usa a voz neural do app,
 com fallback para a voz do Windows.
@@ -37,6 +39,13 @@ Na raiz do repositorio:
 ```
 
 O script prepara o ambiente isolado e os modelos em `.artifacts/wakeword`.
+Tambem instala `requirements-transcricao.txt`, baixa a revisao fixa do
+Whisper small e verifica silencio antes de selecionar esse reconhecedor. O
+download inicial e de aproximadamente 0,5GB. Sem `-Modelo`, preserva o modelo
+de ativacao ja instalado, incluindo a personalizacao da voz.
+`-SemTranscricaoMultilingue` omite apenas esse preparo adicional; nao troca a
+selecao ja existente. Instalacoes antigas sem `desktop-speech.json` continuam
+com Vosk ate prepararem a transcricao multilingue.
 Pode receber `-ModeloPortugues "PASTA_DO_VOSK"`; sem esse parametro e sem um
 modelo ja instalado, baixa o modelo portugues pequeno do site oficial Vosk.
 O classificador ONNX e validado antes da instalacao. As preferencias ficam em
@@ -60,6 +69,22 @@ dependencias no backend nem exige deploy do Render.
 - O backend continua recebendo texto pelo contrato existente; o kernel nao muda.
 
 O Python recebe controle JSON por stdin e publica eventos JSON por stdout.
+Um buffer em memoria preserva os ultimos 160ms da transicao da chamada para o
+pedido, incluindo o frame que disparou a ativacao. Nao existe corte de volume
+para comecar a guardar o comando depois de **Pode falar**. A transcricao usa
+padding de 300ms no filtro de fala para preservar ataques suaves das palavras.
+O vocabulario e aberto, com sugestoes de grafia para WhatsApp, HBO Max,
+Prime Video, Valorant, YouTube e Spotify; essas sugestoes nao obrigam uma
+palavra a aparecer nem limitam o pedido a uma lista fechada.
+
+Ao detectar o fim da fala, o worker libera a captura e transcreve numa thread
+separada. O controle de pausa/cancelamento continua respondendo enquanto a
+inferencia roda. Uma revisao da captura impede que um resultado antigo vire
+pedido depois de cancelar, pausar ou iniciar outra escuta. Nenhum verbo e
+acrescentado para preencher uma palavra perdida; negacoes sao preservadas.
+O normalizador apenas remove a chamada conhecida e recupera a preposicao em
+pedidos de abertura como **abre Valorant PC**, mantendo o destino falado.
+
 Antes de confirmar pausa, fecha a captura. O Rust aguarda esse ACK. O app
 aguarda a pausa antes de reproduzir audio e retoma a deteccao depois da fala,
 com um segundo para descartar o final da propria resposta. Enquanto aguarda
@@ -90,3 +115,22 @@ iniciais. A personalizacao e sua calibracao agora sao avaliadas tambem com
 gravacoes reais. Os resultados e limites atuais estao no
 [relatorio da pronuncia](personalizar-wakeword-pc.md). A amostra continua pequena
 e nao comprova uma taxa de erro diaria.
+
+## Inicio das palavras e nomes estrangeiros
+
+A coleta real reproduziu o problema: o Vosk retornou somente **do quarto**
+para **ligue a luz do quarto**, errou os nomes estrangeiros e perdeu a negacao
+em outra frase. O Whisper reconheceu os seis pedidos de teste com seus
+sentidos preservados. O pipeline tambem foi testado com chamada real, pausa,
+pedido, transcricao e resolucao de destino, sem executar os exemplos gravados.
+No teste ao vivo, o usuario confirmou que **ligue a luz do quarto** e
+**abra HBO Max no PC** funcionaram.
+
+Neste PC, a transcricao levou aproximadamente 2,5 a 3,4 segundos por frase curta,
+alem do tempo de detectar o fim da fala e receber a resposta do servidor.
+Os 100 testes relacionados passaram. O modelo de ativacao pessoal nao mudou.
+Prime e Amazon Prime tambem resolvem para o site cadastrado do Prime Video.
+Isso nao garante a grafia de qualquer nome ou a presenca de qualquer app no PC.
+
+Detalhes: [validacao da transcricao](validacoes/transcricao-pc-2026-10-21.json).
+Referencia da implementacao local: [faster-whisper](https://github.com/SYSTRAN/faster-whisper).

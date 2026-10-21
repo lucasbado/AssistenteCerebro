@@ -1,0 +1,5 @@
+# Apenas no ambiente de voz do PC; sem API paga ou upload de audio.
+faster-whisper==1.2.1
+ctranslate2==4.8.3
+# PyAV 19 removeu metadata_errors, usado pelo faster-whisper 1.2.1.
+av==16.1.0

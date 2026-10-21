@@ -1,0 +1,43 @@
+{
+  "data_local": "2026-10-21",
+  "objetivo": "Preservar inicio de comandos pt-BR e nomes estrangeiros no app do PC",
+  "wake_word_pessoal_sha256_preservado": "38cacbdd4575d6618d26d704d4b7e81f087c11e6dbc1e02db4b6fd187503832f",
+  "transcricao": {
+    "pacote": "faster-whisper==1.2.1",
+    "ctranslate2": "4.8.3",
+    "pyav": "16.1.0",
+    "modelo": "Systran/faster-whisper-small",
+    "revisao": "536b0662742c02347bc0e980a01041f333bce120",
+    "execucao": "CPU int8, 4 threads, linguagem pt com vocabulario aberto",
+    "buffer_transicao_ms": 160,
+    "speech_pad_ms": 300,
+    "rede_durante_transcricao": false
+  },
+  "coleta_real": [
+    {"pedido": "Ligue a luz do quarto", "vosk": "do quarto", "novo_pipeline": "Liga a luz do quarto.", "destino_validado": "casa: ligar luz do quarto"},
+    {"pedido": "Abra HBO Max no PC", "vosk": "abrir meu máquina", "novo_pipeline": "Abre a HBO Max no PC.", "destino_validado": "PC: abrir_url https://www.hbomax.com/"},
+    {"pedido": "Abra WhatsApp no PC", "vosk": "", "novo_pipeline": "Abre o WhatsApp no PC", "destino_validado": "PC: abrir_app whatsapp"},
+    {"pedido": "Abra Prime Video no PC", "vosk": "a obra original", "novo_pipeline": "Abra Prime Video no PC.", "destino_validado": "PC: abrir_url https://www.primevideo.com/"},
+    {"pedido": "Abra Valorant no PC", "vosk": "abra valor ano", "novo_pipeline": "Abre Valorant no PC.", "destino_validado": "PC: abrir_app valorant"},
+    {"pedido": "Nao ligue a luz do quarto", "vosk": "liga luz do quarto", "novo_pipeline": "Não liga a luz do quarto.", "destino_validado": "Sem acao pelos parsers deterministas"}
+  ],
+  "teste_desenvolvimento": {
+    "chamada_real_mais_comando": "Liga a luz do quarto.",
+    "seis_pedidos_com_sentido_preservado": true,
+    "exemplos_gravados_executados": false,
+    "latencia_transcricao_aproximada_segundos": [2.5, 3.4],
+    "observacao": "As gravacoes orientaram a escolha de parametros; nao sao benchmark cego de precisao."
+  },
+  "teste_ao_vivo": {
+    "comandos": ["ligue a luz do quarto", "abra HBO Max no PC"],
+    "confirmacao_do_usuario": "Os dois funcionaram",
+    "modelo_pessoal_e_microfone_B1_preservados": true
+  },
+  "verificacao": {
+    "testes_relacionados": 100,
+    "resultado": "Todos passaram; um aviso preexistente do TestClient",
+    "cobertura": ["Buffer inclui frame de ativacao", "Resultado antigo descartado apos cancelar", "Fila de transcricao limitada", "Negacao preservada", "Nomes e destinos", "Compatibilidade Vosk anterior", "Casa e roteamento existentes"]
+  },
+  "privacidade": "Gravacoes e modelos em .artifacts/wakeword, fora do Git. Nenhum audio enviado; somente texto pelo chat existente.",
+  "limites": "Teste de desenvolvimento com um usuario. Nao garante todos os nomes, ambientes ruidosos, idiomas de comando ou disponibilidade dos aplicativos."
+}

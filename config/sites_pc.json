@@ -1,6 +1,6 @@
 [
   {"nome": "HBO Max", "apelidos": ["hbo", "hbo max", "hbomax", "max", "hbo max.exe", "hbomax.exe", "max.exe", "com.wbd.stream", "max.com", "hbomax.com", "www.hbomax.com"], "url": "https://www.hbomax.com/"},
   {"nome": "Netflix", "apelidos": ["netflix"], "url": "https://www.netflix.com/"},
-  {"nome": "Prime Video", "apelidos": ["prime video", "amazon prime video"], "url": "https://www.primevideo.com/"},
+  {"nome": "Prime Video", "apelidos": ["prime", "amazon prime", "prime video", "amazon prime video"], "url": "https://www.primevideo.com/"},
   {"nome": "Disney+", "apelidos": ["disney+", "disney plus"], "url": "https://www.disneyplus.com/"}
 ]

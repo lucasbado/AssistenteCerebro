@@ -4,6 +4,7 @@ JSON por stdin/stdout. Audio fica em memoria; o processo nao conhece servidor,
 token, automacoes ou TTS. O desktop controla a retomada depois da resposta.
 """
 import argparse
+from collections import deque
 import json
 from pathlib import Path
 import queue
@@ -21,7 +22,7 @@ MODELS = ROOT / '.artifacts/wakeword/modelos'
 
 
 class Conversation:
-    def __init__(self, detector, recognizer_factory, emit, threshold=.5):
+    def __init__(self, detector, recognizer_factory, emit, threshold=.5, transcriber=None):
         self.detector, self.factory, self.emit = detector, recognizer_factory, emit
         self.threshold = threshold
         self.state = 'paused'
@@ -30,12 +31,25 @@ class Conversation:
         self.ready_at = 0.0
         self.partial = ''
         self.gate = ActivationGate(threshold)
+        self.transcriber = transcriber
+        self.history = deque(maxlen=2)  # 160ms: preserva a transicao sem repetir boa parte do nome.
+        self.audio = bytearray()
+        self.revision = 0
+        self.waiting = None
+        self.pending_audio = None
+
+    def invalidate(self):
+        self.revision += 1
+        self.waiting = self.pending_audio = None
+        self.audio.clear()
+        self.history.clear()
 
     def set_state(self, state):
         self.state = state
         self.emit({'type': 'state', 'state': state})
 
     def resume(self, now):
+        self.invalidate()
         self.detector.reset()
         self.recognizer = None
         self.gate = ActivationGate(self.threshold)
@@ -43,20 +57,39 @@ class Conversation:
         self.set_state('wake')
 
     def pause(self):
+        self.invalidate()
         self.recognizer = None
         self.partial = ''
         self.detector.reset()
         self.set_state('paused')
 
-    def listen(self, now):
+    def listen(self, now, preroll=b''):
+        self.invalidate()
         self.recognizer = self.factory()
+        self.audio.extend(preroll)
+        if preroll:
+            self.recognizer.AcceptWaveform(preroll)
         self.started, self.partial = now, ''
         self.set_state('listening')
 
     def finish(self, text):
-        text = str(text).strip()
         self.recognizer = None
         self.set_state('thinking')
+        if self.transcriber is not None:
+            self.waiting = self.revision
+            self.pending_audio = (self.revision, bytes(self.audio))
+            self.audio.clear()
+            return
+        self.publish_text(text)
+
+    def complete(self, revision, text, failed=False):
+        if revision != self.revision or self.waiting != revision or self.state != 'thinking':
+            return
+        self.waiting = None
+        self.publish_text('' if failed else text)
+
+    def publish_text(self, text):
+        text = str(text).strip()
         if text:
             self.emit({'type': 'transcript', 'text': text})
         else:
@@ -64,15 +97,17 @@ class Conversation:
 
     def process(self, pcm, now):
         if self.state == 'wake' and now >= self.ready_at:
+            self.history.append(pcm)
             import numpy as np
             score = float(next(iter(self.detector.predict(np.frombuffer(pcm, dtype=np.int16)).values())))
             if self.gate.accept(score, now):
                 self.emit({'type': 'wake', 'score': score})
-                self.listen(now)
+                self.listen(now, b''.join(self.history))
         elif self.state == 'listening':
+            self.audio.extend(pcm)
             if self.recognizer.AcceptWaveform(pcm):
                 text = json.loads(self.recognizer.Result()).get('text', '')
-                if text.strip():
+                if text.strip() or self.transcriber is not None:
                     self.finish(text)
                     return
             partial = json.loads(self.recognizer.PartialResult()).get('partial', '')
@@ -99,21 +134,29 @@ def create_conversation(publish=emit):
     from vosk import Model, KaldiRecognizer, SetLogLevel
     if __package__:
         from .testar import load_model
+        from .transcricao import load_transcriber
     else:
         from testar import load_model
+        from transcricao import load_transcriber
     SetLogLevel(-1)
     language = MODELS / 'vosk-model-small-pt-0.3'
     if not language.is_dir():
         raise RuntimeError('Modelo de portugues do PC ainda nao foi preparado.')
     detector = load_model(MODELS / 'hey_ollie.onnx')
     speech_model = Model(str(language))
-    return Conversation(detector, lambda: KaldiRecognizer(speech_model, RATE), publish)
+    return Conversation(detector, lambda: KaldiRecognizer(speech_model, RATE), publish,
+                        transcriber=load_transcriber(MODELS.parent))
 
 
 def run(device=None):
     import sounddevice as sd
     import numpy as np
     conversation = create_conversation()
+    if __package__:
+        from .transcricao import TranscriptionJobs
+    else:
+        from transcricao import TranscriptionJobs
+    jobs = TranscriptionJobs(conversation.transcriber) if conversation.transcriber is not None else None
     commands = queue.Queue()
     def read_commands():
         for line in sys.stdin:
@@ -159,6 +202,9 @@ def run(device=None):
                     conversation.listen(time.monotonic())
                 if 'request_id' in command:
                     emit({'ack': command['request_id']})
+            if jobs:
+                for revision, text, failed in jobs.poll():
+                    conversation.complete(revision, text, failed)
             if conversation.state not in ('wake', 'listening'):
                 close_stream()
                 continue
@@ -175,6 +221,10 @@ def run(device=None):
             conversation.process(pcm, now)
             if conversation.state not in ('wake', 'listening'):
                 close_stream()
+            if jobs and conversation.pending_audio is not None:
+                revision, audio = conversation.pending_audio
+                conversation.pending_audio = None
+                jobs.submit(revision, audio)  # Captura ja fechada; ACKs continuam sendo atendidos.
             if now - last_level >= 1:
                 samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
                 level = float(np.sqrt(np.mean(samples * samples)) / 32768)

@@ -11,7 +11,8 @@ from servicos.sites_pc import resolver_site_pc, url_explicita
     ("HBO Max", "https://www.hbomax.com/"), ("Max", "https://www.hbomax.com/"),
     ("max.exe", "https://www.hbomax.com/"), ("com.wbd.stream", "https://www.hbomax.com/"),
     ("hbomax.com", "https://www.hbomax.com/"), ("Netflix", "https://www.netflix.com/"),
-    ("Prime Video", "https://www.primevideo.com/"), ("Disney Plus", "https://www.disneyplus.com/"),
+    ("Prime Video", "https://www.primevideo.com/"), ("Prime", "https://www.primevideo.com/"),
+    ("Amazon Prime", "https://www.primevideo.com/"), ("Disney Plus", "https://www.disneyplus.com/"),
     ("github.com", "https://github.com"),
     ("https://example.com/Video/ABC?share=XYZ#Frame", "https://example.com/Video/ABC?share=XYZ#Frame"),
 ])
