@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "Ollie Master (Debug)",
+        "title": "Ollie · Central do PC",
         "width": 1050,
         "height": 750,
+        "minWidth": 640,
+        "minHeight": 560,
         "transparent": false,
         "decorations": true,
         "resizable": true

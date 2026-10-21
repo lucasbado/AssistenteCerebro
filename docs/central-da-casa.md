@@ -5,6 +5,7 @@ Revisão atual de sites, notificações, dock e wake word: [alterações e verif
 Treino do detector “Hey Ollie”: [passo a passo no Colab e teste local](treinar-wakeword-ollie.md).
 Ativação por voz no celular e navegação: [implementação e validação no Android](wakeword-android.md).
 Continuidade após perguntas e retomada da chamada: [turnos de voz e ilha](turnos-voz-android.md).
+Interface do computador, navegação e estados: [revisão de UI/UX do PC](revisao-ui-desktop.md).
 
 A conversa acontece com a Ollie. Ela identifica o pedido, encontra o dispositivo
 cadastrado e coordena a execução. O Home Assistant comunica com a lâmpada e os

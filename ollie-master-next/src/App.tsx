@@ -1,23 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Database,
-  Activity,
-  Terminal,
-  Send,
-  X,
-  Minus,
-  RefreshCw,
-  Search,
-  Shield,
-  Maximize2,
-  Volume2,
-  VolumeX,
-  Mic,
-  MicOff
-} from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import DesktopInterface, { type DesktopPage, type DesktopMessage, type InterventionPolicy } from './components/DesktopInterface';
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { DesktopReplies } from './desktopReplies';
@@ -33,8 +15,16 @@ async function authenticatedFetch(url: string, options: RequestInit = {}) {
   return response;
 }
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+function requirePolicy(data: unknown): InterventionPolicy {
+  const value = data as Partial<InterventionPolicy> | null;
+  if (!value || typeof value.auto_open_enabled !== 'boolean' || typeof value.min_priority_score !== 'number' ||
+      !Number.isFinite(value.min_priority_score) || value.min_priority_score < 0 || value.min_priority_score > 1 ||
+      !Array.isArray(value.whitelist) || !value.whitelist.every(app => typeof app === 'string') ||
+      !Array.isArray(value.blacklist) || !value.blacklist.every(app => typeof app === 'string')) {
+    throw new Error('Permissões inválidas recebidas do servidor.');
+  }
+  return { auto_open_enabled: value.auto_open_enabled, min_priority_score: value.min_priority_score,
+    whitelist: value.whitelist, blacklist: value.blacklist };
 }
 
 // --- Interfaces ---
@@ -51,43 +41,17 @@ interface WindowUpdate {
   process: string;
 }
 
-// --- Components ---
-
-const NeonStat = ({ label, value, segments, color }: { label: string, value: string, segments: number, color: string }) => (
-  <div className="space-y-2">
-    <div className="flex justify-between items-center text-[11px] font-medium">
-      <span className="text-gray-500 uppercase tracking-widest">{label}</span>
-      <span className="text-white font-bold">{value}</span>
-    </div>
-    <div className="flex gap-1">
-      {Array.from({ length: 10 }).map((_, i) => (
-        <div
-          key={i}
-          className={cn(
-            "h-1.5 flex-1 rounded-sm transition-all duration-500",
-            i < segments ? color : "bg-white/5"
-          )}
-          style={i < segments ? { boxShadow: `0 0 8px var(--color-${color.replace('bg-', '')})` } : {}}
-        />
-      ))}
-    </div>
-  </div>
-);
-
-const LogEntry = ({ timestamp, text, color }: { timestamp: string, text: string, color: string }) => (
-  <div className="flex gap-3 text-[11px] font-mono py-1 group">
-    <span className="text-gray-600 shrink-0">[{timestamp}]</span>
-    <span className={cn("break-all leading-relaxed", color)}>{text}</span>
-  </div>
-);
-
 export default function App() {
+  const [page, setPage] = useState<DesktopPage>('chat');
+  const [messages, setMessages] = useState<DesktopMessage[]>([]);
+  const [notice, setNotice] = useState<{ text: string; kind: 'error' | 'success' } | null>(null);
+  const [hardwareReady, setHardwareReady] = useState(false);
   const [mood, setMood] = useState<'idle' | 'thinking' | 'alert'>('idle');
   const [isConnected, setIsConnected] = useState(false);
   const [logs, setLogs] = useState<{t: string, m: string, c: string}[]>([]);
   const [cpu, setCpu] = useState(0);
   const [ram, setRam] = useState(0);
-  const [vision, setVision] = useState({ process: "IDLE", title: "Scanning neural activity..." });
+  const [vision, setVision] = useState({ process: "", title: "" });
   const [chatText, setChatInput] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(() => localStorage.getItem('ollie.desktopVoice') !== 'false');
   const voiceEnabledRef = useRef(voiceEnabled);
@@ -109,7 +73,6 @@ export default function App() {
     speakLocal: text => invoke('speak_response', { text }),
     stopLocal: () => invoke('stop_speech'),
   });
-  const [wsInstance, setWs] = useState<WebSocket | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const [listeningPhase, setListeningPhase] = useState<ListeningPhase>('off');
   const [microphoneLevel, setMicrophoneLevel] = useState(0);
@@ -130,8 +93,8 @@ export default function App() {
     phase: phase => setListeningPhase(phase),
     partial: setHeardText,
     level: setMicrophoneLevel,
-    wake: () => { void invoke('activate_window'); addLog('Pode falar seu comando.', 'text-neon-cyan'); },
-    error: message => addLog(`Voz: ${message}`, 'text-neon-orange'),
+    wake: () => { setPage('chat'); void invoke('activate_window'); addLog('Pode falar seu comando.', 'text-neon-cyan'); },
+    error: message => { addLog(`Voz: ${message}`, 'text-neon-orange'); setNotice({ text: message, kind: 'error' }); },
   });
 
   const sendVoiceChat = (text: string, signal: AbortSignal): Promise<string> => {
@@ -153,6 +116,7 @@ export default function App() {
       if (signal.aborted) { cancel(); return; }
       desktopReplies.current.expect(id);
       addLog(`Você: ${text}`, 'text-white');
+      appendMessage('user', text, `user-${id}`);
       setMood('thinking');
       try {
         socket.send(JSON.stringify({ tipo_ws: 'CHAT_MESSAGE', texto: text, pacote: 'pc.chat', correlacao_id: id, canal: 'voz' }));
@@ -165,14 +129,13 @@ export default function App() {
       await invoke('save_desktop_listening_preferences', { enabled, device });
       if (enabled) await listening.current!.start(device);
       else await listening.current!.stop();
-    } catch (error) { addLog(`Não consegui ativar a voz: ${error}`, 'text-neon-orange'); }
+    } catch (error) { addLog(`Não consegui ativar a voz: ${error}`, 'text-neon-orange'); setNotice({ text: 'Não consegui ativar a voz. Confira o microfone e tente novamente.', kind: 'error' }); }
   };
-  const [showInterventionModal, setShowInterventionModal] = useState(false);
-  const [policy, setPolicy] = useState({
+  const [policy, setPolicy] = useState<InterventionPolicy>({
     auto_open_enabled: false,
     min_priority_score: 0.85,
-    whitelist: ["whatsapp", "telegram", "vscode"],
-    blacklist: ["jogo", "netflix", "youtube"]
+    whitelist: [],
+    blacklist: []
   });
 
   const policyRef = useRef(policy);
@@ -184,74 +147,94 @@ export default function App() {
   const lastCommandRef = useRef<{ id: string; comando: string; status: string } | null>(null);
   const houseResultsRef = useRef(new Map<string, { entity_id: string; state: string }>());
 
+  const [policyLoading, setPolicyLoading] = useState(true);
+  const [policyError, setPolicyError] = useState('');
+  const [policyBusy, setPolicyBusy] = useState(false);
+  const [routinesLoading, setRoutinesLoading] = useState(true);
+  const [routinesError, setRoutinesError] = useState('');
+  const [routineBusy, setRoutineBusy] = useState<string | null>(null);
   const [discoveredRoutines, setDiscoveredRoutines] = useState<any[]>([]);
 
   const fetchDiscovered = async () => {
+    setRoutinesLoading(true); setRoutinesError('');
     try {
       const apiUrl = await invoke<string>("get_api_url");
       const res = await authenticatedFetch(`${apiUrl}/api/v1/capabilities/discovered`);
       const data = await res.json();
-      setDiscoveredRoutines(Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.error("Failed to fetch discovered routines", e);
-    }
+      if (!Array.isArray(data) || !data.every(item => item && typeof item.nome === 'string' &&
+          (item.justificativa == null || typeof item.justificativa === 'string') &&
+          (item.pode_ativar == null || typeof item.pode_ativar === 'boolean') &&
+          (item.problemas == null || (Array.isArray(item.problemas) && item.problemas.every((problem: unknown) => typeof problem === 'string'))))) {
+        throw new Error('Resposta de rotinas inválida.');
+      }
+      setDiscoveredRoutines(data);
+    } catch {
+      setRoutinesError('Não consegui buscar as rotinas. Confira a conexão e tente novamente.');
+    } finally { setRoutinesLoading(false); }
   };
 
   const approveRoutine = async (nome: string) => {
+    if (routineBusy !== null) return;
+    setRoutineBusy(nome);
     try {
       const apiUrl = await invoke<string>("get_api_url");
       const res = await authenticatedFetch(`${apiUrl}/api/v1/capabilities/approve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome })
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nome })
       });
       const data = await res.json();
-      addLog(`✅ ${data.message || 'Rotina ativada!'}`, "text-neon-cyan");
-      fetchDiscovered();
-    } catch (e) {
-      addLog(`Failed to approve routine: ${e}`, "text-red-400");
-    }
+      addLog(data.message || 'Rotina ativada.', 'text-neon-cyan');
+      setNotice({ text: data.message || 'Rotina ativada.', kind: 'success' });
+      await fetchDiscovered();
+    } catch (error) {
+      addLog(`Não consegui ativar a rotina: ${error}`, 'text-red-400');
+      setNotice({ text: 'Não consegui ativar a rotina. Tente novamente.', kind: 'error' });
+    } finally { setRoutineBusy(null); }
   };
 
   const rejectRoutine = async (nome: string) => {
+    if (routineBusy !== null) return;
+    setRoutineBusy(nome);
     try {
       const apiUrl = await invoke<string>("get_api_url");
-      const res = await authenticatedFetch(`${apiUrl}/api/v1/capabilities/discovered/${encodeURIComponent(nome)}`, {
-        method: "DELETE"
-      });
+      const res = await authenticatedFetch(`${apiUrl}/api/v1/capabilities/discovered/${encodeURIComponent(nome)}`, { method: 'DELETE' });
       const data = await res.json();
-      addLog(`🗑️ ${data.message || 'Rotina descartada.'}`, "text-neon-orange");
-      fetchDiscovered();
-    } catch (e) {
-      addLog(`Failed to reject routine: ${e}`, "text-red-400");
-    }
+      addLog(data.message || 'Sugestão descartada.', 'text-neon-orange');
+      setNotice({ text: data.message || 'Sugestão descartada.', kind: 'success' });
+      await fetchDiscovered();
+    } catch (error) {
+      addLog(`Não consegui descartar a sugestão: ${error}`, 'text-red-400');
+      setNotice({ text: 'Não consegui descartar a sugestão. Tente novamente.', kind: 'error' });
+    } finally { setRoutineBusy(null); }
   };
 
   const fetchPolicy = async () => {
+    setPolicyLoading(true); setPolicyError('');
     try {
       const apiUrl = await invoke<string>("get_api_url");
       const res = await authenticatedFetch(`${apiUrl}/api/v1/pc/intervention/policy`);
       const data = await res.json();
-      setPolicy(data);
-    } catch (e) {
-      console.error("Failed to fetch policy", e);
-    }
+      setPolicy(requirePolicy(data));
+    } catch {
+      setPolicyError('Não consegui consultar as permissões atuais. Os controles ficam indisponíveis até reconectar.');
+    } finally { setPolicyLoading(false); }
   };
 
-  const updatePolicy = async (newPolicy: any) => {
+  const updatePolicy = async (newPolicy: InterventionPolicy) => {
+    if (policyBusy || policyLoading || policyError) return;
+    setPolicyBusy(true);
     try {
       const apiUrl = await invoke<string>("get_api_url");
       const res = await authenticatedFetch(`${apiUrl}/api/v1/pc/intervention/policy`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newPolicy)
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newPolicy)
       });
       const data = await res.json();
-      setPolicy(data.policy);
-      addLog("🛡️ Intervention policy updated successfully.", "text-neon-cyan");
-    } catch (e) {
-      addLog(`Failed to update policy: ${e}`, "text-red-400");
-    }
+      setPolicy(requirePolicy(data.policy));
+      setNotice({ text: 'Permissões atualizadas.', kind: 'success' });
+      addLog('Permissões de autonomia atualizadas.', 'text-neon-cyan');
+    } catch (error) {
+      addLog(`Não consegui salvar as permissões: ${error}`, 'text-red-400');
+      setNotice({ text: 'Não consegui salvar. As permissões anteriores continuam em uso.', kind: 'error' });
+    } finally { setPolicyBusy(false); }
   };
 
   useEffect(() => {
@@ -259,9 +242,11 @@ export default function App() {
     fetchDiscovered();
   }, []);
 
-  // Mood Colors
-  const accentColor = mood === 'thinking' ? '#bc13fe' : mood === 'alert' ? '#ff9800' : '#05ffa1';
-  const accentTailwind = mood === 'thinking' ? 'bg-neon-purple' : mood === 'alert' ? 'bg-neon-orange' : 'bg-neon-cyan';
+  const appendMessage = (role: DesktopMessage['role'], text: string, id: string) => {
+    setMessages(previous => previous.some(message => message.id === id) ? previous : [...previous.slice(-99), {
+      id, role, text, time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    }]);
+  };
 
   const addLog = (m: string, c: string = "text-gray-400") => {
     setLogs(prev => [...prev.slice(-99), { t: new Date().toLocaleTimeString(), m, c }]);
@@ -305,9 +290,10 @@ export default function App() {
       addLog(`⚡ Executing local PC command: ${cmd} (${param})`, "text-neon-cyan");
 
       if (cmd === 'wake_ollie') {
+        setPage('chat');
         await invoke('activate_window');
         if (listening.current!.enabled) await listening.current!.listenNow();
-        chatInputRef.current?.focus();
+        requestAnimationFrame(() => chatInputRef.current?.focus());
         setMood('idle');
         if (!listening.current!.enabled) addLog('Ollie pronta. Digite seu comando.', 'text-neon-cyan');
       } else if (cmd === 'executar_cenario') {
@@ -332,25 +318,26 @@ export default function App() {
       addLog(`✅ Executed successfully: ${cmd}`, "text-neon-cyan");
       finish('concluido');
     } catch (err) {
-      addLog(`Execution Error: ${err}`, "text-red-400");
+      addLog(`Erro ao executar: ${err}`, "text-red-400");
+      setNotice({ text: `Não consegui concluir a ação: ${err}`, kind: 'error' });
       finish('erro');
     }
   };
 
-  const sendChat = async () => {
-    if (!chatText.trim() || wsInstance?.readyState !== WebSocket.OPEN) return;
-    addLog(`👤 USER >> ${chatText}`, "text-white");
+  const sendChat = () => {
+    const text = chatText.trim(), socket = socketRef.current;
+    if (!text || socket?.readyState !== WebSocket.OPEN) return;
     const correlation = crypto.randomUUID();
     desktopReplies.current.expect(correlation);
-
-    wsInstance.send(JSON.stringify({
-      tipo_ws: "CHAT_MESSAGE",
-      texto: chatText,
-      pacote: "pc.chat", correlacao_id: correlation, canal: "texto"
-    }));
-
-    setChatInput("");
-    setMood("thinking");
+    try {
+      socket.send(JSON.stringify({ tipo_ws: 'CHAT_MESSAGE', texto: text, pacote: 'pc.chat', correlacao_id: correlation, canal: 'texto' }));
+      appendMessage('user', text, `user-${correlation}`);
+      addLog(`Você: ${text}`, 'text-white');
+      setChatInput(''); setNotice(null); setMood('thinking');
+    } catch {
+      desktopReplies.current.forget(correlation);
+      setNotice({ text: 'Não consegui enviar. Sua mensagem continua no campo para tentar novamente.', kind: 'error' });
+    }
   };
 
   // --- Effects ---
@@ -379,11 +366,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const logContainer = document.querySelector('.custom-scrollbar');
-    if (logContainer) logContainer.scrollTop = logContainer.scrollHeight;
-  }, [logs]);
-
-  useEffect(() => {
     console.log("🚀 Ollie Master Next starting...");
     addLog("OLLIE Master Next // Neural Interface Initialized", "text-neon-cyan");
 
@@ -401,6 +383,7 @@ export default function App() {
 
     // Listen to Hardware Updates
     unlistenHardware = listen<HardwareUpdate>("hardware-update", (event) => {
+      setHardwareReady(true);
       setCpu(event.payload.cpu);
       setRam(event.payload.ram);
 
@@ -455,7 +438,6 @@ export default function App() {
         const ws = new WebSocket(cloudUrl, ["ollie", `bearer.${token}`]);
         activeSocket = ws;
         socketRef.current = ws;
-        setWs(ws);
 
         ws.onopen = () => {
           isConnecting = false;
@@ -474,6 +456,7 @@ export default function App() {
             addLog(`🤖 OLLIE: ${data.texto}`, "text-neon-purple text-[13px] font-bold");
             setMood("idle");
             const reply = desktopReplies.current.consume(data);
+            if (reply) appendMessage('ollie', reply, String(data.id || `${data.correlacao_id}:${reply}`));
             const voiceRequest = pendingVoice.current.get(data.correlacao_id);
             if (reply && voiceRequest) {
               voiceRequest.resolve(reply);
@@ -506,7 +489,7 @@ export default function App() {
           for (const request of pendingVoice.current.values()) request.reject(new Error('A conexão com a Ollie foi interrompida.'));
           isConnecting = false;
           if (!isComponentMounted) return;
-          setIsConnected(false);
+          setIsConnected(false); setMood('idle');
           addLog("❌ Falha de link: Cloud connection lost.", "text-red-400");
           clearTimeout(reconnectTimeout);
           reconnectTimeout = window.setTimeout(setupWS, 10000); // Aumentado para 10s para evitar spam
@@ -547,380 +530,29 @@ export default function App() {
     };
   }, []);
 
-  return (
-    <main className="relative w-screen h-screen overflow-hidden p-6 text-white font-sans selection:bg-neon-purple/30 bg-black/10">
-      {/* --- AURA BACKGROUNDS --- */}
-      <motion.div
-        animate={{
-          scale: [1, 1.2, 1],
-          opacity: [0.25, 0.4, 0.25],
-          x: [-200, -150, -200],
-          y: [-200, -150, -200]
-        }}
-        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute w-[600px] h-[600px] rounded-full blur-[100px]"
-        style={{
-          background: `radial-gradient(circle, ${accentColor} 0%, transparent 70%)`,
-          left: -200, top: -200
-        }}
-      />
-      <motion.div
-        animate={{
-          scale: [1, 1.1, 1],
-          opacity: [0.1, 0.2, 0.1],
-          x: [150, 100, 150],
-          y: [150, 100, 150]
-        }}
-        transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute w-[500px] h-[500px] rounded-full blur-[80px]"
-        style={{
-          background: `radial-gradient(circle, #bc13fe 0%, transparent 70%)`,
-          right: -150, bottom: -150
-        }}
-      />
-
-      {/* --- MAIN INTERFACE --- */}
-      <div className="relative z-10 w-full h-full flex flex-col gap-6">
-
-        {/* HEADER */}
-        <header className="flex justify-between items-center px-4">
-          <div className="flex items-center gap-4">
-            <Activity className="w-8 h-8 text-neon-cyan" />
-            <h1 className="text-xl font-black tracking-[4px] uppercase">Ollie Master</h1>
-          </div>
-
-          <div className="flex items-center gap-6">
-            <div className="glass px-6 py-3 rounded-3xl flex items-center gap-3">
-              <div className={cn("w-2.5 h-2.5 rounded-full", isConnected ? accentTailwind : "bg-red-500 animate-pulse")} />
-              <span className={cn("text-[11px] font-bold tracking-widest", isConnected ? "text-white" : "text-red-400")}>
-                {isConnected ? "ONLINE // NEURAL LINK ACTIVE" : "OFFLINE // LINK BROKEN"}
-              </span>
-            </div>
-
-            <div className="flex items-center">
-              <button
-                onClick={() => invoke("minimize_window")}
-                className="p-2 text-gray-500 hover:text-white transition-colors"
-                title="Minimize"
-              >
-                <Minus className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => invoke("maximize_window")}
-                className="p-2 text-gray-500 hover:text-white transition-colors"
-                title="Maximize / Fullscreen"
-              >
-                <Maximize2 className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => invoke("close_window")}
-                className="p-2 text-gray-500 hover:text-red-400 transition-colors"
-                title="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <div className="flex-1 flex gap-6 overflow-hidden">
-          {/* LEFT PANEL */}
-          <aside className="w-[340px] flex flex-col gap-6 overflow-y-auto custom-scrollbar pr-2">
-
-            {/* OLLIE'S VISION */}
-            <section className="glass rounded-3xl p-6 flex flex-col gap-4">
-              <h2 className="text-[11px] font-bold text-gray-500 tracking-[2px] uppercase">Ollie's Vision</h2>
-              <div className="relative h-40 bg-black/30 rounded-2xl border border-white/5 overflow-hidden p-6 flex flex-col justify-center gap-2">
-                {/* Grid Background */}
-                <div className="absolute inset-0 flex">
-                  {Array.from({ length: 5 }).map((_, i) => <div key={i} className="flex-1 border-r border-white/[0.03]" />)}
-                </div>
-                <div className="absolute inset-0 flex flex-col">
-                  {Array.from({ length: 4 }).map((_, i) => <div key={i} className="flex-1 border-b border-white/[0.03]" />)}
-                </div>
-
-                <div className="relative z-10 space-y-1">
-                  <h3 className="text-xl font-black text-neon-cyan truncate uppercase">{vision.process}</h3>
-                  <p className="text-xs text-gray-400 italic truncate">{vision.title}</p>
-                </div>
-
-                {/* Scan Line */}
-                <motion.div
-                  animate={{ y: [0, 160, 0] }}
-                  transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                  className="absolute left-0 right-0 h-[2px] bg-neon-cyan/30 shadow-[0_0_15px_rgba(5,255,161,0.5)]"
-                />
-
-                {/* REC Indicator */}
-                <div className="absolute top-4 right-4 flex items-center gap-2">
-                  <motion.div
-                    animate={{ opacity: [1, 0, 1] }}
-                    transition={{ duration: 1, repeat: Infinity }}
-                    className="w-2 h-2 rounded-full bg-red-500"
-                  />
-                  <span className="text-[9px] font-black tracking-tighter text-red-400">REC</span>
-                </div>
-              </div>
-            </section>
-
-            {/* HARDWARE NEURONS */}
-            <section className="glass rounded-3xl p-6 flex flex-col gap-6">
-              <h2 className="text-[11px] font-bold text-gray-500 tracking-[2px] uppercase">Hardware Neurons</h2>
-              <div className="space-y-4">
-                <NeonStat label="CPU LOAD" value={`${cpu}%`} segments={Math.floor(cpu/10)} color="bg-neon-cyan" />
-                <NeonStat label="RAM STACK" value={`${ram}%`} segments={Math.floor(ram/10)} color="bg-neon-purple" />
-              </div>
-            </section>
-
-            {/* SUPER PODERES & INTERVENÇÃO */}
-            <section className="glass rounded-3xl p-6 flex flex-col gap-4">
-              <div className="flex justify-between items-center">
-                <h2 className="text-[11px] font-bold text-gray-500 tracking-[2px] uppercase flex items-center gap-1.5">
-                  <Shield className="w-3.5 h-3.5 text-neon-cyan" /> Super Poderes
-                </h2>
-                <button
-                  onClick={() => setShowInterventionModal(true)}
-                  className="text-[10px] text-neon-cyan hover:underline font-mono"
-                >
-                  Configurar
-                </button>
-              </div>
-              <div className="glass p-3 rounded-2xl flex items-center justify-between">
-                <span className="text-xs font-bold text-white">Auto-Open Notificações</span>
-                <input
-                  type="checkbox"
-                  checked={policy.auto_open_enabled}
-                  onChange={(e) => updatePolicy({ ...policy, auto_open_enabled: e.target.checked })}
-                  className="w-4 h-4 accent-neon-cyan cursor-pointer"
-                />
-              </div>
-            </section>
-
-            {/* QUICK ACTIONS */}
-            <section className="glass rounded-3xl p-4 flex justify-around text-neon-cyan">
-              {[
-                { icon: Search, label: "Neural Scan", action: () => handleCommand({ comando: "estudar_pc" }) },
-                { icon: RefreshCw, label: "Reset Link", action: () => reconnectRef.current() },
-                { icon: Database, label: "Hardware Init", action: () => handleCommand({ comando: "inicializar_hardware" }) },
-                { icon: Shield, label: "Intervention Governor", action: () => setShowInterventionModal(true) }
-              ].map((item, i) => (
-                <button
-                  key={i}
-                  onClick={item.action}
-                  className="p-3 rounded-xl hover:bg-white/5 transition-all group relative active:scale-90"
-                  title={item.label}
-                >
-                  <item.icon className="w-5 h-5" />
-                </button>
-              ))}
-            </section>
-          </aside>
-
-          {/* MAIN CONSOLE PANEL */}
-          <section className="flex-1 glass rounded-3xl p-6 flex flex-col gap-5">
-            <div className="flex justify-between items-center">
-              <h2 className="text-[11px] font-bold text-gray-500 tracking-[2px] uppercase">Neural Stream Log</h2>
-              <div className="flex items-center gap-3">
-                <button className="text-xs text-neon-cyan hover:text-white" onClick={() => {
-                  if (!voiceEnabledRef.current) {
-                    setVoiceEnabled(true);
-                    localStorage.setItem('ollie.desktopVoice', 'true');
-                  }
-                  void listening.current!.speakExternal('Oi! Sou a Ollie. Essa é minha voz mais natural no computador.')
-                    .catch(() => addLog('Não consegui reproduzir o teste de voz.', 'text-neon-orange'));
-                }}>Testar voz</button>
-                <button title={voiceEnabled ? 'Silenciar respostas da Ollie' : 'Ouvir respostas da Ollie'}
-                  aria-label={voiceEnabled ? 'Silenciar respostas da Ollie' : 'Ouvir respostas da Ollie'}
-                  aria-pressed={voiceEnabled}
-                  onClick={() => {
-                    const enabled = !voiceEnabled;
-                    setVoiceEnabled(enabled);
-                    localStorage.setItem('ollie.desktopVoice', String(enabled));
-                    if (!enabled) void desktopVoice.current!.stop().catch(() => {});
-                  }} className="text-neon-cyan hover:text-white p-1">
-                  {voiceEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-                </button>
-                <Terminal className="w-5 h-5 text-neon-cyan" />
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-2">
-              <div className="flex items-center gap-3 flex-wrap">
-                <button className="text-sm text-neon-cyan flex items-center gap-2" onClick={() => void changeListening(!listening.current!.enabled)}>
-                  {listening.current.enabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-                  {listening.current.enabled ? 'Desativar Ei Ollie' : 'Ativar Ei Ollie'}
-                </button>
-                <select aria-label="Microfone da Ollie" value={inputDevice ?? ''} className="bg-black text-xs rounded p-1 max-w-[230px]"
-                  onChange={event => {
-                    const device = event.target.value === '' ? null : Number(event.target.value);
-                    setInputDevice(device); inputDeviceRef.current = device;
-                    void changeListening(listening.current!.enabled, device);
-                  }}>
-                  <option value="">Padrão: {inputDevices.find(device => device.default)?.name || 'Windows'}</option>
-                  {inputDevices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}
-                </select>
-                <button className="text-xs disabled:text-gray-600" disabled={!listening.current.enabled || listeningPhase !== 'wake'}
-                  onClick={() => void listening.current!.listenNow()}>Falar agora</button>
-                {['listening', 'thinking', 'speaking'].includes(listeningPhase) && <button className="text-xs text-neon-orange"
-                  onClick={() => void listening.current!.cancel()}>Cancelar</button>}
-              </div>
-              <div className="flex items-center gap-3 text-xs text-gray-300" role="status" aria-live="polite">
-                <span>{{off:'Ativação por voz desligada', starting:'Preparando a voz…', wake:'Diga “Ei Ollie”, espere e faça seu pedido',
-                  listening:'Pode falar…', thinking:'Aguardando resposta…', speaking:'Ollie está respondendo', paused:'Microfone pausado',
-                  error:'Confira o microfone e ative novamente'}[listeningPhase]}</span>
-                <div className="w-16 h-1 bg-white/10 rounded overflow-hidden" aria-label="Nível do microfone">
-                  <div className="h-full bg-neon-cyan transition-all" style={{width:`${Math.min(100, microphoneLevel * 800)}%`}} />
-                </div>
-              </div>
-              {heardText && <div className="text-xs text-neon-cyan break-words">{heardText}</div>}
-            </div>
-
-            <div className="flex-1 glass-dark rounded-2xl p-4 overflow-y-auto custom-scrollbar">
-              <AnimatePresence initial={false}>
-                {logs.map((log, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className={i === logs.length - 1 ? "shadow-[0_0_10px_rgba(162,249,210,0.1)] rounded" : ""}
-                  >
-                    <LogEntry timestamp={log.t} text={log.m} color={log.c} />
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-
-            <div className="flex gap-4 items-center bg-white/[0.02] rounded-2xl p-2 border border-neon-purple/30">
-              <input
-                className="flex-1 bg-transparent border-none outline-none px-4 py-2 text-sm font-mono placeholder:text-gray-600"
-                placeholder="Neural Interface: Type command..."
-                ref={chatInputRef}
-                value={chatText}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && sendChat()}
-              />
-              <button
-                onClick={sendChat}
-                className="bg-white/5 p-3 rounded-xl hover:bg-neon-purple/20 transition-all"
-              >
-                <Send className="w-5 h-5 text-neon-cyan" />
-              </button>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      {/* --- INTERVENTION GOVERNOR MODAL --- */}
-      {showInterventionModal && (
-        <div className="absolute inset-0 z-50 bg-black/95 flex items-center justify-center p-6">
-          <div className="glass w-full max-w-lg rounded-3xl p-6 flex flex-col gap-6 border border-white/10">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-black tracking-wider uppercase text-neon-cyan flex items-center gap-2">
-                <Shield className="w-5 h-5" /> Intervention Governor
-              </h3>
-              <button onClick={() => setShowInterventionModal(false)} className="text-gray-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div className="flex justify-between items-center glass p-4 rounded-2xl">
-                <div>
-                  <h4 className="font-bold text-white">Auto-Open Apps on Notification</h4>
-                  <p className="text-gray-400 text-[10px]">Permitir que a Ollie abra apps automaticamente</p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={policy.auto_open_enabled}
-                  onChange={(e) => updatePolicy({ ...policy, auto_open_enabled: e.target.checked })}
-                  className="w-5 h-5 accent-neon-cyan cursor-pointer"
-                />
-              </div>
-
-              <div className="glass p-4 rounded-2xl space-y-2">
-                <div className="flex justify-between">
-                  <span className="font-bold text-white">Min Priority Score Threshold</span>
-                  <span className="text-neon-cyan font-mono">{policy.min_priority_score}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="1.0"
-                  step="0.05"
-                  value={policy.min_priority_score}
-                  onChange={(e) => updatePolicy({ ...policy, min_priority_score: parseFloat(e.target.value) })}
-                  className="w-full accent-neon-purple cursor-pointer"
-                />
-              </div>
-
-              <div className="glass p-4 rounded-2xl space-y-2">
-                <span className="font-bold text-white block">Whitelist (Apps permitidos)</span>
-                <div className="flex flex-wrap gap-2">
-                  {(policy.whitelist || []).map((app: string, idx: number) => (
-                    <span key={idx} className="bg-neon-cyan/10 text-neon-cyan px-2.5 py-1 rounded-full text-[10px] font-mono border border-neon-cyan/20">
-                      {app}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="glass p-4 rounded-2xl space-y-2">
-                <span className="font-bold text-white block">Blacklist (Nunca abrir sozinhos)</span>
-                <div className="flex flex-wrap gap-2">
-                  {(policy.blacklist || []).map((app: string, idx: number) => (
-                    <span key={idx} className="bg-red-500/10 text-red-400 px-2.5 py-1 rounded-full text-[10px] font-mono border border-red-500/20">
-                      {app}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Rotinas Descobertas pela Ollie */}
-              <div className="glass p-4 rounded-2xl space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-white block">Rotinas Descobertas (Pendentes)</span>
-                  <button onClick={fetchDiscovered} className="text-[10px] text-neon-cyan hover:underline">Atualizar</button>
-                </div>
-                <div className="max-h-36 overflow-y-auto space-y-2 pr-1">
-                  {discoveredRoutines.length === 0 ? (
-                    <p className="text-gray-500 text-[10px] italic">Nenhuma rotina descoberta pendente.</p>
-                  ) : (
-                    discoveredRoutines.map((r, idx) => (
-                      <div key={idx} className="glass p-2 rounded-xl flex items-center justify-between gap-2">
-                        <div className="truncate">
-                          <p className="font-bold text-white text-[10px] truncate">{r.nome}</p>
-                          <p className="text-gray-400 text-[9px] truncate">{r.justificativa}</p>
-                        </div>
-                        <div className="flex gap-1 shrink-0">
-                          <button
-                            onClick={() => approveRoutine(r.nome)}
-                            className="bg-neon-cyan/20 text-neon-cyan hover:bg-neon-cyan/40 px-2 py-0.5 rounded text-[9px] font-bold"
-                          >
-                            Ativar
-                          </button>
-                          <button
-                            onClick={() => rejectRoutine(r.nome)}
-                            className="bg-red-500/20 text-red-400 hover:bg-red-500/40 px-2 py-0.5 rounded text-[9px] font-bold"
-                          >
-                            Excluir
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setShowInterventionModal(false)}
-              className="bg-neon-cyan/25 hover:bg-neon-cyan/40 text-neon-cyan font-bold py-3 rounded-2xl transition-all tracking-widest uppercase text-xs border border-neon-cyan/40 shadow-[0_0_15px_rgba(5,255,161,0.2)]"
-            >
-              Close Governor
-            </button>
-          </div>
-        </div>
-      )}
-    </main>
-  );
+  return <DesktopInterface
+    page={page} onPage={setPage} connected={isConnected} thinking={mood === 'thinking'}
+    cpu={hardwareReady ? cpu : null} ram={hardwareReady ? ram : null} vision={vision} messages={messages} logs={logs}
+    draft={chatText} onDraft={setChatInput} onSend={sendChat} inputRef={chatInputRef}
+    voiceEnabled={voiceEnabled} onToggleVoice={() => {
+      const enabled = !voiceEnabled;
+      setVoiceEnabled(enabled); localStorage.setItem('ollie.desktopVoice', String(enabled));
+      if (!enabled) void desktopVoice.current!.stop().catch(() => {});
+    }} onTestVoice={() => {
+      if (!voiceEnabledRef.current) { setVoiceEnabled(true); localStorage.setItem('ollie.desktopVoice', 'true'); }
+      void listening.current!.speakExternal('Oi! Sou a Ollie. Essa é minha voz mais natural no computador.')
+        .catch(() => setNotice({ text: 'Não consegui reproduzir o teste de voz.', kind: 'error' }));
+    }}
+    listeningEnabled={listening.current.enabled} phase={listeningPhase} level={microphoneLevel} heard={heardText}
+    devices={inputDevices} device={inputDevice} onListening={enabled => void changeListening(enabled)}
+    onDevice={device => { setInputDevice(device); inputDeviceRef.current = device; void changeListening(listening.current!.enabled, device); }}
+    onListenNow={() => { setPage('chat'); void listening.current!.listenNow(); }} onCancel={() => void listening.current!.cancel()}
+    onReconnect={() => reconnectRef.current()} onScan={() => void handleCommand({ comando: 'estudar_pc' })}
+    onHardware={() => void handleCommand({ comando: 'inicializar_hardware' })}
+    policy={policy} policyLoading={policyLoading} policyError={policyError} policyBusy={policyBusy}
+    onPolicy={value => void updatePolicy(value)} onRefreshPolicy={() => void fetchPolicy()}
+    routines={discoveredRoutines} routinesLoading={routinesLoading} routinesError={routinesError} routineBusy={routineBusy}
+    onRefreshRoutines={() => void fetchDiscovered()} onApprove={name => void approveRoutine(name)} onReject={name => void rejectRoutine(name)}
+    notice={notice} onDismissNotice={() => setNotice(null)}
+  />;
 }
