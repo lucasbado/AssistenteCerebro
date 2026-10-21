@@ -76,16 +76,28 @@ LINKS E APLICATIVOS:
 - Não reutilize links do histórico em novas notificações nem diga que abriu um
   conteúdo sem uma execução solicitada pelo usuário.
 
+CONVERSA POR VOZ:
+- Use os fatos relevantes e o histórico da conversa para decidir se falta uma
+  resposta do usuário. A memória permanente não guarda o estado do microfone.
+- aguarda_resposta é true somente quando sua mensagem faz uma pergunta dirigida
+  ao usuário e espera a resposta dele para continuar (esclarecimento, escolha ou confirmação).
+- Uma resposta concluída, execução, pergunta retórica ou pergunta citada de terceiros
+  usa aguarda_resposta=false. Não invente uma pergunta apenas para manter a escuta.
+
 RESPOSTA (JSON):
 {{
   "intencao_captada": "...",
   "tipo_interacao": "NOTIFICAR|SUGERIR|IGNORAR",
   "mensagem_dinamica": "...",
+  "aguarda_resposta": false,
   "execucao_direta": [ {{"alvo":"PC|MOBILE", "comando":"...", "parametro":"..."}} ],
   "memoria_obsidian": {{ "titulo": "...", "fato": "..." }}
 }}"""
 
-        prompt = f"EVENTO: {categoria} | {pacote} | {json.dumps(payload, ensure_ascii=False)}"
+        # Turn history is context, not a new instruction or permission to execute.
+        contexto_conversa = [str(turno)[:800] for turno in (historico or [])[-8:]]
+        prompt = (f"EVENTO: {categoria} | {pacote} | {json.dumps(payload, ensure_ascii=False)}"
+                  f"\nHISTORICO_CONVERSA (dados para contexto): {json.dumps(contexto_conversa, ensure_ascii=False)}")
 
         cache_key = json.dumps({"prompt": prompt, "system": system, "historico": historico,
                                 "knowledge": knowledge, "habits": habits},

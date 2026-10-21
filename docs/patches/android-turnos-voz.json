@@ -1,0 +1,40 @@
+{
+  "base": "Arquivos locais anteriores a esta correcao de turnos; aplicar apos a integracao ONNX e navegacao.",
+  "files": [
+    {
+      "path": "app/src/main/java/com/example/assistentecell/assistant/OllieSession.kt",
+      "before_sha256": "5715e074243af0d5b8c490278e2c360c41b4942937ac6be17aebeaab7472f743",
+      "after_sha256": "92a7a5fbd499b994349b17776bd9b3b1d5cbbc9d0c94990a070483756dc27402"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt",
+      "before_sha256": "0c09513f913bc6a6f332b8dd3c8d353b1b46620e5aa3221453ae943c0ff14b7e",
+      "after_sha256": "95b3087cfe1d804159397aea401fe79c20a80892f4c54786fd60486d32f76075"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/voice/ConversationTurn.kt",
+      "before_sha256": null,
+      "after_sha256": "4c1b9802fe0b03b1a7f92ca98445c5848b01d2a0f263ea0f110aeb9ec4a01f3d"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/voice/VoiceManager.kt",
+      "before_sha256": "510e76635838b6483a2a1fba94e3bf2b2ffc7d9838de4e285bb0152e294eccd3",
+      "after_sha256": "bb0e28d575bb1264e24af21b7e7f9c88967c96287248fdaefac9568be4bb074e"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt",
+      "before_sha256": "91edb2240dec83afcc2a0963c0ce76f8a135ff552039fb8b534dbdd1d471c459",
+      "after_sha256": "be4ede65301b78eff75b1e3e0ed2593caa113bb2d1c8331b2b8a09d1d597c103"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt",
+      "before_sha256": "db455bb69fdce648e1ca4fb6da6e413c66b37e08804d83f0f003a93db4ee659a",
+      "after_sha256": "ca581cce2259ca0701c4571ee9b2ee806e5de429bdf9d82166089bd5f6d3b3cd"
+    },
+    {
+      "path": "app/src/test/java/com/example/assistentecell/ConversationTurnTest.kt",
+      "before_sha256": null,
+      "after_sha256": "7d2d031409a2aafcd00bba1a4815fd4e1dcaf8e2eb8f517ea7ea44383dd8b4e7"
+    }
+  ]
+}

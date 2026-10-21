@@ -4,6 +4,7 @@ Roteamento por dispositivo e resposta em voz no PC: [Comandos por origem](roteam
 Revisão atual de sites, notificações, dock e wake word: [alterações e verificações pendentes](revisao-sites-dock-wakeword.md).
 Treino do detector “Hey Ollie”: [passo a passo no Colab e teste local](treinar-wakeword-ollie.md).
 Ativação por voz no celular e navegação: [implementação e validação no Android](wakeword-android.md).
+Continuidade após perguntas e retomada da chamada: [turnos de voz e ilha](turnos-voz-android.md).
 
 A conversa acontece com a Ollie. Ela identifica o pedido, encontra o dispositivo
 cadastrado e coordena a execução. O Home Assistant comunica com a lâmpada e os

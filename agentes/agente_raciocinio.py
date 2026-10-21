@@ -125,6 +125,10 @@ class AgenteRaciocinio:
                     "tipo_ws": tipo_ws,
                     "contexto": resultado.get("contexto_extra", {})
                 }
+                if tipo_ws == "CHAT_RESPONSE":
+                    # The conversational decision belongs to reasoning; clients only
+                    # reopen capture after the spoken answer has actually finished.
+                    payload_notif["aguarda_resposta"] = resultado.get("aguarda_resposta") is True
                 
                 if tipo_ws == "CHAT_RESPONSE":
                     await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Ollie: {msg_limpa}"])

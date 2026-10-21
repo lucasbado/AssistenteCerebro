@@ -1,0 +1,307 @@
+diff --git a/app/src/main/java/com/example/assistentecell/assistant/OllieSession.kt b/app/src/main/java/com/example/assistentecell/assistant/OllieSession.kt
+--- a/app/src/main/java/com/example/assistentecell/assistant/OllieSession.kt
++++ b/app/src/main/java/com/example/assistentecell/assistant/OllieSession.kt
+@@ -14,6 +14,8 @@
+ import com.example.assistentecell.api.RetrofitClient
+ import com.example.assistentecell.network.BackendChatTransport
+ import com.example.assistentecell.voice.VoiceManager
++import com.example.assistentecell.voice.ConversationTurn
++import com.example.assistentecell.voice.ConversationPhase as Phase
+ import com.example.assistentecell.websocket.ChatBridge
+ import com.example.assistentecell.websocket.ChatMessage
+ import kotlinx.coroutines.*
+@@ -33,7 +35,7 @@
+     private var visible = false
+     private var timeout: Job? = null
+     private var request: Call? = null
+-    private enum class Phase { PREPARING, LISTENING, THINKING, SPEAKING, READY, ERROR }
++    private var followUp: Job? = null
+     private var phase = Phase.READY
+     private var statusText: TextView? = null
+     private var responseArea: View? = null
+@@ -42,12 +44,14 @@
+ 
+     private fun render(next: Phase) {
+         phase = next
++        ChatBridge.updateAssistantSessionBusy(visible && next.blocksWakeWord)
+         statusText?.text = when (next) {
+             Phase.PREPARING -> "Preparando microfone"
+             Phase.LISTENING -> "Estou ouvindo"
+             Phase.THINKING -> "Pensando no seu pedido"
+             Phase.SPEAKING -> "Respondendo para você"
+-            Phase.READY -> "Pronta para continuar"
++            Phase.READY -> if (context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
++                    .getBoolean("wakeword_enabled", false)) "Diga Ei Ollie para continuar" else "Toque para continuar"
+             Phase.ERROR -> "Vamos tentar novamente?"
+         }
+         progress?.visibility = if (next == Phase.THINKING || next == Phase.PREPARING) View.VISIBLE else View.GONE
+@@ -83,24 +87,32 @@
+         scope.launch(start = CoroutineStart.UNDISPATCHED) {
+             ChatBridge.messages.collect { message ->
+                 if (!message.isFromUser && waiting && message.text != "..." &&
+-                    message.correlationId == correlation) showResponse(message.text)
++                    message.correlationId == correlation) showResponse(message.text, message.awaitsAnswer)
+             }
+         }
+         scope.launch { delay(300); startListening() }
+     }
+ 
+-    private fun startListening() {
++    private fun startListening(answering: Boolean = false) {
+         if (!visible || waiting) return
++        followUp?.cancel(); followUp = null
+         correlation = UUID.randomUUID().toString()
+         voice?.stopListening(); voice?.stopSpeaking()
+-        responseArea?.visibility = View.GONE
++        responseArea?.visibility = if (answering) View.VISIBLE else View.GONE
+         responseText?.visibility = View.VISIBLE
+-        userSpeech?.text = "Pode falar, estou aqui."
++        userSpeech?.text = if (answering) "Pode responder, estou ouvindo." else "Pode falar, estou aqui."
+         render(Phase.PREPARING)
+         voice?.startListening(
+             onReady = { render(Phase.LISTENING) },
+             onPartial = { userSpeech?.text = it },
+             onError = { showError(it) },
++            onNoSpeech = {
++                if (visible) {
++                    userSpeech?.text = "Sem pressa. Me chame quando quiser."
++                    render(Phase.READY)
++                    android.util.Log.i("OllieSession", "No speech: wake word released")
++                }
++            },
+             onResult = { text ->
+                 if (visible && text.isNotBlank()) {
+                     userSpeech?.text = text
+@@ -145,7 +157,7 @@
+         }
+     }
+ 
+-    private fun showResponse(text: String) {
++    private fun showResponse(text: String, awaitsAnswer: Boolean?) {
+         waiting = false
+         timeout?.cancel()
+         responseText?.text = text
+@@ -154,8 +166,21 @@
+         render(Phase.SPEAKING)
+         android.util.Log.d("OllieSession", "Voice response matched correlation=$correlation")
+         val answered = correlation
++        val continueConversation = ConversationTurn.awaitsAnswer(text, awaitsAnswer)
+         voice?.speak(text, interactive = true) {
+-            if (visible && correlation == answered) render(Phase.READY)
++            if (visible && correlation == answered && phase == Phase.SPEAKING) {
++                if (continueConversation) {
++                    android.util.Log.i("OllieSession", "Reply completed: awaiting user answer")
++                    followUp = scope.launch {
++                        delay(250) // Avoid capturing the tail of the spoken question.
++                        followUp = null
++                        if (visible && correlation == answered) startListening(answering = true)
++                    }
++                } else {
++                    render(Phase.READY)
++                    android.util.Log.i("OllieSession", "Reply completed: wake word released")
++                }
++            }
+         }
+     }
+ 
+diff --git a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+--- a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
++++ b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+@@ -539,7 +539,9 @@
+ 
+                                 if (!isHabitNoise) {
+                                     ChatBridge.postMessage(
+-                                        ChatMessage(text = texto, isFromUser = false, correlationId = correlacaoId)
++                                        ChatMessage(text = texto, isFromUser = false, correlationId = correlacaoId,
++                                            awaitsAnswer = if (!json.has("aguarda_resposta") || json.isNull("aguarda_resposta")) null
++                                                else json.opt("aguarda_resposta") == true)
+                                     )
+                                 }
+                             }
+diff --git a/app/src/main/java/com/example/assistentecell/voice/ConversationTurn.kt b/app/src/main/java/com/example/assistentecell/voice/ConversationTurn.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/voice/ConversationTurn.kt
+@@ -0,0 +1,24 @@
++package com.example.assistentecell.voice
++
++/** Being visible is distinct from owning an interactive microphone turn. */
++enum class ConversationPhase(val blocksWakeWord: Boolean) {
++    PREPARING(true), LISTENING(true), THINKING(true), SPEAKING(true), READY(false), ERROR(false),
++}
++
++object ConversationTurn {
++    // Compatibility with servers that have not deployed aguarda_resposta yet.
++    // The semantic decision from the server, including false, always wins.
++    private val directQuestion = Regex(
++        "^(?:quer|prefere|posso|poderia|pode|qual|quais|quando|onde|como|quanto|quantos|quantas|" +
++            "o que|mais alguma|tem prefer[eê]ncia|voc[eê] (?:quer|prefere|pode|gostaria|consegue|tem)|" +
++            "would you|do you want|which|what would)\\b", RegexOption.IGNORE_CASE)
++
++    fun awaitsAnswer(text: String, serverDecision: Boolean?): Boolean {
++        if (serverDecision != null) return serverDecision
++        val clean = text.trim().trim('*', '_').trim()
++        if (!clean.endsWith("?")) return false
++        val question = clean.split(Regex("(?<=[.!])\\s+|\\n+"))
++            .last().trim().trimStart('*', '_', '-', ' ')
++        return directQuestion.containsMatchIn(question)
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/voice/VoiceManager.kt b/app/src/main/java/com/example/assistentecell/voice/VoiceManager.kt
+--- a/app/src/main/java/com/example/assistentecell/voice/VoiceManager.kt
++++ b/app/src/main/java/com/example/assistentecell/voice/VoiceManager.kt
+@@ -179,9 +179,10 @@
+     fun startListening(onPartial: ((String) -> Unit)? = null,
+                        onError: ((String) -> Unit)? = null,
+                        onReady: (() -> Unit)? = null,
++                       onNoSpeech: (() -> Unit)? = null,
+                        onResult: (String) -> Unit) {
+         if (Looper.myLooper() != Looper.getMainLooper()) {
+-            Handler(Looper.getMainLooper()).post { startListening(onPartial, onError, onReady, onResult) }
++            Handler(Looper.getMainLooper()).post { startListening(onPartial, onError, onReady, onNoSpeech, onResult) }
+             return
+         }
+         stopSpeaking()
+@@ -196,11 +197,12 @@
+         listeningCancelled = { onResult("") }
+         VoiceActivity.setBusy("$ownerId.listen", true)
+         val generation = ++recognitionGeneration
+-        fun complete(text: String?, error: String? = null) {
++        fun complete(text: String?, error: String? = null, noSpeech: Boolean = false) {
+             if (generation != recognitionGeneration) return
+             listeningCancelled = null
+             stopListening()
+-            if (error != null) fail(error) else onResult(text.orEmpty())
++            if (noSpeech && onNoSpeech != null) onNoSpeech()
++            else if (error != null) fail(error) else onResult(text.orEmpty())
+         }
+         listenJob = voiceScope.launch {
+           delay(180) // The wake-word recorder yields before interactive capture.
+@@ -221,7 +223,7 @@
+             speechRecognizer?.setRecognitionListener(object : RecognitionListener {
+                 override fun onReadyForSpeech(params: Bundle?) {
+                     Log.d("VoiceManager", "Recognition ready")
+-                    onReady?.invoke()
++                    if (generation == recognitionGeneration) onReady?.invoke()
+                 }
+                 override fun onBeginningOfSpeech() {}
+                 override fun onRmsChanged(rmsdB: Float) {}
+@@ -229,13 +231,14 @@
+                 override fun onEndOfSpeech() {}
+                 override fun onError(error: Int) {
+                     Log.e("VoiceManager", "Erro no reconhecimento: $error")
+-                    complete(null, recognitionError(error))
++                    complete(null, recognitionError(error),
++                        noSpeech = error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT)
+                 }
+                 override fun onResults(results: Bundle?) {
+                     val data = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                     Log.d("VoiceManager", "Recognition result received")
+                     val text = data?.firstOrNull()
+-                    if (text.isNullOrBlank()) complete(null, "Não entendi. Toque no microfone e tente de novo.")
++                    if (text.isNullOrBlank()) complete(null, "Não entendi. Toque no microfone e tente de novo.", noSpeech = true)
+                     else complete(text)
+                 }
+                 override fun onPartialResults(partialResults: Bundle?) {
+diff --git a/app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt b/app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt
+--- a/app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt
++++ b/app/src/main/java/com/example/assistentecell/voice/WakeWordService.kt
+@@ -70,7 +70,7 @@
+             }
+         }
+         scope.launch {
+-            combine(VoiceActivity.busy, ChatBridge.isAssistantSessionActive) { voice, session -> voice || session }.collect { active ->
++            combine(VoiceActivity.busy, ChatBridge.isAssistantSessionBusy) { voice, session -> voice || session }.collect { active ->
+                 busy = active
+                 if (active) {
+                     pendingSession = false
+@@ -169,7 +169,7 @@
+         handoff?.cancel()
+         handoff = scope.launch {
+             delay(4000)
+-            if (pendingSession && !ChatBridge.isAssistantSessionActive.value) {
++            if (pendingSession) {
+                 pendingSession = false
+                 WakeWordRuntime.update("Assistente não abriu. Confira o assistente padrão.")
+                 startListening()
+diff --git a/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt b/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
+--- a/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
++++ b/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
+@@ -11,7 +11,8 @@
+     val text: String,
+     val isFromUser: Boolean,
+     val correlationId: String? = null,
+-    val timestamp: Long = System.currentTimeMillis()
++    val timestamp: Long = System.currentTimeMillis(),
++    val awaitsAnswer: Boolean? = null
+ )
+ 
+ object ChatBridge {
+@@ -24,12 +25,20 @@
+     private val _isAssistantSessionActive = MutableStateFlow(false)
+     val isAssistantSessionActive = _isAssistantSessionActive.asStateFlow()
+ 
++    private val _isAssistantSessionBusy = MutableStateFlow(false)
++    val isAssistantSessionBusy = _isAssistantSessionBusy.asStateFlow()
++
++    fun updateAssistantSessionBusy(busy: Boolean) {
++        _isAssistantSessionBusy.value = busy
++    }
++
+     suspend fun postMessage(message: ChatMessage) {
+         _messages.emit(message)
+     }
+ 
+     fun updateAssistantSessionStatus(active: Boolean) {
+         _isAssistantSessionActive.value = active
++        if (!active) _isAssistantSessionBusy.value = false
+     }
+ 
+     fun updateConnectionStatus(connected: Boolean) {
+diff --git a/app/src/test/java/com/example/assistentecell/ConversationTurnTest.kt b/app/src/test/java/com/example/assistentecell/ConversationTurnTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/com/example/assistentecell/ConversationTurnTest.kt
+@@ -0,0 +1,42 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.voice.ConversationPhase
++import com.example.assistentecell.voice.ConversationTurn
++import com.example.assistentecell.websocket.ChatBridge
++import org.junit.Assert.*
++import org.junit.Test
++
++class ConversationTurnTest {
++    @Test fun semanticDecisionOverridesPunctuationInEitherDirection() {
++        assertTrue(ConversationTurn.awaitsAnswer("Me diga qual luz", true))
++        assertFalse(ConversationTurn.awaitsAnswer("Qual a sua dúvida?", false))
++    }
++
++    @Test fun oldServerAsksOnlyForADirectClosingQuestion() {
++        listOf("Qual aplicativo você quer abrir?", "A luz está apagada. Quer que eu acenda?",
++            "Posso te fazer uma pergunta?", "**Você prefere música ou vídeo?**", "Como posso ajudar?").forEach {
++            assertTrue(it, ConversationTurn.awaitsAnswer(it, null))
++        }
++    }
++
++    @Test fun finishedAnswersQuotedQuestionsAndLinksNeverReopenCapture() {
++        listOf("A luz está apagada.", "Enviei o pedido para o PC.",
++            "Ela perguntou: ‘Qual aplicativo?’", "O título é Quem é você?",
++            "https://exemplo.com/?", "Como funciona? Funciona assim.").forEach {
++            assertFalse(it, ConversationTurn.awaitsAnswer(it, null))
++        }
++    }
++
++    @Test fun idleIslandCanStayVisibleWhileWakeWordListens() {
++        ChatBridge.updateAssistantSessionStatus(true)
++        ChatBridge.updateAssistantSessionBusy(ConversationPhase.SPEAKING.blocksWakeWord)
++        assertTrue(ChatBridge.isAssistantSessionBusy.value)
++        ChatBridge.updateAssistantSessionBusy(ConversationPhase.READY.blocksWakeWord)
++        assertTrue(ChatBridge.isAssistantSessionActive.value)
++        assertFalse(ChatBridge.isAssistantSessionBusy.value)
++        ChatBridge.updateAssistantSessionBusy(ConversationPhase.LISTENING.blocksWakeWord)
++        ChatBridge.updateAssistantSessionStatus(false)
++        assertFalse(ChatBridge.isAssistantSessionBusy.value)
++        assertFalse(ConversationPhase.ERROR.blocksWakeWord)
++    }
++}

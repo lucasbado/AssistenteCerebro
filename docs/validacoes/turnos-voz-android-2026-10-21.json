@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-21",
+  "device": "Samsung Galaxy S23 (SM-S911B)",
+  "android_unit_tests": {"tests": 48, "failures": 0, "errors": 0},
+  "backend_tests": {"tests": 70, "failures": 0},
+  "voice_binding": {
+    "before": "mBound=true mService=null",
+    "after": "main_service_connected",
+    "default_assistant_preserved": true
+  },
+  "human_checks": {
+    "island_opens_and_answers_outside_app": true,
+    "wake_again_after_completed_answer_without_closing_island": true,
+    "reopens_microphone_after_direct_question": true,
+    "confirmation": "Os dois funcionaram"
+  },
+  "deployment": {
+    "apk_installed": true,
+    "backend_semantic_decision_requires_manual_render_deploy": true,
+    "live_phone_test_used_legacy_direct_question_fallback": true
+  },
+  "limits": [
+    "A verificacao humana confirma os exemplos testados, nao a precisao geral da deteccao de perguntas.",
+    "Nenhuma chamada adicional de LLM e feita para decidir a reabertura do microfone."
+  ]
+}

@@ -22,7 +22,11 @@ class PoliticaNotificacoes:
         chat = payload.get("tipo_ws") == "CHAT_RESPONSE" or evento.metadados.get("tipo_destino") == "CHAT"
         payload["tipo_ws"] = "CHAT_RESPONSE" if chat else "NOTIFICACAO"
         if chat:
+            if "aguarda_resposta" in payload:
+                payload["aguarda_resposta"] = payload["aguarda_resposta"] is True
             return payload, "resposta_solicitada"
+        # A notification never starts an interactive conversational turn.
+        payload.pop("aguarda_resposta", None)
         if evento.metadados.get("atencao", {}).get("pode_interagir") is False:
             return None, "interacao_desabilitada"
         agora = self._relogio()
