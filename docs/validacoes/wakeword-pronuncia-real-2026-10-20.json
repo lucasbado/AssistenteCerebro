@@ -1,0 +1,53 @@
+{
+  "data_local": "2026-10-20",
+  "objetivo": "Reconhecer a pronuncia real de Ei Ollie no app do PC",
+  "modelo_anterior_sha256": "59d03446f5901a73efc43f29ca602f3c7564481620e846cdeecceb41889c92cd",
+  "modelo_instalado_sha256": "38cacbdd4575d6618d26d704d4b7e81f087c11e6dbc1e02db4b6fd187503832f",
+  "modelo_instalado_bytes": 6379,
+  "entrada": "Voicemeeter Out B1",
+  "treino_local": {
+    "metodo": "Regressao logistica C=0.001 sobre embeddings compartilhados do openWakeWord",
+    "chamadas_reais": 6,
+    "frases_negativas_reais": 9,
+    "fundos_sinteticos": 50,
+    "velocidades_positivas": [90, 100, 110],
+    "validacao": "Exclusao por gravacao inteira antes das variacoes; duplicatas rejeitadas",
+    "corte_bruto_calculado_na_validacao_do_treino": 0.9917090814288442,
+    "corte_incorporado_ao_intercepto_onnx": true,
+    "limiar_do_worker": 0.5,
+    "frames_consecutivos": 2
+  },
+  "diagnostico": {
+    "modelo_sintetico_chamadas_iniciais_detectadas": 0,
+    "total_chamadas_iniciais": 6,
+    "primeiro_candidato": "Reconheceu chamadas, mas confundiu Ei, olha aqui; nao foi instalado",
+    "segundo_candidato_sem_calibracao": "Ainda confundiu frases proximas; nao foi instalado"
+  },
+  "reavaliacao_ultima_coleta_com_modelo_calibrado": {
+    "gravacoes_usadas_nos_pesos_ou_calculo_numerico_do_corte": false,
+    "chamadas_detectadas": 3,
+    "total_chamadas": 3,
+    "frases_negativas": 5,
+    "frases_com_ativacao_indevida": 0,
+    "menor_pontuacao_sustentada_positiva": 0.8192508220672607,
+    "maior_pontuacao_sustentada_negativa": 0.04574942588806152,
+    "ressalva": "As observacoes dessa rodada orientaram o desenvolvimento. Teste de desenvolvimento, nao benchmark cego."
+  },
+  "outros_testes": {
+    "audios_publicos_de_outras_chamadas": 3,
+    "ativacoes_nesses_audios": 0,
+    "silencio_segundos": 60,
+    "ativacoes_no_silencio": 0,
+    "testes_personalizacao_incluindo_inferencia_onnx": "9 passaram no ambiente local de wake word",
+    "testes_laboratorio_existentes": "27 passaram no ambiente do backend"
+  },
+  "app_ao_vivo": {
+    "modelo_instalado_e_app_reaberto": true,
+    "deteccao_e_transcricao_observadas_nos_eventos_locais": true,
+    "exemplo_score_wake": 0.8117282390594482,
+    "resposta_falada_confirmada_pelo_usuario": false,
+    "confirmacao_do_usuario": "Aguardando retorno do teste no app"
+  },
+  "privacidade": "Audio e pesos pessoais somente em .artifacts/wakeword, fora do Git; sem upload ou deploy do Render",
+  "limites": "Poucos exemplos de um usuario e microfone. Nao mede taxa diaria, musica, TV, outras pessoas ou mudancas de ambiente."
+}

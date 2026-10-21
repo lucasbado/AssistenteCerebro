@@ -1,0 +1,2 @@
+# Opcional, apenas no ambiente local de wake word. Nao instalar no Render.
+onnx==1.19.1

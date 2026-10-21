@@ -1,6 +1,8 @@
 # Ativacao por voz no app do PC
 
-O desktop usa o modelo ONNX treinado com `hey ouh_lee` para detectar a chamada.
+O desktop usa um modelo ONNX local para detectar a chamada. Nesta instalacao,
+o modelo sintetico `hey ouh_lee` foi substituido pelo candidato pessoal descrito
+em [Chamada com a pronuncia real](personalizar-wakeword-pc.md).
 Depois da deteccao, o Vosk reconhece o comando em portugues, localmente. O texto
 segue pelo WebSocket do chat existente, com origem `pc.chat`, canal `voz` e um
 ID de correlacao proprio. A resposta correspondente usa a voz neural do app,
@@ -45,7 +47,7 @@ confirmou que o microfone Realtek do strip0 ja estava roteado paraB1, enquanto
 o padrao do Windows apontava paraA2. A selecao no app foi ajustada para esse
 canal de captura.
 
-O modelo instalado nesta rodada tem SHA256
+O modelo sintetico da primeira rodada tinha SHA256
 `59d03446f5901a73efc43f29ca602f3c7564481620e846cdeecceb41889c92cd`.
 Os arquivos de treino e de modelos ficam fora do Git. A preparacao nao instala
 dependencias no backend nem exige deploy do Render.
@@ -82,6 +84,9 @@ o texto reconhecido segue para o chat. O diagnostico de estado em
   aberto com a captura B1 ativa, confirmada pelo evento `state=wake` do worker.
 
 O teste de voz real no app e registrado apos a confirmacao do usuario. O
-classificador continua experimental: a [validacao do treino](validacao-wakeword-oov.md)
-teve recall45,4% no corpus sintetico. A integracao nao comprova que toda
-pronuncia ou todo roteamento do Voicemeeter sera reconhecido.
+classificador sintetico tinha recall45,4% no corpus da
+[validacao do treino](validacao-wakeword-oov.md) e perdeu as seis chamadas reais
+iniciais. A personalizacao e sua calibracao agora sao avaliadas tambem com
+gravacoes reais. Os resultados e limites atuais estao no
+[relatorio da pronuncia](personalizar-wakeword-pc.md). A amostra continua pequena
+e nao comprova uma taxa de erro diaria.
