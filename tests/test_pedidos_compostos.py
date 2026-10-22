@@ -166,7 +166,9 @@ async def test_pc_aguarda_ack_antes_da_proxima_etapa_e_replay_nao_repete(monkeyp
     assert [tipo for tipo, _ in ordem] == ['envio', 'ack', 'envio', 'ack']
     assert ordem[0][1] != ordem[2][1]
     publish.assert_awaited_once()
-    assert 'primeiro plano' in publish.call_args.args[0].payload['texto']
+    texto = publish.call_args.args[0].payload['texto']
+    assert 'abri o YouTube e o HBO Max no PC' in texto
+    assert '1.' not in texto and 'abertura concluída' not in texto
     await agent.processar(e)
     assert central.enviar_comando_pc.await_count == 2 and publish.await_count == 1
 
@@ -177,7 +179,8 @@ async def test_falha_pc_interrompe_etapas_restantes(monkeypatch, status):
     central, _, publish = transporte(monkeypatch, (status,))
     await AgentePlano().processar(evento_plano('abra YouTube no PC e abra WhatsApp no celular'))
     central.enviar_comando_mobile.assert_not_awaited()
-    assert 'Parei nesta etapa' in publish.call_args.args[0].payload['texto']
+    texto = publish.call_args.args[0].payload['texto']
+    assert 'YouTube' in texto and 'Parei por aqui' in texto and 'Abri' not in texto
 
 
 async def test_destino_offline_impede_toda_sequencia(monkeypatch):
@@ -195,7 +198,8 @@ async def test_duas_aberturas_mobile_nao_compartilham_id(monkeypatch):
     await AgentePlano().processar(evento_plano('abra YouTube no celular e abra WhatsApp no celular'))
     mensagens = [c.args[0] for c in central.enviar_comando_mobile.call_args_list]
     assert len({m['id_comando'] for m in mensagens}) == 2
-    assert 'enviado ao celular' in publish.call_args.args[0].payload['texto']
+    texto = publish.call_args.args[0].payload['texto']
+    assert 'Mandei abrir o YouTube no celular' in texto and 'Abri' not in texto
 
 
 async def test_foco_negado_aparece_no_resumo_sem_dizer_que_o_site_falhou(monkeypatch):
@@ -203,7 +207,8 @@ async def test_foco_negado_aparece_no_resumo_sem_dizer_que_o_site_falhou(monkeyp
     central, _, publish = transporte(monkeypatch)
     central.confirmacoes.aguardar = AsyncMock(return_value={'status': 'concluido', 'resultado': {'primeiro_plano': False}})
     await AgentePlano().processar(evento_plano('abra YouTube no PC e abra WhatsApp no celular'))
-    assert 'abertura encaminhada; o Windows não confirmou' in publish.call_args.args[0].payload['texto']
+    texto = publish.call_args.args[0].payload['texto']
+    assert 'Abri o YouTube' in texto and 'não consegui trazer a janela pra frente' in texto
     central.enviar_comando_mobile.assert_awaited_once()
 
 

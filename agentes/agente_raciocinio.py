@@ -102,7 +102,7 @@ class AgenteRaciocinio:
                     await responder_pedido(evento, str(erro))
                     return
                 await kernel.publicar(evento.clonar(categoria=CategoriaEvento.PLANO_SOLICITADO,
-                    acao=TipoAcao.NORMAL, payload={'etapas': etapas}, metadados=contexto_pedido(evento)))
+                    acao=TipoAcao.NORMAL, payload={'etapas': etapas, 'texto_pedido': str(evento.payload.get('texto', ''))}, metadados=contexto_pedido(evento)))
                 return
             from servicos.controle_casa import ACOES
             acoes_extraidas = exec_direta_raw if isinstance(exec_direta_raw, list) else [exec_direta_raw]
@@ -127,7 +127,7 @@ class AgenteRaciocinio:
 
             # 5. DISPACHO DE RESPOSTA (Ollie Falando)
             if msg_ia and tipo_interacao in ["NOTIFICAR", "SUGERIR"]:
-                msg_limpa = re.sub(r"(?i)\b(eu\s+)?sou\s+a\s+ollie\b[,!.]*|\bollie\s+aqui\b[,!.]*", "", msg_ia).strip().capitalize()
+                msg_limpa = re.sub(r"(?i)\b(eu\s+)?sou\s+a\s+ollie\b[,!.]*|\bollie\s+aqui\b[,!.]*", "", msg_ia).strip()
                 
                 # Determina se é Chat ou Notificação de Sistema
                 tipo_ws = "CHAT_RESPONSE" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else "NOTIFICACAO"
@@ -209,8 +209,9 @@ class AgenteRaciocinio:
                             "correlacao_id": evento.correlacao_id, "id_comando": evento.id,
                             **({"abertura_modo": "pedido", "abertura_autorizada": True} if e_abertura(comando) else {})})
                         if e_abertura(comando) and explicito:
-                            await responder_pedido(evento, "Enviei o pedido de abertura para o celular." if enviado
-                                else "O celular está desconectado. Não enviei o pedido de abertura.")
+                            from servicos.respostas_acoes import resumir_resultados
+                            await responder_pedido(evento, resumir_resultados([{'etapa': {'alvo': 'MOBILE', 'comando': comando, 'parametro': param},
+                                'status': 'enviado' if enviado else 'mobile_offline'}]))
 
             # 7. MEMÓRIA PERMANENTE (Obsidian + Novo Banco FactDB)
             mem_obs = resultado.get("memoria_obsidian")

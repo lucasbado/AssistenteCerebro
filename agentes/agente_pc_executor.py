@@ -54,9 +54,11 @@ class AgentePcExecutor:
                 resultado = await central_alertas.enviar_comando_pc(payload_ws)
                 if e_abertura(comando) and evento.metadados.get("pedido_usuario"):
                     from servicos.roteamento_pedidos import responder_pedido
-                    offline = not resultado or resultado.get("status") == "pc_offline"
-                    await responder_pedido(evento, "O PC está desconectado. Não enviei o pedido de abertura." if offline
-                        else "Enviei o pedido de abertura para o PC.")
+                    from servicos.respostas_acoes import resumir_resultados
+                    etapa = {'alvo': 'PC', 'comando': comando, 'parametro': payload_ws.get('app') or payload_ws.get('url') or payload_ws.get('parametro')}
+                    status = (resultado or {}).get('status', 'pc_offline')
+                    await responder_pedido(evento, resumir_resultados([{'etapa': etapa, 'status': status,
+                        'foco': (resultado or {}).get('resultado', {}).get('primeiro_plano')}]))
             return
 
         if evento.acao == TipoAcao.EXECUTAR_PROGRAMA:
@@ -87,6 +89,7 @@ class AgentePcExecutor:
             param = None
 
         logger.info(f"🛠️ [Agente PC] Executando: {comando} | Param: {param}")
+        resultado_abertura = None
         
         try:
             # --- COMANDOS DE MANUTENÇÃO / INTERFACE ---
@@ -159,14 +162,15 @@ class AgentePcExecutor:
 
             # --- COMANDOS SISTEMA ---
             elif comando == "abrir_app" or comando == "abrir_programa":
-                if pc_control_service.abrir_app(param) is False:
+                resultado_abertura = pc_control_service.abrir_app(param)
+                if resultado_abertura is False:
                     raise RuntimeError("O sistema não conseguiu abrir esse aplicativo")
 
             elif comando == "abrir_url" or comando == "open_url":
-                pc_control_service.abrir_url(param)
+                resultado_abertura = pc_control_service.abrir_url(param)
             elif comando in {"pesquisa_google", "web_search", "pesquisar"}:
                 from servicos.buscas_web import url_busca
-                await asyncio.to_thread(pc_control_service.abrir_url, url_busca(param))
+                resultado_abertura = await asyncio.to_thread(pc_control_service.abrir_url, url_busca(param))
 
             elif comando in ["ligar_luz", "desligar_luz", "toggle_luz"]:
                 from servicos.home_assistant_service import home_assistant_service
@@ -286,8 +290,11 @@ class AgentePcExecutor:
             logger.error(f"[Agente PC] Falha ao executar {comando}: {e}")
             if e_abertura(comando) and evento.metadados.get("pedido_usuario"):
                 from servicos.roteamento_pedidos import responder_pedido
-                await responder_pedido(evento, "Não consegui executar a abertura no PC.")
+                from servicos.respostas_acoes import resumir_resultados
+                await responder_pedido(evento, resumir_resultados([{'etapa': {'alvo': 'PC', 'comando': comando, 'parametro': param}, 'status': 'erro'}]))
         else:
-            if comando in {"abrir_app", "abrir_programa", "abrir_url", "open_url"} and evento.metadados.get("pedido_usuario"):
+            if comando in {"abrir_app", "abrir_programa", "abrir_url", "open_url", "pesquisa_google", "web_search", "pesquisar"} and evento.metadados.get("pedido_usuario"):
                 from servicos.roteamento_pedidos import responder_pedido
-                await responder_pedido(evento, "Encaminhei a abertura ao sistema do PC.")
+                from servicos.respostas_acoes import resumir_resultados
+                await responder_pedido(evento, resumir_resultados([{'etapa': {'alvo': 'PC', 'comando': comando, 'parametro': param},
+                    'status': 'concluido', 'foco': resultado_abertura.get('primeiro_plano') if isinstance(resultado_abertura, dict) else None}]))
