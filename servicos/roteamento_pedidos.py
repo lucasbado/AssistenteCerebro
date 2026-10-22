@@ -41,8 +41,8 @@ def destino_explicito(texto):
     return "PC" if pc else "MOBILE" if mobile else None
 
 
-def resolver_abertura(evento, comando, parametro):
-    destino = destino_explicito(evento.payload.get("texto", "")) or dispositivo_origem(evento)
+def resolver_abertura(evento, comando, parametro, texto_etapa=None):
+    destino = destino_explicito(texto_etapa if texto_etapa is not None else evento.payload.get("texto", "")) or dispositivo_origem(evento)
     command = str(comando).lower()
     from servicos.intervention_governor import APP_ALIASES
     if command in APP_ALIASES:
@@ -70,20 +70,43 @@ def resolver_abertura(evento, comando, parametro):
     return destino, "abrir_app" if destino == "PC" else "OPEN_APP", parametro
 
 
-def interpretar_abertura(texto):
+def interpretar_abertura(texto, site_busca=None):
     from servicos.abertura_apps import pedido_explicito_de_abertura
     if not pedido_explicito_de_abertura(texto):
         return None
-    t = normalizar(texto)
-    prefixo = r"(?:ollie[, ]+)?(?:por favor[, ]+)?(?:pode |poderia |quero que voce |quero )?"
+    prefixo = r"(?:ollie[, ]+)?(?:por favor[, ]+)?(?:voc[eê] )?(?:pode |poderia |consegue |quero que voc[eê] |quero )?"
     suffix = r"(?: (?:no|pelo|pro|para o) (?:meu |seu |este |esse )?(?:pc|computador|desktop|notebook|celular|telefone|smartphone|android))?(?: por favor)?[.!?]*"
-    match = re.fullmatch(prefixo + r"(?:abre|abra|abrir|inicie|inicia|iniciar) (?:o |a )?(?:(?:site|app|aplicativo) (?:do |da )?)?(.+?)" + suffix, t)
+    raw_text = str(texto).strip()
+    search = re.fullmatch(prefixo + r"(?:pesquise|pesquisa|pesquisar|busque|busca|buscar|procure|procura|procurar)\s+(.+?)" + suffix, raw_text, re.I)
+    if search:
+        termo = search[1]
+        # Uma conjunção seguida de outra ordem deve ser planejada por etapas.
+        from servicos.linguagem_pedidos import separar_etapas
+        if len(separar_etapas(termo)) > 1:
+            return None
+        from servicos.buscas_web import url_busca
+        site = site_busca
+        inicio = re.fullmatch(r"(?:no|na)\s+(Google|YouTube|GitHub|[\w.-]+\.[a-z]{2,})\s+(?:por\s+|sobre\s+)?(.+)", termo, re.I)
+        fim = re.fullmatch(r"(.+?)\s+(?:no|na)\s+(Google|YouTube|GitHub|[\w.-]+\.[a-z]{2,})", termo, re.I)
+        if inicio:
+            site, termo = inicio[1], inicio[2]
+        elif fim:
+            termo, site = fim[1], fim[2]
+        return {"execucao_direta": [{"alvo": "ORIGEM", "comando": "abrir_url", "parametro": url_busca(termo, site)}],
+                "mensagem_dinamica": "", "tipo_interacao": "NOTIFICAR"}
+    match = re.fullmatch(prefixo + r"(?:abre|abra|abrir|inicie|inicia|iniciar|acesse|acessa|acessar|entre|entrar|visite|visitar) (?:em |no |na |o |a )?(?:(?:site|app|aplicativo) (?:do |da )?)?(.+?)" + suffix, raw_text, re.I)
     if match:
-        if len(match[1]) > 160 or re.search(r"\b(?:e|depois|tambem|quando|porque|se)\b", match[1]):
+        if len(match[1]) > 250 or re.search(r"\b(?:e|depois|tambem|quando|porque|se|mas|nao|nunca)\b", normalizar(match[1])):
             return None
         # Preserve URL path/query casing; normalization is for the verb and destination only.
         raw = re.search(r"https?://\S+", str(texto), re.I)
         parametro = raw.group().rstrip(".,") if raw else match[1]
+        web = re.search(r'\b(?:acesse|acessa|acessar|entre|visite|visitar|site)\b', normalizar(raw_text))
+        if web:
+            from servicos.sites_pc import resolver_site_pc
+            nome = ALIASES.get(normalizar(parametro), normalizar(parametro))
+            if not resolver_site_pc(parametro) and nome not in APPS:
+                return None  # Let reasoning ask/resolve a web address, rather than launch a guessed app.
         return {"execucao_direta": [{"alvo": "ORIGEM", "comando": "abrir_app", "parametro": parametro}],
                 "mensagem_dinamica": "", "tipo_interacao": "NOTIFICAR"}
     return None

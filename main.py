@@ -31,6 +31,7 @@ from agentes.agente_pc_executor import AgentePcExecutor
 from agentes.agente_pc_profiler import AgentePcProfiler
 from agentes.agente_botoes import AgenteBotoes
 from agentes.agente_casa import AgenteCasa
+from agentes.agente_plano import AgentePlano
 
 # Serviços
 from servicos.agente_contexto_sistema import AgenteContextoSistema
@@ -92,6 +93,9 @@ async def lifespan(app: FastAPI):
     agentes_inst["clima"] = AgenteClima(memoria_trabalho=agentes_inst["memoria_trabalho"])
     agentes_inst["botoes"] = AgenteBotoes()
     agentes_inst["casa"] = AgenteCasa()
+    agentes_inst["plano"] = AgentePlano()
+    kernel.registrar(lambda e: e.categoria == CategoriaEvento.PLANO_SOLICITADO,
+                     agentes_inst["plano"].processar)
     kernel.registrar(lambda e: e.categoria == CategoriaEvento.CASA_ACAO_SOLICITADA,
                      agentes_inst["casa"].processar)
     kernel.registrar(lambda e: e.categoria == CategoriaEvento.BOTAO_ACIONADO,

@@ -72,7 +72,8 @@ class AgenteRaciocinio:
             historico = await self.memoria_trabalho.obter_contexto(chave_conversa) or []
 
             # 4. Invocação da LLM (com Heurística Local Fast-Path)
-            heuristic_res = self._tentar_heuristica_local(texto_u)
+            heuristic_res = (self._tentar_heuristica_local(str(evento.payload.get('texto', '')))
+                             if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else None)
             if heuristic_res:
                 logger.info(f"⚡ [Heurística Local] Resolvido sem LLM: {heuristic_res}")
                 resultado = heuristic_res
@@ -91,6 +92,18 @@ class AgenteRaciocinio:
             exec_direta_raw = self._buscar_campo(resultado, "execucao_direta")
             msg_ia = self._buscar_campo(resultado, "mensagem_dinamica")
             tipo_interacao = resultado.get("tipo_interacao", "NOTIFICAR")
+            if (evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO and tipo_interacao == 'NOTIFICAR'
+                    and isinstance(exec_direta_raw, list) and len(exec_direta_raw) > 1):
+                from servicos.plano_pedidos import preparar_plano
+                from servicos.roteamento_pedidos import contexto_pedido, responder_pedido
+                try:
+                    etapas = preparar_plano(evento, exec_direta_raw)
+                except (ValueError, LookupError) as erro:
+                    await responder_pedido(evento, str(erro))
+                    return
+                await kernel.publicar(evento.clonar(categoria=CategoriaEvento.PLANO_SOLICITADO,
+                    acao=TipoAcao.NORMAL, payload={'etapas': etapas}, metadados=contexto_pedido(evento)))
+                return
             from servicos.controle_casa import ACOES
             acoes_extraidas = exec_direta_raw if isinstance(exec_direta_raw, list) else [exec_direta_raw]
             tem_casa = any(isinstance(item, dict) and
@@ -331,6 +344,10 @@ class AgenteRaciocinio:
     def _tentar_heuristica_local(self, texto: str) -> dict | None:
         if not texto: return None
         t = texto.lower().strip()
+        from servicos.plano_pedidos import interpretar_composto
+        composto = interpretar_composto(texto)
+        if composto:
+            return composto
         from servicos.roteamento_pedidos import interpretar_abertura
         abertura = interpretar_abertura(texto)
         if abertura:

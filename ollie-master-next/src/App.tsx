@@ -146,6 +146,7 @@ export default function App() {
   const scenarioBusyRef = useRef(false);
   const lastCommandRef = useRef<{ id: string; comando: string; status: string } | null>(null);
   const houseResultsRef = useRef(new Map<string, { entity_id: string; state: string }>());
+  const openingResultsRef = useRef(new Map<string, { primeiro_plano: boolean }>());
 
   const [policyLoading, setPolicyLoading] = useState(true);
   const [policyError, setPolicyError] = useState('');
@@ -264,7 +265,7 @@ export default function App() {
         }
         if (socket?.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({ tipo_ws: 'COMANDO_RESULTADO', id_comando: id, status,
-            resultado: houseResultsRef.current.get(id) }));
+            resultado: houseResultsRef.current.get(id) ?? openingResultsRef.current.get(id) }));
         }
       }
     };
@@ -306,6 +307,16 @@ export default function App() {
         }
       } else {
         const raw = await invoke<string>("execute_pc_command", { comando: cmd, parametro: param });
+        if (['abrir_app', 'abrir_programa', 'abrir_url', 'open_url', 'pesquisa_google', 'web_search', 'pesquisar'].includes(cmd)) {
+          try {
+            const result = JSON.parse(raw);
+            if (typeof result.primeiro_plano === 'boolean') {
+              if (openingResultsRef.current.size >= 200) openingResultsRef.current.clear();
+              openingResultsRef.current.set(id, { primeiro_plano: result.primeiro_plano });
+              if (!result.primeiro_plano) setNotice({ text: 'A abertura foi encaminhada, mas o Windows não confirmou a janela em primeiro plano.', kind: 'error' });
+            }
+          } catch { /* Older helpers return only a success status. */ }
+        }
         if (cmd === 'casa_acao') {
           const result = JSON.parse(raw);
           if (typeof result.entity_id !== 'string' || !['on', 'off'].includes(result.state)) {

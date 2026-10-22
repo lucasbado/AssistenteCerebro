@@ -43,11 +43,24 @@ fn get_python_path() -> String {
 }
 
 fn run_python(comando: &str, parametro: &str) -> Result<String, String> {
-    let output = std::process::Command::new(get_python_path())
-        .arg(backend_dir().join("scripts/pc_command.py"))
+    use std::process::{Command, Stdio};
+    let mut command = Command::new(get_python_path());
+    command.arg(backend_dir().join("scripts/pc_command.py"))
         .args([comando, parametro])
         .current_dir(backend_dir())
-        .output().map_err(|e| e.to_string())?;
+        .stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(windows)] {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let child = command.spawn().map_err(|e| e.to_string())?;
+    #[cfg(windows)] {
+        // Delegate only to our helper, while the desktop owns foreground rights.
+        #[link(name = "user32")]
+        extern "system" { fn AllowSetForegroundWindow(process_id: u32) -> i32; }
+        if comando != "snapshot" { unsafe { AllowSetForegroundWindow(child.id()); } }
+    }
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
     }

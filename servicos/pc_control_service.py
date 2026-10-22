@@ -100,6 +100,8 @@ carregar_bibliotecas()
 
 class PcControlService:
     def __init__(self):
+        from servicos.foco_janelas import FocoJanelas
+        self.foco = FocoJanelas()
         self.vm = None
         self.sp = None
         self.fator_vol = 0.72
@@ -391,13 +393,12 @@ class PcControlService:
         from servicos.sites_pc import resolver_site_pc
         site = resolver_site_pc(app_key)
         if site:
-            self.abrir_url(site)
-            return True
+            return self.abrir_url(site)
         if os.path.isfile(app_key):
-            self.executar_comando_direto(app_key)
-            return True
+            return self._abrir_programa_focado(app_key, os.path.splitext(os.path.basename(app_key))[0])
         chave = str(app_key).lower().strip()
-        if self.trazer_janela_para_frente(chave): return True
+        if self.trazer_janela_para_frente(chave):
+            return {"status": "ok", "aberto": True, "primeiro_plano": True}
         if not self.indexed_apps:
             self.mapear_todos_apps()
         path = self.app_paths.get(chave)
@@ -406,11 +407,17 @@ class PcControlService:
             if match: path = self.indexed_apps[match]
         if not path: path = self.deep_search_disk(app_key)
         if path:
-            self.executar_comando_direto(path)
             self.app_paths[chave] = path
-            return True
-        self.executar_comando_direto(app_key)
-        return True
+            return self._abrir_programa_focado(path, chave)
+        return self._abrir_programa_focado(app_key, chave)
+
+    def _abrir_programa_focado(self, caminho, chave):
+        antes = self.foco.capturar()
+        self.executar_comando_direto(caminho)
+        nomes = {"vscode": "code.exe", "android_studio": "studio64.exe"}
+        processo = nomes.get(chave, os.path.splitext(os.path.basename(caminho))[0].lower() + '.exe')
+        foco = self.foco.trazer(processos={processo}, termo=chave, antes=antes)
+        return {"status": "ok", "aberto": True, "primeiro_plano": foco}
 
     def executar_comando_direto(self, alvo):
         try:
@@ -433,23 +440,21 @@ class PcControlService:
         parsed = urlparse(str(url))
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("URL HTTP(S) inválida")
-        if not webbrowser.open(str(url)):
+        from servicos.foco_janelas import navegador_padrao, BROWSERS
+        antes = self.foco.capturar()
+        if not webbrowser.open(str(url), new=2, autoraise=True):
             raise RuntimeError("Não foi possível abrir o navegador")
+        padrao = navegador_padrao()
+        foco = self.foco.trazer(processos=padrao or BROWSERS, antes=antes, somente_alteradas=not bool(padrao))
+        return {"status": "ok", "aberto": True, "primeiro_plano": foco}
 
     def hibernar_pc(self):
         subprocess.run(["shutdown", "/h"], check=True)
 
     def trazer_janela_para_frente(self, termo: str) -> bool:
-        if not gw or not win32gui: return False
-        try:
-            for j in gw.getAllWindows():
-                if termo in j.title.lower():
-                    if j.isMinimized: j.restore()
-                    win32gui.ShowWindow(j._hWnd, win32con.SW_RESTORE)
-                    win32gui.SetForegroundWindow(j._hWnd)
-                    return True
-            return False
-        except: return False
+        nomes = {"vscode": "code.exe", "android_studio": "studio64.exe"}
+        processo = nomes.get(termo, termo if termo.endswith('.exe') else termo + '.exe')
+        return self.foco.trazer(processos={processo}, termo=termo, tentativas=1)
 
     def bloquear_pc(self): os.system("rundll32.exe user32.dll,LockWorkStation")
     def dormir_pc(self): os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")

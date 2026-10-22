@@ -40,16 +40,24 @@ def executar(comando, parametro, service=None):
         from servicos.sites_pc import resolver_site_pc
         site = resolver_site_pc(parametro or comando)
         if site:
-            service.abrir_url(site)
-        elif service.abrir_app(parametro or comando) is False:
+            resultado = service.abrir_url(site)
+        else:
+            resultado = service.abrir_app(parametro or comando)
+        if resultado is False:
             raise RuntimeError("Aplicativo não pôde ser aberto")
+        return resultado if isinstance(resultado, dict) else {"status": "ok"}
+    elif comando in {"pesquisa_google", "web_search", "pesquisar"}:
+        from servicos.buscas_web import url_busca
+        resultado = service.abrir_url(url_busca(parametro))
+        return resultado if isinstance(resultado, dict) else {"status": "ok"}
     elif comando in {"abrir_url", "open_url"}:
         from servicos.sites_pc import resolver_site_pc
         parametro = resolver_site_pc(parametro) or parametro
         parsed = urlparse(parametro)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("URL HTTP(S) inválida")
-        service.abrir_url(parametro)
+        resultado = service.abrir_url(parametro)
+        return resultado if isinstance(resultado, dict) else {"status": "ok"}
     elif comando in simples:
         if comando != "inicializar_hardware":
             service.inicializar()

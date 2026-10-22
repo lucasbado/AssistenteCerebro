@@ -132,3 +132,11 @@ o destino explícito no texto. Respostas retornam exclusivamente à origem; o
 executor físico da casa pode ser outro dispositivo. A voz de desktop é consumida
 apenas pelo cliente que iniciou o pedido, com deduplicação por correlação/resposta.
 Detalhes: [Comandos por origem e voz do PC](roteamento-dispositivos.md).
+
+## Pedidos com várias ações
+
+O raciocínio publica `PLANO_SOLICITADO` com etapas validadas. `AgentePlano` coordena
+a sequência pelos serviços de transporte, espera confirmações disponíveis e retorna
+um resumo à origem. Parsing, validação e foco de janelas são serviços separados.
+O kernel continua apenas despachando eventos; agentes não chamam outros agentes.
+Detalhes e limites: [pedidos compostos e primeiro plano](pedidos-compostos-e-foco.md).

@@ -16,7 +16,9 @@ interpretados sem LLM. A mesma capacidade recebe um comando apropriado ao destin
 YouTube vira URL no PC e pacote Android no celular. URLs completas continuam intactas.
 
 Se o destino estiver offline, a Ollie responde na origem e não executa no outro
-aparelho. Se a frase mencionar PC e celular como destinos, pede esclarecimento.
+aparelho. Se a mesma etapa mencionar PC e celular como destinos, pede esclarecimento.
+Pedidos compostos podem indicar um aparelho diferente em cada etapa:
+[buscas e execução em sequência](pedidos-compostos-e-foco.md).
 Aplicativos exclusivos de PC não são enviados ao Android como se estivessem
 instalados nele. Recursos como Voicemeeter e cenários Python continuam específicos
 do PC; luzes continuam usando o controlador da casa e uma ponte local disponível.

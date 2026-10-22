@@ -48,6 +48,10 @@ class GerenciadorNotificacoes:
         finally:
             self._pedidos_casa.pop(identificador, None)
 
+    def ponte_casa_disponivel(self):
+        return any(ws is not None and ws.client_state.value == 1 and 'CASA' in self._capacidades.get(ws, set())
+                   for ws in (self.pc_master, self.mobile_client))
+
     def confirmar_casa(self, websocket, msg):
         pedido = self._pedidos_casa.get(str(msg.get("id_comando", "")))
         if pedido is None or pedido[0] is not websocket or pedido[2].done():
@@ -270,7 +274,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Somente o PC registrado pode confirmar uma execução local.
                     if websocket is central_alertas.pc_master:
                         central_alertas.confirmacoes.atualizar(str(msg.get("id_comando", "")),
-                                                               msg.get("status"))
+                                                               msg.get("status"), msg.get("resultado"))
                         central_alertas.confirmar_casa(websocket, msg)
 
                 elif tipo == "CASA_RESULTADO":

@@ -164,6 +164,9 @@ class AgentePcExecutor:
 
             elif comando == "abrir_url" or comando == "open_url":
                 pc_control_service.abrir_url(param)
+            elif comando in {"pesquisa_google", "web_search", "pesquisar"}:
+                from servicos.buscas_web import url_busca
+                await asyncio.to_thread(pc_control_service.abrir_url, url_busca(param))
 
             elif comando in ["ligar_luz", "desligar_luz", "toggle_luz"]:
                 from servicos.home_assistant_service import home_assistant_service

@@ -233,7 +233,7 @@ async def test_ha_sem_configuracao_nao_envia_requisicoes(monkeypatch):
     assert not await service.ligar_luz()
 
 
-@pytest.mark.parametrize("texto", ["não desliga a luz", "luz", "liga a luz e abre o vscode"])
+@pytest.mark.parametrize("texto", ["não desliga a luz", "luz"])
 def test_heuristica_nao_transforma_mencao_a_luz_em_acionamento(texto):
     from agentes.agente_raciocinio import AgenteRaciocinio
     agente = object.__new__(AgenteRaciocinio)
@@ -283,6 +283,7 @@ def test_caminho_explicito_de_app_nao_passa_pela_busca_aproximada(tmp_path):
     caminho = tmp_path / "programa.exe"
     caminho.touch()
     service = object.__new__(PcControlService)
+    service.foco = Mock()
     service.executar_comando_direto = Mock()
     service.match_inteligente = Mock(side_effect=AssertionError("não aproximar caminho explícito"))
     assert service.abrir_app(str(caminho))
