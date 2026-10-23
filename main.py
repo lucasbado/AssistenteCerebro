@@ -33,6 +33,7 @@ from agentes.agente_botoes import AgenteBotoes
 from agentes.agente_casa import AgenteCasa
 from agentes.agente_plano import AgentePlano
 from agentes.agente_agenda import AgenteAgenda
+from agentes.agente_tarefas import AgenteTarefas
 
 # Serviços
 from servicos.agente_contexto_sistema import AgenteContextoSistema
@@ -56,6 +57,8 @@ from api.pc_control import router as pc_control_router
 from api.router_ha import router as ha_router
 from api.contexto import router as contexto_router
 from api.agenda import router as agenda_router
+from api.tarefas import router as tarefas_router
+from api.calendario import router as calendario_router
 
 # Configuração de Logs
 logging.basicConfig(level=logging.INFO)
@@ -97,6 +100,10 @@ async def lifespan(app: FastAPI):
     agentes_inst["casa"] = AgenteCasa()
     agentes_inst["plano"] = AgentePlano()
     agentes_inst["agenda"] = AgenteAgenda()
+    agentes_inst["tarefas"] = AgenteTarefas()
+    kernel.registrar(lambda e: e.categoria in {CategoriaEvento.TAREFA_SOLICITADA, CategoriaEvento.NOTIFICACAO}
+        or (e.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO and e.payload.get('tipo') == 'TICK_TAREFAS'),
+        agentes_inst['tarefas'].processar)
     kernel.registrar(lambda e: e.categoria in {CategoriaEvento.AGENDA_SOLICITADA, CategoriaEvento.NOTIFICACAO}
         or (e.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO and e.payload.get('tipo') == 'TICK_AGENDA'),
         agentes_inst["agenda"].processar)
@@ -189,6 +196,8 @@ async def lifespan(app: FastAPI):
         while True:
             await kernel.publicar(EventoCanonico(categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO,
                 origem=OrigemEvento.SISTEMA, pacote='sistema.agenda', payload={'tipo': 'TICK_AGENDA'}))
+            await kernel.publicar(EventoCanonico(categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO,
+                origem=OrigemEvento.SISTEMA, pacote='sistema.tarefas', payload={'tipo': 'TICK_TAREFAS'}))
             await asyncio.sleep(30)
 
     tasks = [
@@ -262,6 +271,8 @@ app.include_router(ha_router, prefix="/api/v1/ha", tags=["Home Assistant"])
 app.include_router(voice_router, prefix="/api/v1/voice", tags=["Voz"])
 app.include_router(contexto_router, prefix="/api/v1/contexto", tags=["Contexto"])
 app.include_router(agenda_router, prefix='/api/v1/agenda')
+app.include_router(tarefas_router, prefix='/api/v1/tarefas')
+app.include_router(calendario_router, prefix='/api/v1/calendario')
 
 if __name__ == "__main__":
     import uvicorn

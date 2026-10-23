@@ -1,0 +1,90 @@
+{
+  "base": "Arquivos locais anteriores a esta integracao de tarefas e calendario; aplicar apos a integracao ONNX e navegacao.",
+  "files": [
+    {
+      "path": "app/src/androidTest/java/com/example/assistentecell/CalendarProviderWriteTest.kt",
+      "before_sha256": null,
+      "after_sha256": "d7bd57d0b66721d047013b47b2e4163091e7e4c53bbebe3d4bd1c27d8d7df533"
+    },
+    {
+      "path": "app/src/androidTest/java/com/example/assistentecell/CalendarSettingsScreenTest.kt",
+      "before_sha256": null,
+      "after_sha256": "e7b129b4096f159469c02180119f23ee008ade77c311d4dbbc0064a5ed46a9ae"
+    },
+    {
+      "path": "app/src/androidTest/java/com/example/assistentecell/TasksScreenTest.kt",
+      "before_sha256": null,
+      "after_sha256": "bf4f6a15281c810ea917e2da2b160a59a4f55c9ccf097a1de3211823dc8735b5"
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "before_sha256": "1e9d8e107e967237a72eba4b2bf454aa14fa905ef5ca8bdf4a1ca5007e9f3fb8",
+      "after_sha256": "9186d41353ceddb726cbde920bab90e2d900b028b98c2e4b5ccd84d7d3e115be"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/agenda/AgendaActivity.kt",
+      "before_sha256": "524119480d6ec44d72d3250f799f876a3b5c99c814b26b42a0c36f577bcd5532",
+      "after_sha256": "3868394e2a7a310c63b6113123fbe2f39afdb425014e358eb3b424eb00b87c57"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/calendar/CalendarMirror.kt",
+      "before_sha256": null,
+      "after_sha256": "6e9f3590eb2d7bdacaadef9a00682544a6ce9f7edc431fc330448b9e4e8bfc8f"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/calendar/CalendarModels.kt",
+      "before_sha256": null,
+      "after_sha256": "9fa8b7261edf34621bab17ac4ff7164566ae9270641a18a9f30521c79b1a5aac"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/calendar/CalendarSettingsActivity.kt",
+      "before_sha256": null,
+      "after_sha256": "259e44aecd32990b807dc46a89ab6d2529ac638b8f3d3ffcacb50aa56c972fe3"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt",
+      "before_sha256": "d79909ccd48eb22cd171061472d540bb38d2b36215e295957eca7295ac901aaf",
+      "after_sha256": "05347421e02d0bd607c86fd6138bc71958a95edd625f5d8d9808cc316ec4ef6b"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt",
+      "before_sha256": "be0d77dd131b18471719755cf16d42789bbd6547aea5aba9c3cc92c91f7d3017",
+      "after_sha256": "79861b480cb5dd8bf82523e3e1b0692290401a77b987b7babaf6752554987891"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt",
+      "before_sha256": "0eed5b01e91dbaeef23c872514fb417f01da7e61609bd542cfc987e5cab53d9f",
+      "after_sha256": "a8b26403d364c33c837ac411b8fd0c84fbd6d7ade05b7f91b30d1eb3f7f000d8"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/tarefas/TaskModels.kt",
+      "before_sha256": null,
+      "after_sha256": "1fbc21831de31a8c7f25e1a9d196c68e7825f3964e58ec0f0d4dddc9dc99a3d6"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/tarefas/TasksActivity.kt",
+      "before_sha256": null,
+      "after_sha256": "c9aa0c36b3fc7237a8fec8a27f29ee9edace35aa054bd489d6d926aba28f262e"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt",
+      "before_sha256": "3e3b0a35911282eec5bf621a645c09fca786331842327e601a1a92eb390871b8",
+      "after_sha256": "6066e1233ee96140e7e520bd59a45b89e5f99f3ac125be63bc1c327695f5f4c1"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt",
+      "before_sha256": "afac2adc50531adf98e2a53d306ab04cf12f209dc02faea0b560bcda8a0fe983",
+      "after_sha256": "3935dfb5235e0830a301371d13f708c3f3a694bd7eb744a91bdd5b21195f85ea"
+    },
+    {
+      "path": "app/src/test/java/com/example/assistentecell/CalendarRulesTest.kt",
+      "before_sha256": null,
+      "after_sha256": "b9c8d7446a002988f14f9bc0b35dc667baf556e03a3d2b64d04bb31e395aa436"
+    },
+    {
+      "path": "app/src/test/java/com/example/assistentecell/TaskDatesTest.kt",
+      "before_sha256": null,
+      "after_sha256": "57aeeef1f2404a38e623591f0455bb81641f032199e728b353481d56deb808ec"
+    }
+  ]
+}

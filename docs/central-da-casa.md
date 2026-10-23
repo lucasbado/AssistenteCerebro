@@ -9,6 +9,7 @@ Interface do computador, navegação e estados: [revisão de UI/UX do PC](revisa
 Buscas, ações por etapa e janelas: [pedidos compostos e primeiro plano](pedidos-compostos-e-foco.md).
 Tom das conversas e retorno das ações: [personalidade e confirmações](personalidade-e-confirmacoes.md).
 Compromissos, sugestões de datas e despertador: [agenda da Ollie](agenda-e-despertador.md).
+Tarefas, pendências e cópias no calendário do celular: [tarefas e calendário](tarefas-e-calendario.md).
 
 A conversa acontece com a Ollie. Ela identifica o pedido, encontra o dispositivo
 cadastrado e coordena a execução. O Home Assistant comunica com a lâmpada e os

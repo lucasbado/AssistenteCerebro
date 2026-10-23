@@ -24,6 +24,16 @@ class AgenteReflexo:
             from servicos.agenda import agenda
             from servicos.roteamento_pedidos import dispositivo_origem
             texto = str(evento.payload.get('texto', ''))
+            from servicos.linguagem_tarefas import interpretar_tarefa, continua_tarefa
+            from servicos.tarefas import tarefas
+            contexto_tarefa = None
+            try:
+                contexto_tarefa = await tarefas.contexto(dispositivo_origem(evento))
+            except Exception:
+                logger.warning('Tarefas indisponíveis para consultar continuação')
+            if interpretar_tarefa(texto) or (not intencao_agenda(texto) and continua_tarefa(texto, contexto_tarefa)):
+                await kernel.publicar(evento.clonar(categoria=CategoriaEvento.TAREFA_SOLICITADA))
+                return
             intencao = intencao_agenda(texto)
             try:
                 rascunho = await agenda.rascunho(dispositivo_origem(evento))

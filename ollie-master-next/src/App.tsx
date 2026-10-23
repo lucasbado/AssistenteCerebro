@@ -3,6 +3,7 @@ import DesktopInterface, { type DesktopPage, type DesktopMessage, type Intervent
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { DesktopReplies } from './desktopReplies';
+import { decodeTaskActions } from './taskActions';
 import { DesktopVoice } from './desktopVoice';
 import { DesktopListening, type ListeningEvent, type ListeningPhase } from './desktopListening';
 
@@ -243,9 +244,9 @@ export default function App() {
     fetchDiscovered();
   }, []);
 
-  const appendMessage = (role: DesktopMessage['role'], text: string, id: string, agendaActions?: DesktopMessage['agendaActions']) => {
+  const appendMessage = (role: DesktopMessage['role'], text: string, id: string, agendaActions?: DesktopMessage['agendaActions'], taskActions?: DesktopMessage['taskActions']) => {
     setMessages(previous => previous.some(message => message.id === id) ? previous : [...previous.slice(-99), {
-      id, role, text, agendaActions, time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      id, role, text, agendaActions, taskActions, time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     }]);
   };
 
@@ -468,7 +469,7 @@ export default function App() {
             setMood("idle");
             const reply = desktopReplies.current.consume(data);
             if (reply) appendMessage('ollie', reply, String(data.id || `${data.correlacao_id}:${reply}`),
-              Array.isArray(data.acoes_agenda) ? data.acoes_agenda.filter((a: any) => a && typeof a.id === 'string' && typeof a.quando === 'string' && typeof a.texto === 'string') : []);
+              Array.isArray(data.acoes_agenda) ? data.acoes_agenda.filter((a: any) => a && typeof a.id === 'string' && typeof a.quando === 'string' && typeof a.texto === 'string') : [], decodeTaskActions(data.acoes_tarefas));
             const voiceRequest = pendingVoice.current.get(data.correlacao_id);
             if (reply && voiceRequest) {
               voiceRequest.resolve(reply);
@@ -483,6 +484,12 @@ export default function App() {
           if (data.tipo_ws === 'NOTIFICACAO' && data.acao_tipo === 'AGENDA_REVISAR' && typeof data.texto === 'string') {
             appendMessage('ollie', data.texto, String(data.id || `agenda-${data.acao_parametro}`),
               [{ id: String(data.acao_parametro), texto: 'Ver na agenda', quando: '', tipo: 'compromisso' }]);
+            setNotice({ text: data.texto, kind: 'success' });
+          }
+
+          if (data.tipo_ws === 'NOTIFICACAO' && data.acao_tipo === 'TAREFA_REVISAR' && typeof data.texto === 'string') {
+            appendMessage('ollie', data.texto, String(data.id || `tarefa-${data.acao_parametro}`), [],
+              decodeTaskActions([{ id: data.acao_parametro, texto: 'Revisar tarefa', quando: '' }]));
             setNotice({ text: data.texto, kind: 'success' });
           }
 

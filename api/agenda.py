@@ -3,6 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, AwareDatetime
 from servicos.agenda import agenda
+from servicos.calendario import avisar_celular
 
 router = APIRouter(tags=['Agenda'])
 
@@ -38,9 +39,14 @@ async def obter(identificador: str): return await operacao(agenda.obter(identifi
 
 
 @router.post('')
-async def criar(item: NovoItem): return await operacao(agenda.salvar(**item.model_dump(), confirmar=True))
+async def criar(item: NovoItem):
+    resultado = await operacao(agenda.salvar(**item.model_dump(), confirmar=True))
+    await avisar_celular()
+    return resultado
 
 
 @router.patch('/{identificador}')
 async def alterar(identificador: str, estado: EstadoItem):
-    return await operacao(agenda.alterar_estado(identificador, estado.estado, estado.antecedencia_minutos))
+    resultado = await operacao(agenda.alterar_estado(identificador, estado.estado, estado.antecedencia_minutos))
+    await avisar_celular()
+    return resultado

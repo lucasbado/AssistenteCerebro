@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import AgendaPanel, { type AgendaAction } from './AgendaPanel';
+import TasksPanel from './TasksPanel';
+import type { TaskAction } from '../taskActions';
 import { Activity, ArrowUpRight, Check, ChevronRight, CircleAlert, Cpu, Database, MessageCircle, Mic, MicOff, Monitor,
-  Radio, RefreshCw, Send, Settings2, Shield, Sparkles, Terminal, Volume2, VolumeX, X, CalendarDays } from 'lucide-react';
+  Radio, RefreshCw, Send, Settings2, Shield, Sparkles, Terminal, Volume2, VolumeX, X, CalendarDays, ListTodo } from 'lucide-react';
 import type { ListeningPhase } from '../desktopListening';
 import './desktop-interface.css';
 
-export type DesktopPage = 'chat' | 'computer' | 'activity' | 'automation' | 'agenda';
-export type DesktopMessage = { id: string; role: 'user' | 'ollie'; text: string; time: string; agendaActions?: AgendaAction[] };
+export type DesktopPage = 'chat' | 'computer' | 'activity' | 'automation' | 'agenda' | 'tasks';
+export type DesktopMessage = { id: string; role: 'user' | 'ollie'; text: string; time: string; agendaActions?: AgendaAction[]; taskActions?: TaskAction[] };
 export type InterventionPolicy = { auto_open_enabled: boolean; min_priority_score: number; whitelist: string[]; blacklist: string[] };
 type Props = {
   page: DesktopPage; onPage: (page: DesktopPage) => void; connected: boolean; thinking: boolean;
@@ -31,6 +33,7 @@ const pages = [
   { id: 'activity', label: 'Atividade', icon: Activity, subtitle: 'Conexões e execuções desta sessão.' },
   { id: 'automation', label: 'Autonomia', icon: Shield, subtitle: 'Você escolhe quando a Ollie pode agir.' },
   { id: 'agenda', label: 'Agenda', icon: CalendarDays, subtitle: 'Tempo para o que importa.' },
+  { id: 'tasks', label: 'Tarefas', icon: ListTodo, subtitle: 'Um passo de cada vez.' },
 ] as const;
 const phases: Record<ListeningPhase, { title: string; hint: string }> = {
   off: { title: 'Ativação por voz desligada', hint: 'Você pode conversar por texto ou ativar a chamada.' },
@@ -60,6 +63,8 @@ function AgendaMessage({ message, onOpen }: { message: DesktopMessage; onOpen: (
 export default function DesktopInterface(p: Props) {
   const [agendaSelection, setAgendaSelection] = useState<string | null>(null);
   const openAgenda = (id: string) => { setAgendaSelection(id); p.onPage('agenda'); };
+  const [taskSelection, setTaskSelection] = useState<string | null>(null);
+  const openTask = (id: string) => { setTaskSelection(id); p.onPage('tasks'); };
   const chatScroll = useRef<HTMLDivElement>(null), logScroll = useRef<HTMLDivElement>(null);
   const stickChat = useRef(true), stickLog = useRef(true);
   useEffect(() => { if (stickChat.current && chatScroll.current) chatScroll.current.scrollTop = chatScroll.current.scrollHeight; }, [p.messages, p.thinking, p.page]);
@@ -94,6 +99,7 @@ export default function DesktopInterface(p: Props) {
       </div>}
       <div id="desktop-content" className="desktop-content">
         {p.page === 'agenda' && <AgendaPanel selected={agendaSelection} onAll={() => setAgendaSelection(null)} />}
+        {p.page === 'tasks' && <TasksPanel selected={taskSelection} onAll={() => setTaskSelection(null)} />}
         {p.page === 'chat' && <section className="conversation" aria-label="Conversa com a Ollie">
           <div className={`voice-strip phase-${p.phase}`}><span className="voice-strip-icon">{p.listeningEnabled ? <Mic size={20} /> : <MicOff size={20} />}</span>
             <div className="voice-strip-copy" role="status" aria-live="polite"><strong>{status.title}</strong><span>{status.hint}</span></div>
@@ -111,6 +117,7 @@ export default function DesktopInterface(p: Props) {
             <div className="message-list" role="log" aria-label="Mensagens da conversa" aria-live="polite" aria-relevant="additions">
               {p.messages.map(message => <article key={message.id} className={`chat-message ${message.role}`}><div className="message-meta"><strong>{message.role === 'user' ? 'Você' : 'Ollie'}</strong><time>{message.time}</time></div>
                 <AgendaMessage message={message} onOpen={openAgenda} />
+                {message.taskActions?.map(item => <button className="button button-subtle" key={item.id} onClick={() => openTask(item.id)}>{item.texto} · {item.quando}</button>)}
               </article>)}
               {p.thinking && <div className="thinking-indicator" role="status"><span /><span /><span />Ollie está pensando…</div>}
             </div>

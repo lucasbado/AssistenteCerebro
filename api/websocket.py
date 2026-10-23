@@ -93,6 +93,10 @@ class GerenciadorNotificacoes:
                 return True
         return False
 
+    async def solicitar_sincronizacao_calendario(self):
+        if self.mobile_client is None: return False
+        return await self._enviar_direto(self.mobile_client, {'tipo_ws': 'CALENDARIO_ATUALIZAR'})
+
     async def conectar(self, websocket: WebSocket):
         protocolos = websocket.headers.get("sec-websocket-protocol", "").split(",")
         await websocket.accept(subprotocol="ollie" if "ollie" in [p.strip() for p in protocolos] else None)

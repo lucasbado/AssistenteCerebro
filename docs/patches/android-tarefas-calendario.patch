@@ -1,0 +1,814 @@
+diff --git a/app/src/androidTest/java/com/example/assistentecell/CalendarProviderWriteTest.kt b/app/src/androidTest/java/com/example/assistentecell/CalendarProviderWriteTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/com/example/assistentecell/CalendarProviderWriteTest.kt
+@@ -0,0 +1,60 @@
++package com.example.assistentecell
++
++import android.content.ContentUris
++import android.content.ContentValues
++import android.content.Context
++import android.net.Uri
++import android.provider.CalendarContract
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import androidx.test.platform.app.InstrumentationRegistry
++import com.example.assistentecell.calendar.CalendarMirror
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import java.util.UUID
++
++@RunWith(AndroidJUnit4::class)
++class CalendarProviderWriteTest {
++    @Test fun selectedCalendarAcceptsUpdatesAndRemovesOnlyTemporaryOwnEvent() {
++        val context = InstrumentationRegistry.getInstrumentation().targetContext
++        assertTrue("Autorize o calendário na interface do aplicativo.", CalendarMirror.permitted(context))
++        val selected = context.getSharedPreferences("ollie_calendar", Context.MODE_PRIVATE).getLong("calendar_id", -1)
++        assertTrue("Escolha o calendário na interface do aplicativo.", selected >= 0)
++        val marker = "ollie://calendar/test/" + UUID.randomUUID()
++        val start = System.currentTimeMillis() + 86400000L
++        var created: Uri? = null
++        try {
++            created = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, ContentValues().apply {
++                put(CalendarContract.Events.CALENDAR_ID, selected)
++                put(CalendarContract.Events.TITLE, "Ollie — teste temporário de calendário")
++                put(CalendarContract.Events.DESCRIPTION, "Verificação automática; removida imediatamente. Sem alarme ou convidados.")
++                put(CalendarContract.Events.DTSTART, start); put(CalendarContract.Events.DTEND, start + 60000L)
++                put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
++                put(CalendarContract.Events.AVAILABILITY, CalendarContract.Events.AVAILABILITY_FREE)
++                put(CalendarContract.Events.HAS_ALARM, 0)
++                put(CalendarContract.Events.CUSTOM_APP_PACKAGE, context.packageName)
++                put(CalendarContract.Events.CUSTOM_APP_URI, marker)
++            })
++            val uri = requireNotNull(created)
++            assertTrue(ContentUris.parseId(uri) >= 0)
++            assertEquals(1, context.contentResolver.update(uri, ContentValues().apply {
++                put(CalendarContract.Events.DTSTART, start + 3600000L)
++                put(CalendarContract.Events.DTEND, start + 3660000L)
++            }, null, null))
++            context.contentResolver.query(uri, arrayOf(CalendarContract.Events.DTSTART,
++                CalendarContract.Events.CUSTOM_APP_URI, CalendarContract.Events.HAS_ALARM), null, null, null)!!.use {
++                assertTrue(it.moveToFirst())
++                assertEquals(start + 3600000L, it.getLong(0))
++                assertEquals(marker, it.getString(1))
++                assertEquals(0, it.getInt(2))
++            }
++        } finally {
++            created?.let { context.contentResolver.delete(it, null, null) }
++        }
++        created?.let { uri ->
++            context.contentResolver.query(uri, arrayOf(CalendarContract.Events.DELETED), null, null, null)?.use {
++                assertTrue("Evento temporário deve estar removido.", !it.moveToFirst() || it.getInt(0) != 0)
++            }
++        }
++    }
++}
+diff --git a/app/src/androidTest/java/com/example/assistentecell/CalendarSettingsScreenTest.kt b/app/src/androidTest/java/com/example/assistentecell/CalendarSettingsScreenTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/com/example/assistentecell/CalendarSettingsScreenTest.kt
+@@ -0,0 +1,20 @@
++package com.example.assistentecell
++import androidx.compose.ui.test.assertIsDisplayed
++import androidx.compose.ui.test.junit4.createAndroidComposeRule
++import androidx.compose.ui.test.onNodeWithText
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import com.example.assistentecell.calendar.CalendarSettingsActivity
++import org.junit.Rule
++import org.junit.Test
++import org.junit.runner.RunWith
++@RunWith(AndroidJUnit4::class)
++class CalendarSettingsScreenTest {
++    @get:Rule val compose = createAndroidComposeRule<CalendarSettingsActivity>()
++    @Test fun opensCalendarConnectionWithoutRequestingPermissionAutomatically() {
++        compose.onNodeWithText("Calendário do celular").assertIsDisplayed()
++        if(!CalendarMirrorPermission.granted(compose.activity)) compose.onNodeWithText("Autorizar calendário").assertIsDisplayed()
++    }
++}
++private object CalendarMirrorPermission {
++    fun granted(context: android.content.Context) = com.example.assistentecell.calendar.CalendarMirror.permitted(context)
++}
+diff --git a/app/src/androidTest/java/com/example/assistentecell/TasksScreenTest.kt b/app/src/androidTest/java/com/example/assistentecell/TasksScreenTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/com/example/assistentecell/TasksScreenTest.kt
+@@ -0,0 +1,22 @@
++package com.example.assistentecell
++import androidx.compose.ui.test.assertIsDisplayed
++import androidx.compose.ui.test.junit4.createAndroidComposeRule
++import androidx.compose.ui.test.onNodeWithText
++import androidx.compose.ui.test.performClick
++import androidx.compose.ui.test.performScrollTo
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import com.example.assistentecell.tarefas.TasksActivity
++import org.junit.Rule
++import org.junit.Test
++import org.junit.runner.RunWith
++@RunWith(AndroidJUnit4::class)
++class TasksScreenTest {
++    @get:Rule val compose = createAndroidComposeRule<TasksActivity>()
++    @Test fun opensPendingTasksAndOptionalDeadlineWithoutSavingPersonalData() {
++        compose.onNodeWithText("Suas tarefas").assertIsDisplayed()
++        compose.onNodeWithText("Nova tarefa").performClick()
++        compose.onNodeWithText("O que precisa fazer?").performScrollTo().assertIsDisplayed()
++        compose.onNodeWithText("Data do prazo — dd/mm/aaaa (opcional)").performScrollTo().assertIsDisplayed()
++        compose.onNodeWithText("Guardar tarefa").performScrollTo().assertIsDisplayed()
++    }
++}
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -44,6 +44,8 @@
+         </intent>
+     </queries>
+ 
++    <uses-permission android:name="android.permission.READ_CALENDAR" />
++    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+     <application
+         android:networkSecurityConfig="@xml/network_security_config"
+         android:usesCleartextTraffic="true"
+@@ -148,5 +150,7 @@
+         </service>
+ 
+         <activity android:name=".agenda.AgendaActivity" android:exported="false" />
++        <activity android:name=".tarefas.TasksActivity" android:exported="false" />
++        <activity android:name=".calendar.CalendarSettingsActivity" android:exported="false" />
+     </application>
+ </manifest>
+diff --git a/app/src/main/java/com/example/assistentecell/agenda/AgendaActivity.kt b/app/src/main/java/com/example/assistentecell/agenda/AgendaActivity.kt
+--- a/app/src/main/java/com/example/assistentecell/agenda/AgendaActivity.kt
++++ b/app/src/main/java/com/example/assistentecell/agenda/AgendaActivity.kt
+@@ -90,6 +90,7 @@
+             }
+         }
+         suspend fun reload() {
++            com.example.assistentecell.calendar.CalendarMirror.enqueue(this@AgendaActivity)
+             val all = api.getAgenda()
+             val id = selected
+             items = if (id != null && all.none { it.id == id }) listOf(api.getAgendaItem(id)) + all else all
+@@ -104,6 +105,8 @@
+                     TextButton(enabled = !busy, onClick = { run { reload() } }) { Text("Atualizar") }
+                 }
+                 Text("Sua agenda", style = MaterialTheme.typography.headlineMedium)
++                TextButton(onClick = { startActivity(Intent(this@AgendaActivity, com.example.assistentecell.calendar.CalendarSettingsActivity::class.java)) }) { Text("Conectar calendário do celular") }
++                TextButton(onClick = { startActivity(Intent(this@AgendaActivity, com.example.assistentecell.tarefas.TasksActivity::class.java)) }) { Text("Ver tarefas e prazos") }
+                 Text("Datas importantes, sem deixar os detalhes se perderem.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+diff --git a/app/src/main/java/com/example/assistentecell/calendar/CalendarMirror.kt b/app/src/main/java/com/example/assistentecell/calendar/CalendarMirror.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/calendar/CalendarMirror.kt
+@@ -0,0 +1,167 @@
++package com.example.assistentecell.calendar
++
++import android.Manifest
++import android.content.ContentUris
++import android.content.ContentValues
++import android.content.Context
++import android.content.pm.PackageManager
++import android.provider.CalendarContract
++import androidx.core.content.ContextCompat
++import androidx.work.*
++import com.example.assistentecell.api.RetrofitClient
++import com.google.gson.Gson
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.sync.Mutex
++import kotlinx.coroutines.sync.withLock
++import kotlinx.coroutines.withContext
++import java.security.MessageDigest
++import java.util.concurrent.TimeUnit
++
++data class WritableCalendar(val id: Long, val name: String, val account: String)
++
++object CalendarMirror {
++    private val lock = Mutex()
++    private val gson = Gson()
++    private fun prefs(c: Context) = c.getSharedPreferences("ollie_calendar", Context.MODE_PRIVATE)
++    fun permitted(c: Context) = arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
++        .all { ContextCompat.checkSelfPermission(c, it) == PackageManager.PERMISSION_GRANTED }
++    fun enabled(c: Context) = prefs(c).getBoolean("enabled", false)
++    fun selectedName(c: Context) = prefs(c).getString("calendar_name", "")!!
++    fun status(c: Context) = prefs(c).getString("status", "Ainda não sincronizado.")!!
++    private fun marker(item: CalendarEntry) = "ollie://calendar/${item.dominio}/${item.id}"
++    private fun mappings(c: Context) = prefs(c).all.filterKeys { it.startsWith("event:") }
++
++    fun calendars(c: Context): List<WritableCalendar> {
++        if (!permitted(c)) return emptyList()
++        val result = mutableListOf<WritableCalendar>()
++        c.contentResolver.query(CalendarContract.Calendars.CONTENT_URI,
++            arrayOf("_id", CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, CalendarContract.Calendars.ACCOUNT_NAME),
++            "${CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL} >= ? AND ${CalendarContract.Calendars.VISIBLE} = 1",
++            arrayOf(CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR.toString()), null)?.use { cursor ->
++            while(cursor.moveToNext()) result.add(WritableCalendar(cursor.getLong(0), cursor.getString(1) ?: "Calendário", cursor.getString(2) ?: "Local"))
++        }
++        return result
++    }
++
++    fun configure(c: Context, calendar: WritableCalendar) {
++        require(permitted(c)) { "Autorize o calendário primeiro." }
++        require(calendars(c).any { it.id == calendar.id }) { "Esse calendário não permite salvar eventos." }
++        val p = prefs(c)
++        require(p.getLong("calendar_id", calendar.id) == calendar.id || mappings(c).isEmpty()) {
++            "Remova as cópias da Ollie antes de trocar de calendário."
++        }
++        p.edit().putLong("calendar_id", calendar.id).putString("calendar_name", calendar.name)
++            .putBoolean("enabled", true).putString("status", "Aguardando sincronização com o servidor…").apply()
++        val periodic = PeriodicWorkRequestBuilder<CalendarSyncWorker>(15, TimeUnit.MINUTES)
++            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
++        WorkManager.getInstance(c).enqueueUniquePeriodicWork("ollie-calendar-periodic", ExistingPeriodicWorkPolicy.UPDATE, periodic)
++        enqueue(c)
++    }
++
++    fun disable(c: Context) {
++        prefs(c).edit().putBoolean("enabled", false).putString("status", "Integração pausada. Cópias existentes foram mantidas.").apply()
++        WorkManager.getInstance(c).cancelUniqueWork("ollie-calendar-periodic")
++        WorkManager.getInstance(c).cancelUniqueWork("ollie-calendar-now")
++    }
++    fun enqueue(c: Context) {
++        if (!enabled(c) || !permitted(c)) return
++        WorkManager.getInstance(c).enqueueUniqueWork("ollie-calendar-now", ExistingWorkPolicy.APPEND_OR_REPLACE,
++            OneTimeWorkRequestBuilder<CalendarSyncWorker>().setConstraints(
++                Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build())
++    }
++
++    private fun own(c: Context, id: Long, uri: String): Boolean {
++        c.contentResolver.query(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id),
++            arrayOf(CalendarContract.Events.CUSTOM_APP_PACKAGE, CalendarContract.Events.CUSTOM_APP_URI), null, null, null)?.use {
++            return it.moveToFirst() && it.getString(0) == c.packageName && it.getString(1) == uri
++        }
++        return false
++    }
++
++    suspend fun removeCopies(c: Context) = withContext(Dispatchers.IO) { lock.withLock {
++        disable(c)
++        require(permitted(c)) { "Autorize o calendário para remover as cópias." }
++        val p = prefs(c)
++        for ((key, value) in mappings(c)) {
++            val domainId = key.removePrefix("event:").split(":", limit = 2)
++            val uri = "ollie://calendar/${domainId[0]}/${domainId[1]}"
++            val id = value as Long
++            if (own(c, id, uri)) c.contentResolver.delete(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id), null, null)
++            p.edit().remove(key).remove("hash:" + key.removePrefix("event:")).commit()
++        }
++        p.edit().remove("calendar_id").putString("status", "Cópias da Ollie removidas; integração desligada.").apply()
++    } }
++
++    suspend fun sync(c: Context) = withContext(Dispatchers.IO) { lock.withLock {
++        if (!enabled(c) || !permitted(c)) return@withLock
++        val p = prefs(c)
++        val calendarId = p.getLong("calendar_id", -1)
++        require(calendars(c).any { it.id == calendarId }) { "O calendário escolhido não está mais disponível." }
++        // Recupera somente nossas próprias cópias após interrupção entre insert e gravação do ID.
++        c.contentResolver.query(CalendarContract.Events.CONTENT_URI,
++            arrayOf(CalendarContract.Events._ID, CalendarContract.Events.CUSTOM_APP_URI),
++            "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events.CUSTOM_APP_PACKAGE} = ?",
++            arrayOf(calendarId.toString(), c.packageName), null)?.use { cursor ->
++            while(cursor.moveToNext()) {
++                val uri = cursor.getString(1).orEmpty()
++                val match = Regex("ollie://calendar/(agenda|tarefa)/([0-9a-fA-F-]{36})").matchEntire(uri) ?: continue
++                val key = match.groupValues[1] + ":" + match.groupValues[2]
++                if(!p.contains("event:" + key)) check(p.edit().putLong("event:" + key, cursor.getLong(0)).commit())
++            }
++        }
++        RetrofitClient.init(c)
++        val known = mappings(c).keys.take(1000).map { key ->
++            val parts = key.removePrefix("event:").split(":", limit = 2)
++            CalendarKnown(parts[0], parts[1])
++        }
++        val feed = RetrofitClient.cognitiveApiService.syncCalendar(CalendarRequest(known))
++        for (item in feed.itens) {
++            if (!enabled(c) || !permitted(c)) return@withLock
++            require(item.dominio in listOf("agenda", "tarefa") && item.id.matches(Regex("[0-9a-fA-F-]{36}")))
++            val id = p.getLong("event:" + item.key, -1)
++            val hash = MessageDigest.getInstance("SHA-256").digest(gson.toJson(item).toByteArray()).joinToString("") { "%02x".format(it) }
++            val same = p.getString("hash:" + item.key, "") == hash
++            val exists = id >= 0 && own(c, id, marker(item))
++            // A mapped ID that now belongs to somebody else is never modified.
++            val decision = CalendarRules.decision(item.ativo, id >= 0, exists, same)
++            if (decision == "delete") c.contentResolver.delete(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id), null, null)
++            if (!item.ativo) { p.edit().remove("event:" + item.key).remove("hash:" + item.key).commit(); continue }
++            if (decision == "skip") continue
++            val period = CalendarRules.period(item)
++            val values = ContentValues().apply {
++                put(CalendarContract.Events.CALENDAR_ID, calendarId)
++                put(CalendarContract.Events.TITLE, item.titulo)
++                put(CalendarContract.Events.DESCRIPTION, item.descricao)
++                put(CalendarContract.Events.DTSTART, period.begin); put(CalendarContract.Events.DTEND, period.end)
++                put(CalendarContract.Events.EVENT_TIMEZONE, period.zone)
++                put(CalendarContract.Events.ALL_DAY, if(item.dia_inteiro) 1 else 0)
++                put(CalendarContract.Events.AVAILABILITY, if(item.dominio == "tarefa") CalendarContract.Events.AVAILABILITY_FREE else CalendarContract.Events.AVAILABILITY_BUSY)
++                put(CalendarContract.Events.CUSTOM_APP_PACKAGE, c.packageName); put(CalendarContract.Events.CUSTOM_APP_URI, marker(item))
++                put(CalendarContract.Events.HAS_ALARM, 0)
++            }
++            val saved = if (decision == "update") {
++                check(c.contentResolver.update(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id), values, null, null) == 1)
++                id
++            } else ContentUris.parseId(requireNotNull(c.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)))
++            check(p.edit().putLong("event:" + item.key, saved).putString("hash:" + item.key, hash).commit())
++        }
++        p.edit().putString("status", "Calendário atualizado. Sugestões e despertadores não são copiados.").apply()
++    } }
++
++    fun failed(c: Context, error: Exception) {
++        val message = when {
++            error is retrofit2.HttpException && error.code() == 404 -> "Calendário conectado. Falta atualizar o servidor no Render para copiar seus itens."
++            error is retrofit2.HttpException && error.code() == 401 -> "Calendário conectado. Confira o token do servidor nas configurações."
++            error is SecurityException -> "Autorize o acesso ao calendário para retomar a integração."
++            else -> "Não consegui atualizar o calendário agora. Confira a conexão e tente Sincronizar agora."
++        }
++        prefs(c).edit().putString("status", message).apply()
++    }
++}
++
++class CalendarSyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
++    override suspend fun doWork(): Result = try {
++        CalendarMirror.sync(applicationContext); Result.success()
++    } catch (e: kotlinx.coroutines.CancellationException) { throw e }
++      catch (e: Exception) { CalendarMirror.failed(applicationContext, e); if(runAttemptCount < 3) Result.retry() else Result.failure() }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/calendar/CalendarModels.kt b/app/src/main/java/com/example/assistentecell/calendar/CalendarModels.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/calendar/CalendarModels.kt
+@@ -0,0 +1,40 @@
++package com.example.assistentecell.calendar
++
++import java.text.SimpleDateFormat
++import java.util.Locale
++import java.util.TimeZone
++import com.example.assistentecell.agenda.AgendaDates
++
++data class CalendarKnown(val dominio: String, val id: String)
++data class CalendarRequest(val conhecidos: List<CalendarKnown>)
++data class CalendarFeed(val itens: List<CalendarEntry>)
++data class CalendarEntry(val id: String, val dominio: String, val titulo: String, val ativo: Boolean,
++    val inicio: String?, val data_local: String?, val dia_inteiro: Boolean, val fuso: String,
++    val duracao_minutos: Int, val descricao: String) {
++    val key: String get() = "$dominio:$id"
++}
++data class CalendarPeriod(val begin: Long, val end: Long, val zone: String)
++
++object CalendarRules {
++    fun period(item: CalendarEntry): CalendarPeriod {
++        require(item.ativo && item.inicio != null) { "Item sem data confirmada." }
++        if (item.dia_inteiro) {
++            val day = requireNotNull(item.data_local)
++            require(Regex("\\d{4}-\\d{2}-\\d{2}").matches(day))
++            val start = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply {
++                isLenient = false; timeZone = TimeZone.getTimeZone("UTC")
++            }.parse(day)!!.time
++            return CalendarPeriod(start, start + 86400000L, "UTC")
++        }
++        val start = AgendaDates.instant(item.inicio)
++        require(item.duracao_minutos in 1..1440)
++        return CalendarPeriod(start, start + item.duracao_minutos * 60000L, item.fuso)
++    }
++    fun decision(active: Boolean, mapped: Boolean, exists: Boolean, same: Boolean): String = when {
++        !active -> if(mapped && exists) "delete" else "skip"
++        !mapped -> "insert"
++        !exists -> if(same) "skip" else "insert"
++        same -> "skip"
++        else -> "update"
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/calendar/CalendarSettingsActivity.kt b/app/src/main/java/com/example/assistentecell/calendar/CalendarSettingsActivity.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/calendar/CalendarSettingsActivity.kt
+@@ -0,0 +1,78 @@
++package com.example.assistentecell.calendar
++
++import android.Manifest
++import android.os.Bundle
++import androidx.activity.ComponentActivity
++import androidx.activity.compose.setContent
++import androidx.activity.compose.rememberLauncherForActivityResult
++import androidx.activity.result.contract.ActivityResultContracts
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++import com.example.assistentecell.ui.theme.AssistenteCellTheme
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.withContext
++
++class CalendarSettingsActivity : ComponentActivity() {
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        setContent { AssistenteCellTheme(darkTheme = true, dynamicColor = false) { SettingsPage() } }
++    }
++    @Composable private fun SettingsPage() {
++        val scope = rememberCoroutineScope()
++        var granted by remember { mutableStateOf(CalendarMirror.permitted(this)) }
++        var calendars by remember { mutableStateOf<List<WritableCalendar>>(emptyList()) }
++        var status by remember { mutableStateOf(CalendarMirror.status(this)) }
++        var error by remember { mutableStateOf<String?>(null) }
++        var busy by remember { mutableStateOf(false) }
++        val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
++            granted = CalendarMirror.permitted(this)
++            if(!granted) error = "Sem autorização, você ainda pode usar Salvar no calendário para revisar cada item manualmente."
++        }
++        LaunchedEffect(granted) {
++            if(granted) calendars = withContext(Dispatchers.IO) { CalendarMirror.calendars(this@CalendarSettingsActivity) }
++        }
++        LaunchedEffect(Unit) { while(true) { status = CalendarMirror.status(this@CalendarSettingsActivity); delay(2000) } }
++        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
++            Column(Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
++                TextButton(onClick = { finish() }) { Text("Voltar") }
++                Text("Calendário do celular", style = MaterialTheme.typography.headlineMedium)
++                Text("Salve automaticamente os compromissos confirmados e as tarefas com prazo no calendário que escolher.")
++                Text("Sugestões aguardam sua aprovação. Alterar ou adiar na Ollie atualiza a cópia; concluir ou descartar remove apenas a cópia criada por ela.")
++                Text("O Android pede acesso ao calendário. A integração consulta os calendários disponíveis e as próprias cópias da Ollie; não envia seus outros eventos ao servidor.", style = MaterialTheme.typography.bodySmall)
++                if(!granted) Button(onClick = { permissions.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)) }) { Text("Autorizar calendário") }
++                else {
++                    Text("Escolha onde salvar", style = MaterialTheme.typography.titleMedium)
++                    if(calendars.isEmpty()) Text("Nenhum calendário gravável apareceu. Confira se sua conta está sincronizada no celular.")
++                    calendars.forEach { calendar ->
++                        OutlinedButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
++                            error = null
++                            try { CalendarMirror.configure(this@CalendarSettingsActivity, calendar); status = CalendarMirror.status(this@CalendarSettingsActivity) }
++                            catch(e: Exception) { error = e.message }
++                        }) { Text(calendar.name + " · " + calendar.account) }
++                    }
++                    TextButton(onClick = { CalendarMirror.enqueue(this@CalendarSettingsActivity); status = "Sincronização solicitada…" }) { Text("Sincronizar agora") }
++                    TextButton(onClick = { CalendarMirror.disable(this@CalendarSettingsActivity); status = CalendarMirror.status(this@CalendarSettingsActivity) }) { Text("Pausar integração") }
++                    TextButton(enabled = !busy, onClick = {
++                        busy = true; error = null
++                        scope.launch {
++                            try { CalendarMirror.removeCopies(this@CalendarSettingsActivity); status = CalendarMirror.status(this@CalendarSettingsActivity) }
++                            catch(e: Exception) { error = e.message }
++                            finally { busy = false }
++                        }
++                    }) { Text("Desconectar e remover cópias da Ollie") }
++                }
++                if(CalendarMirror.enabled(this@CalendarSettingsActivity)) Text("Conectado a: " + CalendarMirror.selectedName(this@CalendarSettingsActivity), style = MaterialTheme.typography.titleMedium)
++                Text(status, color = MaterialTheme.colorScheme.secondary)
++                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
++                Text("Sem data, tarefas ficam só na Ollie. Compromissos sem duração usam 1 hora; tarefas com horário são marcadores de 1 minuto sem reservar disponibilidade. A cópia não acrescenta outro alarme. Mudanças feitas no calendário não retornam à Ollie.", style = MaterialTheme.typography.bodySmall)
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt b/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
+--- a/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
++++ b/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
+@@ -94,6 +94,12 @@
+             }
+ 
+             when (type) {
++                "TAREFA_REVISAR", "TAREFAS" -> {
++                    if (!userInitiated) return
++                    if (parameter.isNotBlank() && !parameter.matches(Regex("[0-9a-fA-F-]{36}"))) return
++                    context.startActivity(Intent(context, com.example.assistentecell.tarefas.TasksActivity::class.java)
++                        .putExtra("tarefa_id", parameter.takeIf { it.isNotBlank() }).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
++                }
+                 "AGENDA_REVISAR", "AGENDA" -> {
+                     if (!userInitiated) return
+                     if (parameter.isNotBlank() && !parameter.matches(Regex("[0-9a-fA-F-]{36}"))) return
+diff --git a/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt b/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
+--- a/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
++++ b/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
+@@ -7,6 +7,18 @@
+ import retrofit2.http.DELETE
+ 
+ interface CognitiveApiService {
++    @POST("api/v1/calendario/sincronizar")
++    suspend fun syncCalendar(@Body request: com.example.assistentecell.calendar.CalendarRequest): com.example.assistentecell.calendar.CalendarFeed
++
++    @GET("api/v1/tarefas")
++    suspend fun getTasks(@retrofit2.http.Query("estado") state: String = "abertas"): List<com.example.assistentecell.tarefas.TaskItem>
++    @GET("api/v1/tarefas/{id}")
++    suspend fun getTask(@retrofit2.http.Path("id") id: String): com.example.assistentecell.tarefas.TaskItem
++    @POST("api/v1/tarefas")
++    suspend fun createTask(@Body item: com.example.assistentecell.tarefas.NewTask): com.example.assistentecell.tarefas.TaskItem
++    @retrofit2.http.PATCH("api/v1/tarefas/{id}")
++    suspend fun changeTask(@retrofit2.http.Path("id") id: String, @Body change: com.example.assistentecell.tarefas.TaskChange): com.example.assistentecell.tarefas.TaskItem
++
+     @GET("api/v1/agenda")
+     suspend fun getAgenda(): List<com.example.assistentecell.agenda.AgendaItem>
+ 
+diff --git a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+--- a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
++++ b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+@@ -404,6 +404,10 @@
+                 try {
+                     val json = JSONObject(text)
+                     val tipoWs = json.optString("tipo_ws", "NOTIFICACAO")
++                    if (tipoWs == "CALENDARIO_ATUALIZAR") {
++                        com.example.assistentecell.calendar.CalendarMirror.enqueue(this@ListenerDeNotificacoes)
++                        return
++                    }
+ 
+                     // 🔇 SILÊNCIO: Não loga o status do PC para não poluir o Logcat
+                     if (tipoWs != "STATUS_PC") {
+@@ -527,6 +531,10 @@
+                             tipoWs, titulo, texto, hasAction, habitFilterActive)
+ 
+                         if (tipoWs == "CHAT_RESPONSE") {
++                            if (json.optJSONArray("acoes_agenda")?.length()?.let { it > 0 } == true ||
++                                json.optJSONArray("acoes_tarefas")?.length()?.let { it > 0 } == true) {
++                                com.example.assistentecell.calendar.CalendarMirror.enqueue(this@ListenerDeNotificacoes)
++                            }
+                             serviceScope.launch {
+                                 val prefs = getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
+                                 val isVoiceActive = prefs.getBoolean("voice_active", false)
+@@ -548,6 +556,14 @@
+                                                     val id = action.optString("id")
+                                                     if (!id.matches(Regex("[0-9a-fA-F-]{36}"))) return@mapNotNull null
+                                                     com.example.assistentecell.agenda.AgendaAction(id, action.optString("texto", "Ver na agenda"), action.optString("quando"), action.optString("tipo"))
++                                                }
++                                            } ?: emptyList(),
++                                            taskActions = json.optJSONArray("acoes_tarefas")?.let { actions ->
++                                                (0 until minOf(actions.length(), 15)).mapNotNull { index ->
++                                                    val action = actions.optJSONObject(index) ?: return@mapNotNull null
++                                                    val id = action.optString("id")
++                                                    if (!id.matches(Regex("[0-9a-fA-F-]{36}"))) return@mapNotNull null
++                                                    com.example.assistentecell.tarefas.TaskAction(id, action.optString("texto", "Ver tarefa"), action.optString("quando"))
+                                                 }
+                                             } ?: emptyList())
+                                     )
+diff --git a/app/src/main/java/com/example/assistentecell/tarefas/TaskModels.kt b/app/src/main/java/com/example/assistentecell/tarefas/TaskModels.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/tarefas/TaskModels.kt
+@@ -0,0 +1,27 @@
++package com.example.assistentecell.tarefas
++
++import java.text.SimpleDateFormat
++import java.util.Locale
++
++data class TaskAction(val id: String, val texto: String, val quando: String)
++data class TaskItem(val id: String, val titulo: String, val prazo: String?, val quando: String,
++    val dia_inteiro: Boolean, val estado: String, val atrasada: Boolean, val origem: String,
++    val contexto: String, val versao: Int, val aviso: String)
++data class NewTask(val titulo: String, val prazo: String?, val dia_inteiro: Boolean)
++data class TaskChange(val acao: String, val versao: Int, val prazo: String? = null, val dia_inteiro: Boolean = false)
++data class TaskDeadline(val prazo: String?, val dia_inteiro: Boolean)
++
++object TaskDates {
++    fun deadline(date: String, time: String): TaskDeadline {
++        val day = date.trim(); val hour = time.trim()
++        if (day.isEmpty()) {
++            require(hour.isEmpty()) { "Escolha a data desse horário." }
++            return TaskDeadline(null, false)
++        }
++        val input = day + " " + hour.ifEmpty { "00:00" }
++        require(Regex("\\d{2}/\\d{2}/\\d{4} \\d{2}:\\d{2}").matches(input)) { "Use dd/mm/aaaa e HH:mm." }
++        val dateTime = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ROOT).apply { isLenient = false }.parse(input)
++            ?: error("Confira a data do prazo.")
++        return TaskDeadline(SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ROOT).format(dateTime), hour.isEmpty())
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/tarefas/TasksActivity.kt b/app/src/main/java/com/example/assistentecell/tarefas/TasksActivity.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/tarefas/TasksActivity.kt
+@@ -0,0 +1,144 @@
++package com.example.assistentecell.tarefas
++
++import android.app.NotificationManager
++import android.os.Bundle
++import androidx.activity.ComponentActivity
++import androidx.activity.compose.setContent
++import androidx.compose.foundation.horizontalScroll
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++import com.example.assistentecell.api.RetrofitClient
++import com.example.assistentecell.ui.theme.AssistenteCellTheme
++import kotlinx.coroutines.CancellationException
++import kotlinx.coroutines.launch
++
++class TasksActivity : ComponentActivity() {
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        RetrofitClient.init(this)
++        setContent { AssistenteCellTheme(darkTheme = true, dynamicColor = false) { TasksPage() } }
++    }
++
++    @Composable
++    private fun TasksPage() {
++        val scope = rememberCoroutineScope()
++        val api = remember { RetrofitClient.cognitiveApiService }
++        var items by remember { mutableStateOf<List<TaskItem>>(emptyList()) }
++        var filter by remember { mutableStateOf("abertas") }
++        var selected by remember { mutableStateOf(intent.getStringExtra("tarefa_id")) }
++        var busy by remember { mutableStateOf(false) }
++        var error by remember { mutableStateOf<String?>(null) }
++        var notice by remember { mutableStateOf<String?>(null) }
++        var newForm by remember { mutableStateOf(false) }
++        var title by remember { mutableStateOf("") }
++        var date by remember { mutableStateOf("") }
++        var time by remember { mutableStateOf("") }
++        var postpone by remember { mutableStateOf<String?>(null) }
++        var nextDate by remember { mutableStateOf("") }
++        var nextTime by remember { mutableStateOf("") }
++
++        fun run(action: suspend () -> Unit) {
++            if (busy) return
++            busy = true; error = null; notice = null
++            scope.launch {
++                try { action() }
++                catch (e: CancellationException) { throw e }
++                catch (e: Exception) {
++                    error = if (e is retrofit2.HttpException) when(e.code()) {
++                        401 -> "Confira o servidor e o token nas configurações."
++                        404 -> "Tarefas indisponíveis. Confira a atualização do servidor."
++                        409 -> "Essa tarefa mudou. Atualize a lista antes de tentar novamente."
++                        422 -> "Confira a tarefa e o prazo. Para adiar, escolha uma data futura."
++                        else -> "Não consegui acessar suas tarefas. Tente novamente."
++                    } else e.message ?: "Não consegui concluir. Tente novamente."
++                } finally { busy = false }
++            }
++        }
++        suspend fun reload() {
++            com.example.assistentecell.calendar.CalendarMirror.enqueue(this@TasksActivity)
++            val all = api.getTasks(filter)
++            val id = selected
++            items = if (id != null && all.none { it.id == id }) listOf(api.getTask(id)) + all else all
++            items.filter { it.estado in listOf("concluida", "descartada") }.forEach {
++                getSystemService(NotificationManager::class.java).cancel(("tarefa:" + it.id).hashCode())
++            }
++        }
++        suspend fun change(item: TaskItem, action: String, deadline: TaskDeadline = TaskDeadline(null, false)) {
++            api.changeTask(item.id, TaskChange(action, item.versao, deadline.prazo, deadline.dia_inteiro))
++            if (action in listOf("concluir", "descartar", "adiar")) getSystemService(NotificationManager::class.java).cancel(("tarefa:" + item.id).hashCode())
++            postpone = null; reload()
++            notice = when(action) { "concluir" -> "Tarefa concluída."; "adiar" -> "Prazo atualizado."; "aceitar" -> "Guardado nas suas tarefas."; else -> "Tarefa descartada." }
++        }
++        LaunchedEffect(filter) { run { reload() } }
++
++        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
++            Column(Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
++                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
++                    TextButton(onClick = { finish() }) { Text("Voltar") }
++                    TextButton(enabled = !busy, onClick = { run { reload() } }) { Text("Atualizar") }
++                }
++                Text("Suas tarefas", style = MaterialTheme.typography.headlineMedium)
++                TextButton(onClick = { startActivity(android.content.Intent(this@TasksActivity, com.example.assistentecell.calendar.CalendarSettingsActivity::class.java)) }) { Text("Conectar calendário do celular") }
++                Text("Suas pendências ficam aqui até você concluir ou descartar.", color = MaterialTheme.colorScheme.onSurfaceVariant)
++                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
++                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
++                notice?.let { Text(it, color = MaterialTheme.colorScheme.secondary) }
++                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                    listOf("abertas" to "Abertas", "sugestao" to "Sugestões", "concluida" to "Concluídas", "descartada" to "Descartadas").forEach { (value, label) ->
++                        FilterChip(enabled = !busy, selected = filter == value, onClick = { selected = null; filter = value }, label = { Text(label) })
++                    }
++                }
++                OutlinedButton(onClick = { newForm = !newForm }) { Text(if(newForm) "Fechar formulário" else "Nova tarefa") }
++                if (newForm) {
++                    OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("O que precisa fazer?") }, modifier = Modifier.fillMaxWidth())
++                    OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Data do prazo — dd/mm/aaaa (opcional)") }, modifier = Modifier.fillMaxWidth())
++                    OutlinedTextField(value = time, onValueChange = { time = it }, label = { Text("Horário — HH:mm (opcional)") }, modifier = Modifier.fillMaxWidth())
++                    Text("Sem horário, a data vale até o fim do dia e não gera aviso em horário inventado. Com horário, há um aviso que depende do servidor e da conexão.", style = MaterialTheme.typography.bodySmall)
++                    Button(enabled = !busy, onClick = { run {
++                        require(title.isNotBlank()) { "Escreva o que precisa fazer." }
++                        val deadline = TaskDates.deadline(date, time)
++                        val saved = api.createTask(NewTask(title.trim(), deadline.prazo, deadline.dia_inteiro))
++                        selected = saved.id; newForm = false; title = ""; date = ""; time = ""; reload(); notice = "Anotado nas suas tarefas."
++                    } }) { Text("Guardar tarefa") }
++                }
++                if (selected != null) TextButton(onClick = { selected = null }) { Text("Ver todas as tarefas") }
++                val visible = items.filter { selected == null || it.id == selected }
++                if (!busy && error == null && visible.isEmpty()) Text("Nenhuma tarefa nessa lista por enquanto.")
++                visible.forEach { item ->
++                    Card(Modifier.fillMaxWidth()) {
++                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
++                            Text(when { item.atrasada -> "Prazo vencido"; item.estado == "sugestao" -> "Sugestão de mensagem"; item.estado == "concluida" -> "Concluída"; item.estado == "descartada" -> "Descartada"; else -> "Pendente" },
++                                color = if(item.atrasada) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary)
++                            Text(item.titulo, style = MaterialTheme.typography.titleLarge)
++                            Text(item.quando, color = MaterialTheme.colorScheme.secondary)
++                            Text(item.aviso, style = MaterialTheme.typography.bodySmall)
++                            if (item.contexto.isNotBlank()) Text("Mensagem de origem: " + item.contexto, style = MaterialTheme.typography.bodySmall)
++                            if (item.estado in listOf("pendente", "sugestao")) {
++                                if (item.estado == "sugestao") Button(enabled = !busy, onClick = { run { change(item, "aceitar") } }) { Text("Colocar nas tarefas") }
++                                else {
++                                    Button(enabled = !busy, onClick = { run { change(item, "concluir") } }) { Text("Concluir") }
++                                    OutlinedButton(enabled = !busy, onClick = { postpone = item.id; nextDate = ""; nextTime = "" }) { Text("Adiar") }
++                                }
++                                TextButton(enabled = !busy, onClick = { run { change(item, "descartar") } }) { Text("Descartar") }
++                            }
++                            if (postpone == item.id) {
++                                OutlinedTextField(value = nextDate, onValueChange = { nextDate = it }, label = { Text("Nova data — dd/mm/aaaa") }, modifier = Modifier.fillMaxWidth())
++                                OutlinedTextField(value = nextTime, onValueChange = { nextTime = it }, label = { Text("Horário — HH:mm (opcional)") }, modifier = Modifier.fillMaxWidth())
++                                Button(enabled = !busy, onClick = { run {
++                                    require(nextDate.isNotBlank()) { "Escolha a nova data." }
++                                    change(item, "adiar", TaskDates.deadline(nextDate, nextTime))
++                                } }) { Text("Salvar prazo") }
++                                TextButton(onClick = { postpone = null }) { Text("Cancelar") }
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt b/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt
+--- a/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt
+@@ -3,6 +3,8 @@
+ import android.content.Intent
+ import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.material.icons.outlined.EventNote
++import androidx.compose.material.icons.outlined.Checklist
++import com.example.assistentecell.tarefas.TasksActivity
+ import androidx.compose.foundation.text.ClickableText
+ import androidx.compose.ui.text.buildAnnotatedString
+ import androidx.compose.ui.text.SpanStyle
+@@ -97,6 +99,9 @@
+                             )
+                         }
+                     }
++                    IconButton(onClick = { context.startActivity(Intent(context, TasksActivity::class.java)) }) {
++                        Icon(Icons.Outlined.Checklist, contentDescription = "Suas tarefas")
++                    }
+                     IconButton(onClick = { context.startActivity(Intent(context, AgendaActivity::class.java)) }) {
+                         Icon(Icons.Outlined.EventNote, contentDescription = "Sua agenda")
+                     }
+@@ -243,6 +248,11 @@
+                         context.startActivity(Intent(context, AgendaActivity::class.java).putExtra("agenda_id", it.item))
+                     }
+                 })
++                message.taskActions.forEach { action ->
++                    TextButton(onClick = { context.startActivity(Intent(context, TasksActivity::class.java).putExtra("tarefa_id", action.id)) }) {
++                        Text(action.texto + " · " + action.quando)
++                    }
++                }
+                 message.agendaActions.forEach { action ->
+                     TextButton(onClick = { context.startActivity(Intent(context, AgendaActivity::class.java).putExtra("agenda_id", action.id)) }) { Text(action.texto) }
+                 }
+diff --git a/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt b/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
+--- a/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
++++ b/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
+@@ -13,7 +13,8 @@
+     val correlationId: String? = null,
+     val timestamp: Long = System.currentTimeMillis(),
+     val awaitsAnswer: Boolean? = null,
+-    val agendaActions: List<com.example.assistentecell.agenda.AgendaAction> = emptyList()
++    val agendaActions: List<com.example.assistentecell.agenda.AgendaAction> = emptyList(),
++    val taskActions: List<com.example.assistentecell.tarefas.TaskAction> = emptyList()
+ )
+ 
+ object ChatBridge {
+diff --git a/app/src/test/java/com/example/assistentecell/CalendarRulesTest.kt b/app/src/test/java/com/example/assistentecell/CalendarRulesTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/com/example/assistentecell/CalendarRulesTest.kt
+@@ -0,0 +1,25 @@
++package com.example.assistentecell
++import com.example.assistentecell.calendar.*
++import com.example.assistentecell.agenda.AgendaDates
++import org.junit.Assert.*
++import org.junit.Test
++class CalendarRulesTest {
++    @Test fun dayOnlyUsesUtcMidnightOfDeclaredDate() {
++        val item = CalendarEntry("id", "agenda", "Data importante", true, "2030-10-23T03:00:00+00:00", "2030-10-23", true, "America/Sao_Paulo", 60, "")
++        val period = CalendarRules.period(item)
++        assertEquals(AgendaDates.instant("2030-10-23T00:00:00Z"), period.begin)
++        assertEquals(86400000L, period.end - period.begin)
++        assertEquals("UTC", period.zone)
++    }
++    @Test fun postponedTimeUpdatesSameCopyAndDoesNotDuplicate() {
++        assertEquals("update", CalendarRules.decision(true, true, true, false))
++        assertEquals("skip", CalendarRules.decision(true, true, true, true))
++    }
++    @Test fun userDeletedCalendarCopyIsNotRecreatedWithoutChange() {
++        assertEquals("skip", CalendarRules.decision(true, true, false, true))
++    }
++    @Test fun onlyMappedCopiesCanBeRemoved() {
++        assertEquals("skip", CalendarRules.decision(false, false, true, false))
++        assertEquals("delete", CalendarRules.decision(false, true, true, false))
++    }
++}
+diff --git a/app/src/test/java/com/example/assistentecell/TaskDatesTest.kt b/app/src/test/java/com/example/assistentecell/TaskDatesTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/com/example/assistentecell/TaskDatesTest.kt
+@@ -0,0 +1,16 @@
++package com.example.assistentecell
++import com.example.assistentecell.tarefas.TaskDates
++import org.junit.Assert.*
++import org.junit.Test
++class TaskDatesTest {
++    @Test fun optionalDeadlineStaysEmpty() {
++        assertNull(TaskDates.deadline("", "").prazo)
++        assertFalse(TaskDates.deadline("", "").dia_inteiro)
++    }
++    @Test(expected = IllegalArgumentException::class) fun clockRequiresDate() { TaskDates.deadline("", "15:00") }
++    @Test fun dayOnlyAndExactTimeStayDifferent() {
++        assertTrue(TaskDates.deadline("23/10/2030", "").dia_inteiro)
++        assertFalse(TaskDates.deadline("23/10/2030", "15:00").dia_inteiro)
++    }
++    @Test(expected = java.text.ParseException::class) fun impossibleDateDoesNotRollOver() { TaskDates.deadline("30/02/2030", "15:00") }
++}

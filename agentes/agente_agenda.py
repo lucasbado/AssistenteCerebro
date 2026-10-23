@@ -6,6 +6,8 @@ from core.evento import EventoCanonico
 from core.kernel import kernel
 from core.tipos import CategoriaEvento, OrigemEvento, TipoAcao
 from servicos.agenda import agenda
+from servicos.tarefas import tarefas
+from servicos.calendario import avisar_celular
 from servicos.datas_agenda import extrair_data, intencao_agenda, titulo_sem_data, completar_rascunho
 from servicos.controle_casa import normalizar
 from servicos.roteamento_pedidos import contexto_pedido, dispositivo_origem
@@ -18,13 +20,14 @@ EVENTOS = re.compile(r'\b(?:reuniao|consulta|dentista|aniversario|prova|entrevis
 class AgenteAgenda:
     def __init__(self): self._tick_lock = asyncio.Lock()
 
-    async def responder(self, evento, texto, item=None, pergunta=False):
+    async def responder(self, evento, texto, item=None, pergunta=False, tarefas_itens=()):
         acoes = [] if item is None else [{'id': item['id'], 'texto': 'Revisar alarme' if item['tipo'] == 'alarme' else 'Ver na agenda',
             'quando': item['quando'], 'tipo': item['tipo']}]
         await kernel.publicar(evento.clonar(categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
             acao=TipoAcao.INTENCAO_INTERACAO, origem=OrigemEvento.IA,
             payload={'tipo_ws': 'CHAT_RESPONSE', 'titulo': 'Ollie', 'texto': texto,
-                     'aguarda_resposta': pergunta, 'acoes_agenda': acoes},
+                     'aguarda_resposta': pergunta, 'acoes_agenda': acoes,
+                     'acoes_tarefas': [{'id': i['id'], 'texto': i['titulo'], 'quando': i['quando']} for i in tarefas_itens[:15]]},
             metadados={**contexto_pedido(evento), 'tipo_destino': 'CHAT'}))
 
     async def processar(self, evento):
@@ -51,16 +54,24 @@ class AgenteAgenda:
                     await agenda.limpar_rascunho(chave)
             if tipo == 'listar':
                 itens = [i for i in await agenda.listar() if i['estado'] != 'sugestao']
+                pendencias = [i for i in await tarefas.listar('pendente') if i['prazo']]
                 from servicos.tempo import horario_local
                 filtro = extrair_data(texto, evento.timestamp)
                 if filtro:
                     dia = horario_local(filtro['inicio']).date()
                     itens = [i for i in itens if horario_local(datetime.fromisoformat(i['inicio'])).date() == dia]
+                    pendencias = [i for i in pendencias if horario_local(datetime.fromisoformat(i['prazo'])).date() == dia]
                 resposta = 'Sua agenda tá livre por enquanto.' if not itens else 'Aqui está o que você guardou:\n' + '\n'.join(
                     f'• {i["titulo"]} — {i["quando"]}' + (' (despertador: revise no celular)' if i['tipo'] == 'alarme' else '') for i in itens[:15])
-                await self.responder(evento, resposta)
+                if pendencias:
+                    resposta = (resposta + '\n\n' if itens else '') + 'Tarefas com prazo:\n' + '\n'.join(
+                        f'• {i["titulo"]} — {i["quando"]}' + (' (prazo vencido)' if i['atrasada'] else '') for i in pendencias[:15])
+                await self.responder(evento, resposta, tarefas_itens=pendencias)
                 return
             if externo and (not EVENTOS.search(normalizar(texto)) or re.search(r'\b(?:cancelad[oa]|remarcad[oa]|nao vai|nao sera)\b', normalizar(texto))): return
+            if externo:
+                from servicos.linguagem_tarefas import pendencia_mensagem
+                if pendencia_mensagem(texto): return
             data = extrair_data(texto, evento.timestamp, proxima_ocorrencia=not externo)
             if data is None:
                 if not externo:
@@ -81,6 +92,7 @@ class AgenteAgenda:
                 origem=evento.pacote if externo else 'pedido', confirmar=tipo is not None,
                 antecedencia_minutos=0)
             if not externo: await agenda.limpar_rascunho(chave)
+            if not externo and tipo and tipo != 'alarme': await avisar_celular()
             if externo:
                 if item['estado'] != 'sugestao': return
                 await kernel.publicar(evento.clonar(categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,

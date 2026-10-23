@@ -5,6 +5,29 @@ from datetime import datetime, timezone
 Base = declarative_base()
 
 
+class TarefaDB(Base):
+    __tablename__ = 'tarefas_pessoais'
+    id = Column(String(36), primary_key=True)
+    chave_evento = Column(String(64), nullable=False, unique=True)
+    titulo = Column(String(255), nullable=False)
+    prazo = Column(DateTime(timezone=True), nullable=True, index=True)
+    dia_inteiro = Column(Integer, nullable=False, default=0)
+    estado = Column(String(20), nullable=False, index=True)
+    origem = Column(String(255), nullable=False)
+    contexto = Column(String(500), nullable=False, default='')
+    versao = Column(Integer, nullable=False, default=1)
+    criado_em = Column(DateTime(timezone=True), nullable=False)
+    atualizado_em = Column(DateTime(timezone=True), nullable=False)
+    avisado_em = Column(DateTime(timezone=True), nullable=True)
+
+
+class TarefaContextoDB(Base):
+    __tablename__ = 'tarefas_contextos'
+    chave = Column(String(20), primary_key=True)
+    dados = Column(JSON, nullable=False)
+    expira = Column(DateTime(timezone=True), nullable=False)
+
+
 class AgendaRascunhoDB(Base):
     __tablename__ = 'agenda_rascunhos'
     chave = Column(String(20), primary_key=True)
