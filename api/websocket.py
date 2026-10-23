@@ -87,6 +87,12 @@ class GerenciadorNotificacoes:
             return False
         return await self._enviar_direto(self.mobile_client, dict(mensagem))
 
+    async def enviar_lembrete_agenda(self, mensagem):
+        for cliente in (self.mobile_client, self.pc_master):
+            if cliente is not None and await self._enviar_direto(cliente, dict(mensagem)):
+                return True
+        return False
+
     async def conectar(self, websocket: WebSocket):
         protocolos = websocket.headers.get("sec-websocket-protocol", "").split(",")
         await websocket.accept(subprotocol="ollie" if "ollie" in [p.strip() for p in protocolos] else None)

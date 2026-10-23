@@ -32,6 +32,7 @@ from agentes.agente_pc_profiler import AgentePcProfiler
 from agentes.agente_botoes import AgenteBotoes
 from agentes.agente_casa import AgenteCasa
 from agentes.agente_plano import AgentePlano
+from agentes.agente_agenda import AgenteAgenda
 
 # Serviços
 from servicos.agente_contexto_sistema import AgenteContextoSistema
@@ -54,6 +55,7 @@ from servicos.router import router as timeline_router
 from api.pc_control import router as pc_control_router
 from api.router_ha import router as ha_router
 from api.contexto import router as contexto_router
+from api.agenda import router as agenda_router
 
 # Configuração de Logs
 logging.basicConfig(level=logging.INFO)
@@ -94,6 +96,10 @@ async def lifespan(app: FastAPI):
     agentes_inst["botoes"] = AgenteBotoes()
     agentes_inst["casa"] = AgenteCasa()
     agentes_inst["plano"] = AgentePlano()
+    agentes_inst["agenda"] = AgenteAgenda()
+    kernel.registrar(lambda e: e.categoria in {CategoriaEvento.AGENDA_SOLICITADA, CategoriaEvento.NOTIFICACAO}
+        or (e.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO and e.payload.get('tipo') == 'TICK_AGENDA'),
+        agentes_inst["agenda"].processar)
     kernel.registrar(lambda e: e.categoria == CategoriaEvento.PLANO_SOLICITADO,
                      agentes_inst["plano"].processar)
     kernel.registrar(lambda e: e.categoria == CategoriaEvento.CASA_ACAO_SOLICITADA,
@@ -179,11 +185,18 @@ async def lifespan(app: FastAPI):
                 payload={"tipo": "TICK_ROTINA"}))
             await asyncio.sleep(60)
 
+    async def loop_agenda():
+        while True:
+            await kernel.publicar(EventoCanonico(categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO,
+                origem=OrigemEvento.SISTEMA, pacote='sistema.agenda', payload={'tipo': 'TICK_AGENDA'}))
+            await asyncio.sleep(30)
+
     tasks = [
         asyncio.create_task(loop_clima()),
         asyncio.create_task(loop_rotina()),
         asyncio.create_task(loop_sumarizador()),
         asyncio.create_task(loop_relogio_rotinas()),
+        asyncio.create_task(loop_agenda()),
         asyncio.create_task(kernel.iniciar()),
         asyncio.create_task(central_alertas.iniciar_monitor())
     ]
@@ -248,6 +261,7 @@ app.include_router(capabilities_router, prefix="/api/v1/capabilities", tags=["Ca
 app.include_router(ha_router, prefix="/api/v1/ha", tags=["Home Assistant"])
 app.include_router(voice_router, prefix="/api/v1/voice", tags=["Voz"])
 app.include_router(contexto_router, prefix="/api/v1/contexto", tags=["Contexto"])
+app.include_router(agenda_router, prefix='/api/v1/agenda')
 
 if __name__ == "__main__":
     import uvicorn

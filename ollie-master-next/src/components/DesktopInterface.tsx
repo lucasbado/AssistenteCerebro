@@ -1,11 +1,12 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import AgendaPanel, { type AgendaAction } from './AgendaPanel';
 import { Activity, ArrowUpRight, Check, ChevronRight, CircleAlert, Cpu, Database, MessageCircle, Mic, MicOff, Monitor,
-  Radio, RefreshCw, Send, Settings2, Shield, Sparkles, Terminal, Volume2, VolumeX, X } from 'lucide-react';
+  Radio, RefreshCw, Send, Settings2, Shield, Sparkles, Terminal, Volume2, VolumeX, X, CalendarDays } from 'lucide-react';
 import type { ListeningPhase } from '../desktopListening';
 import './desktop-interface.css';
 
-export type DesktopPage = 'chat' | 'computer' | 'activity' | 'automation';
-export type DesktopMessage = { id: string; role: 'user' | 'ollie'; text: string; time: string };
+export type DesktopPage = 'chat' | 'computer' | 'activity' | 'automation' | 'agenda';
+export type DesktopMessage = { id: string; role: 'user' | 'ollie'; text: string; time: string; agendaActions?: AgendaAction[] };
 export type InterventionPolicy = { auto_open_enabled: boolean; min_priority_score: number; whitelist: string[]; blacklist: string[] };
 type Props = {
   page: DesktopPage; onPage: (page: DesktopPage) => void; connected: boolean; thinking: boolean;
@@ -29,6 +30,7 @@ const pages = [
   { id: 'computer', label: 'Computador', icon: Monitor, subtitle: 'O que está acontecendo por aqui.' },
   { id: 'activity', label: 'Atividade', icon: Activity, subtitle: 'Conexões e execuções desta sessão.' },
   { id: 'automation', label: 'Autonomia', icon: Shield, subtitle: 'Você escolhe quando a Ollie pode agir.' },
+  { id: 'agenda', label: 'Agenda', icon: CalendarDays, subtitle: 'Tempo para o que importa.' },
 ] as const;
 const phases: Record<ListeningPhase, { title: string; hint: string }> = {
   off: { title: 'Ativação por voz desligada', hint: 'Você pode conversar por texto ou ativar a chamada.' },
@@ -48,7 +50,16 @@ function Usage({ label, value, purple = false }: { label: string; value: number 
   </div>;
 }
 
+function AgendaMessage({ message, onOpen }: { message: DesktopMessage; onOpen: (id: string) => void }) {
+  const action = message.agendaActions?.[0];
+  const start = action?.quando ? message.text.indexOf(action.quando) : -1;
+  return <><p>{action && start >= 0 ? <>{message.text.slice(0, start)}<button className="agenda-date-link" onClick={() => onOpen(action.id)}>{action.quando}</button>{message.text.slice(start + action.quando.length)}</> : message.text}</p>
+    {message.agendaActions?.map(item => <button className="button button-subtle" key={item.id} onClick={() => onOpen(item.id)}>{item.texto}</button>)}</>;
+}
+
 export default function DesktopInterface(p: Props) {
+  const [agendaSelection, setAgendaSelection] = useState<string | null>(null);
+  const openAgenda = (id: string) => { setAgendaSelection(id); p.onPage('agenda'); };
   const chatScroll = useRef<HTMLDivElement>(null), logScroll = useRef<HTMLDivElement>(null);
   const stickChat = useRef(true), stickLog = useRef(true);
   useEffect(() => { if (stickChat.current && chatScroll.current) chatScroll.current.scrollTop = chatScroll.current.scrollHeight; }, [p.messages, p.thinking, p.page]);
@@ -82,6 +93,7 @@ export default function DesktopInterface(p: Props) {
         <button className="icon-button" onClick={p.onDismissNotice} aria-label="Dispensar aviso"><X size={16} /></button>
       </div>}
       <div id="desktop-content" className="desktop-content">
+        {p.page === 'agenda' && <AgendaPanel selected={agendaSelection} onAll={() => setAgendaSelection(null)} />}
         {p.page === 'chat' && <section className="conversation" aria-label="Conversa com a Ollie">
           <div className={`voice-strip phase-${p.phase}`}><span className="voice-strip-icon">{p.listeningEnabled ? <Mic size={20} /> : <MicOff size={20} />}</span>
             <div className="voice-strip-copy" role="status" aria-live="polite"><strong>{status.title}</strong><span>{status.hint}</span></div>
@@ -97,7 +109,9 @@ export default function DesktopInterface(p: Props) {
                 <button key={text} onClick={() => { p.onDraft(text); p.inputRef.current?.focus(); }}>{text}<ArrowUpRight size={14} /></button>)}</div>
             </div>}
             <div className="message-list" role="log" aria-label="Mensagens da conversa" aria-live="polite" aria-relevant="additions">
-              {p.messages.map(message => <article key={message.id} className={`chat-message ${message.role}`}><div className="message-meta"><strong>{message.role === 'user' ? 'Você' : 'Ollie'}</strong><time>{message.time}</time></div><p>{message.text}</p></article>)}
+              {p.messages.map(message => <article key={message.id} className={`chat-message ${message.role}`}><div className="message-meta"><strong>{message.role === 'user' ? 'Você' : 'Ollie'}</strong><time>{message.time}</time></div>
+                <AgendaMessage message={message} onOpen={openAgenda} />
+              </article>)}
               {p.thinking && <div className="thinking-indicator" role="status"><span /><span /><span />Ollie está pensando…</div>}
             </div>
           </div>

@@ -5,6 +5,28 @@ from datetime import datetime, timezone
 Base = declarative_base()
 
 
+class AgendaRascunhoDB(Base):
+    __tablename__ = 'agenda_rascunhos'
+    chave = Column(String(20), primary_key=True)
+    texto = Column(String(3000), nullable=False)
+    expira = Column(DateTime(timezone=True), nullable=False)
+
+
+class AgendaItemDB(Base):
+    __tablename__ = 'agenda_itens'
+    id = Column(String(36), primary_key=True)
+    assinatura = Column(String(64), nullable=False, unique=True)
+    tipo = Column(String(20), nullable=False)
+    titulo = Column(String(255), nullable=False)
+    inicio = Column(DateTime(timezone=True), nullable=False, index=True)
+    dia_inteiro = Column(Integer, nullable=False, default=0)
+    antecedencia_minutos = Column(Integer, nullable=False, default=0)
+    estado = Column(String(20), nullable=False, index=True)
+    origem = Column(String(255), nullable=False)
+    criado_em = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    avisado_em = Column(DateTime(timezone=True), nullable=True)
+
+
 class CatalogoRotinasDB(Base):
     """Estado persistente das sugestões, aprovações e rejeições do usuário."""
     __tablename__ = "catalogo_rotinas"

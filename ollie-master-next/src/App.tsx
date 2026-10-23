@@ -243,9 +243,9 @@ export default function App() {
     fetchDiscovered();
   }, []);
 
-  const appendMessage = (role: DesktopMessage['role'], text: string, id: string) => {
+  const appendMessage = (role: DesktopMessage['role'], text: string, id: string, agendaActions?: DesktopMessage['agendaActions']) => {
     setMessages(previous => previous.some(message => message.id === id) ? previous : [...previous.slice(-99), {
-      id, role, text, time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      id, role, text, agendaActions, time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     }]);
   };
 
@@ -467,7 +467,8 @@ export default function App() {
             addLog(`🤖 OLLIE: ${data.texto}`, "text-neon-purple text-[13px] font-bold");
             setMood("idle");
             const reply = desktopReplies.current.consume(data);
-            if (reply) appendMessage('ollie', reply, String(data.id || `${data.correlacao_id}:${reply}`));
+            if (reply) appendMessage('ollie', reply, String(data.id || `${data.correlacao_id}:${reply}`),
+              Array.isArray(data.acoes_agenda) ? data.acoes_agenda.filter((a: any) => a && typeof a.id === 'string' && typeof a.quando === 'string' && typeof a.texto === 'string') : []);
             const voiceRequest = pendingVoice.current.get(data.correlacao_id);
             if (reply && voiceRequest) {
               voiceRequest.resolve(reply);
@@ -477,6 +478,12 @@ export default function App() {
               void listening.current!.speakExternal(reply).catch(() =>
                 addLog('Não consegui reproduzir a voz. A resposta continua no chat.', 'text-neon-orange'));
             }
+          }
+
+          if (data.tipo_ws === 'NOTIFICACAO' && data.acao_tipo === 'AGENDA_REVISAR' && typeof data.texto === 'string') {
+            appendMessage('ollie', data.texto, String(data.id || `agenda-${data.acao_parametro}`),
+              [{ id: String(data.acao_parametro), texto: 'Ver na agenda', quando: '', tipo: 'compromisso' }]);
+            setNotice({ text: data.texto, kind: 'success' });
           }
 
           if (data.comando && data.tipo_ws === 'COMANDO_PC') {

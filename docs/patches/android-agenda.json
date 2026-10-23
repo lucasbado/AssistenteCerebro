@@ -1,0 +1,55 @@
+{
+  "base": "Arquivos locais anteriores a esta integracao de agenda; aplicar apos a integracao ONNX e navegacao.",
+  "files": [
+    {
+      "path": "app/src/androidTest/java/com/example/assistentecell/AgendaScreenTest.kt",
+      "before_sha256": null,
+      "after_sha256": "96ec8053e57a327b1302a21201af7cdd697435e504138aa7c208c968af8f8b7e"
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "before_sha256": "746bf1d349c40a10ee89683f0cefb540237e6327b4be4f5476a648932a94befc",
+      "after_sha256": "1e9d8e107e967237a72eba4b2bf454aa14fa905ef5ca8bdf4a1ca5007e9f3fb8"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/agenda/AgendaActivity.kt",
+      "before_sha256": null,
+      "after_sha256": "524119480d6ec44d72d3250f799f876a3b5c99c814b26b42a0c36f577bcd5532"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/agenda/AgendaModels.kt",
+      "before_sha256": null,
+      "after_sha256": "1051a19ed5ffe72aa269e1ee2b68d8be4c984944f61cc3ae170412cf292b15ea"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt",
+      "before_sha256": "9507bcc948de541e3cd08fcc1e0d11d44642b7981fbc723d291da9ec21cb74eb",
+      "after_sha256": "d79909ccd48eb22cd171061472d540bb38d2b36215e295957eca7295ac901aaf"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt",
+      "before_sha256": "d0bc4b60abf0b2b4c06fd2e392dd7ce990554c86494b060d1594b9b0d3fc1f2b",
+      "after_sha256": "be0d77dd131b18471719755cf16d42789bbd6547aea5aba9c3cc92c91f7d3017"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt",
+      "before_sha256": "95b3087cfe1d804159397aea401fe79c20a80892f4c54786fd60486d32f76075",
+      "after_sha256": "0eed5b01e91dbaeef23c872514fb417f01da7e61609bd542cfc987e5cab53d9f"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt",
+      "before_sha256": "52bf89801efef149a76e1775e8c9e19036c13dc6ce72b8a2651ed1cb43cca45b",
+      "after_sha256": "3e3b0a35911282eec5bf621a645c09fca786331842327e601a1a92eb390871b8"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt",
+      "before_sha256": "ca581cce2259ca0701c4571ee9b2ee806e5de429bdf9d82166089bd5f6d3b3cd",
+      "after_sha256": "afac2adc50531adf98e2a53d306ab04cf12f209dc02faea0b560bcda8a0fe983"
+    },
+    {
+      "path": "app/src/test/java/com/example/assistentecell/AgendaDatesTest.kt",
+      "before_sha256": null,
+      "after_sha256": "4b635b79f89e6fcf6803bf993562814c61d57b34627953f019f781f8d8294a62"
+    }
+  ]
+}

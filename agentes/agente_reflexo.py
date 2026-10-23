@@ -20,6 +20,19 @@ class AgenteReflexo:
     async def processar(self, evento: EventoCanonico):
         # 🌟 NOVO: Comandos diretos do usuário são sempre complexos (merecem LLM)
         if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+            from servicos.datas_agenda import intencao_agenda, data_importante, continua_rascunho
+            from servicos.agenda import agenda
+            from servicos.roteamento_pedidos import dispositivo_origem
+            texto = str(evento.payload.get('texto', ''))
+            intencao = intencao_agenda(texto)
+            try:
+                rascunho = await agenda.rascunho(dispositivo_origem(evento))
+            except Exception:
+                rascunho = None
+                logger.warning('Agenda indisponível para consultar continuação')
+            if intencao or data_importante(texto) or continua_rascunho(texto, rascunho):
+                await kernel.publicar(evento.clonar(categoria=CategoriaEvento.AGENDA_SOLICITADA))
+                return
             from servicos.controle_casa import controle_casa
             pedido_casa = controle_casa.interpretar(evento.payload.get("texto", ""))
             if pedido_casa:

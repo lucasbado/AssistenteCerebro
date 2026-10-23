@@ -1,0 +1,439 @@
+diff --git a/app/src/androidTest/java/com/example/assistentecell/AgendaScreenTest.kt b/app/src/androidTest/java/com/example/assistentecell/AgendaScreenTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/com/example/assistentecell/AgendaScreenTest.kt
+@@ -0,0 +1,26 @@
++package com.example.assistentecell
++
++import androidx.compose.ui.test.assertIsDisplayed
++import androidx.compose.ui.test.junit4.createAndroidComposeRule
++import androidx.compose.ui.test.onNodeWithText
++import androidx.compose.ui.test.performClick
++import androidx.compose.ui.test.performScrollTo
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import com.example.assistentecell.agenda.AgendaActivity
++import org.junit.Rule
++import org.junit.Test
++import org.junit.runner.RunWith
++
++@RunWith(AndroidJUnit4::class)
++class AgendaScreenTest {
++    @get:Rule val compose = createAndroidComposeRule<AgendaActivity>()
++
++    @Test fun agendaOpensAndOffersSeparateAlarmWithoutCreatingRealItems() {
++        compose.onNodeWithText("Sua agenda").assertIsDisplayed()
++        compose.onNodeWithText("Novo compromisso ou despertador").performClick()
++        compose.onNodeWithText("Data — dd/mm/aaaa").performScrollTo().assertIsDisplayed()
++        compose.onNodeWithText("Alarme").performScrollTo().performClick()
++        compose.onNodeWithText("Guardar na Ollie").performScrollTo().assertIsDisplayed()
++        // No submit: this smoke test never creates an appointment or a real alarm.
++    }
++}
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -147,5 +147,6 @@
+             </intent-filter>
+         </service>
+ 
++        <activity android:name=".agenda.AgendaActivity" android:exported="false" />
+     </application>
+ </manifest>
+diff --git a/app/src/main/java/com/example/assistentecell/agenda/AgendaActivity.kt b/app/src/main/java/com/example/assistentecell/agenda/AgendaActivity.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/agenda/AgendaActivity.kt
+@@ -0,0 +1,171 @@
++package com.example.assistentecell.agenda
++
++import android.content.Intent
++import android.os.Bundle
++import android.provider.AlarmClock
++import android.provider.CalendarContract
++import androidx.activity.ComponentActivity
++import androidx.activity.compose.setContent
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++import com.example.assistentecell.api.RetrofitClient
++import com.example.assistentecell.ui.theme.AssistenteCellTheme
++import kotlinx.coroutines.CancellationException
++import kotlinx.coroutines.launch
++import java.text.SimpleDateFormat
++import java.util.Calendar
++import java.util.Locale
++import java.util.TimeZone
++
++class AgendaActivity : ComponentActivity() {
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        RetrofitClient.init(this)
++        setContent { AssistenteCellTheme(darkTheme = true, dynamicColor = false) { AgendaPage() } }
++    }
++
++    private fun calendar(item: AgendaItem) {
++        var begin = AgendaDates.instant(item.inicio)
++        if (item.dia_inteiro) {
++            val local = Calendar.getInstance().apply { timeInMillis = begin }
++            begin = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
++                clear(); set(local.get(Calendar.YEAR), local.get(Calendar.MONTH), local.get(Calendar.DAY_OF_MONTH))
++            }.timeInMillis
++        }
++        startActivity(Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI)
++            .putExtra(CalendarContract.Events.TITLE, item.titulo)
++            .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, begin)
++            .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, begin + if (item.dia_inteiro) 86400000L else 3600000L)
++            .putExtra(CalendarContract.EXTRA_EVENT_ALL_DAY, item.dia_inteiro))
++    }
++
++    private fun clock(item: AgendaItem) {
++        val start = AgendaDates.instant(item.inicio)
++        require(AgendaDates.isNextClockOccurrence(start)) {
++            "O Relógio recebe o próximo horário, não uma data distante. Para esse dia, use a agenda e revise o despertador mais perto da data."
++        }
++        val time = Calendar.getInstance().apply { timeInMillis = start }
++        startActivity(Intent(AlarmClock.ACTION_SET_ALARM)
++            .putExtra(AlarmClock.EXTRA_HOUR, time.get(Calendar.HOUR_OF_DAY))
++            .putExtra(AlarmClock.EXTRA_MINUTES, time.get(Calendar.MINUTE))
++            .putExtra(AlarmClock.EXTRA_MESSAGE, item.titulo)
++            .putExtra(AlarmClock.EXTRA_SKIP_UI, false))
++    }
++
++    @Composable
++    private fun AgendaPage() {
++        val scope = rememberCoroutineScope()
++        val api = remember { RetrofitClient.cognitiveApiService }
++        var items by remember { mutableStateOf<List<AgendaItem>>(emptyList()) }
++        var selected by remember { mutableStateOf(intent.getStringExtra("agenda_id")) }
++        var busy by remember { mutableStateOf(false) }
++        var error by remember { mutableStateOf<String?>(null) }
++        var notice by remember { mutableStateOf<String?>(null) }
++        var newForm by remember { mutableStateOf(false) }
++        var title by remember { mutableStateOf("") }
++        var date by remember { mutableStateOf("") }
++        var time by remember { mutableStateOf("") }
++        var kind by remember { mutableStateOf("compromisso") }
++        var lead by remember { mutableStateOf("0") }
++
++        fun run(action: suspend () -> Unit) {
++            if (busy) return
++            busy = true; error = null; notice = null
++            scope.launch {
++                try { action() }
++                catch (e: CancellationException) { throw e }
++                catch (e: Exception) {
++                    error = if (e is retrofit2.HttpException) when(e.code()) {
++                        401 -> "Confira a conexão e o token nas configurações."
++                        404 -> "Esse item não está disponível. O servidor pode precisar da atualização."
++                        422 -> "Confira a data e o horário. O servidor não aceitou esse pedido."
++                        else -> "A agenda não respondeu. Tente novamente."
++                    } else e.message ?: "Não consegui concluir. Tente novamente."
++                } finally { busy = false }
++            }
++        }
++        suspend fun reload() {
++            val all = api.getAgenda()
++            val id = selected
++            items = if (id != null && all.none { it.id == id }) listOf(api.getAgendaItem(id)) + all else all
++        }
++        LaunchedEffect(Unit) { run { reload() } }
++
++        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
++            Column(Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp),
++                verticalArrangement = Arrangement.spacedBy(12.dp)) {
++                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
++                    TextButton(onClick = { finish() }) { Text("Voltar") }
++                    TextButton(enabled = !busy, onClick = { run { reload() } }) { Text("Atualizar") }
++                }
++                Text("Sua agenda", style = MaterialTheme.typography.headlineMedium)
++                Text("Datas importantes, sem deixar os detalhes se perderem.", color = MaterialTheme.colorScheme.onSurfaceVariant)
++                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
++                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
++                notice?.let { Text(it, color = MaterialTheme.colorScheme.secondary) }
++                OutlinedButton(onClick = { newForm = !newForm; selected = null }) { Text(if (newForm) "Fechar formulário" else "Novo compromisso ou despertador") }
++                if (newForm) {
++                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                        listOf("compromisso", "lembrete", "alarme").forEach { option ->
++                            FilterChip(selected = kind == option, onClick = { kind = option }, label = { Text(option.replaceFirstChar { it.uppercase() }) })
++                        }
++                    }
++                    OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("O que é?") }, modifier = Modifier.fillMaxWidth())
++                    OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Data — dd/mm/aaaa") }, modifier = Modifier.fillMaxWidth())
++                    OutlinedTextField(value = time, onValueChange = { time = it }, label = { Text("Horário — HH:mm") }, supportingText = { Text("Em compromisso, deixe vazio para dia inteiro.") }, modifier = Modifier.fillMaxWidth())
++                    if (kind != "alarme") OutlinedTextField(value = lead, onValueChange = { lead = it }, label = { Text("Avisar quantos minutos antes? (0 = na hora)") }, modifier = Modifier.fillMaxWidth())
++                    Button(enabled = !busy, onClick = { run {
++                        require(title.isNotBlank()) { "Escreva o título." }
++                        require(time.isNotBlank() || kind == "compromisso") { "Escolha o horário." }
++                        val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ROOT).apply { isLenient = false }
++                        val input = date.trim() + " " + time.trim().ifEmpty { "00:00" }
++                        require(Regex("\\d{2}/\\d{2}/\\d{4} \\d{2}:\\d{2}").matches(input)) { "Use dd/mm/aaaa e HH:mm." }
++                        val parsed = formatter.parse(input) ?: error("Confira a data.")
++                        val minutes = if(kind == "alarme") 0 else lead.toIntOrNull() ?: error("Use um número de minutos.")
++                        require(minutes in 0..10080) { "Use entre 0 e 10080 minutos." }
++                        val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ROOT).format(parsed)
++                        val saved = api.createAgendaItem(NewAgendaItem(kind, title.trim(), iso, time.isBlank(), minutes))
++                        selected = saved.id; newForm = false; reload()
++                        notice = if(kind == "alarme") "Pedido preparado. Revise no Relógio abaixo." else "Guardado na sua agenda."
++                    } }) { Text("Guardar na Ollie") }
++                }
++                if (selected != null) TextButton(onClick = { selected = null }) { Text("Ver todos") }
++                val visible = items.filter { selected == null || it.id == selected }
++                if (!busy && visible.isEmpty()) Text("Nada guardado por aqui ainda. Você também pode pedir pela conversa.")
++                visible.forEach { item ->
++                    Card(Modifier.fillMaxWidth()) {
++                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
++                            Text(item.titulo, style = MaterialTheme.typography.titleLarge)
++                            Text(item.quando, color = MaterialTheme.colorScheme.secondary)
++                            Text(when(item.estado) {
++                                "sugestao" -> "Sugestão • revise antes de salvar"
++                                "preparado" -> "Despertador preparado • ativação no Relógio não confirmada"
++                                "agendado" -> "Guardado na Ollie"
++                                "cancelado" -> "Retirado da Ollie"
++                                else -> "Concluído"
++                            })
++                            if (item.estado !in listOf("cancelado", "concluido")) {
++                                if (item.estado == "sugestao") Button(enabled = !busy, onClick = { run {
++                                    api.setAgendaState(item.id, AgendaState("agendado")); reload(); notice = "Guardado na agenda."
++                                } }) { Text("Salvar na agenda") }
++                                if (item.tipo == "alarme") {
++                                    Button(enabled = !busy, onClick = { run { clock(item); notice = "Confira e salve o despertador no Relógio." } }) { Text("Revisar no Relógio") }
++                                    Text("Retirar da Ollie não desativa um alarme já salvo no Relógio.", style = MaterialTheme.typography.bodySmall)
++                                } else {
++                                    OutlinedButton(enabled = !busy, onClick = { run { calendar(item); notice = "Confira e salve no aplicativo de calendário." } }) { Text("Salvar no calendário do celular") }
++                                    Text(if(item.dia_inteiro) "Dia inteiro • sem aviso em horário específico." else "Aviso da Ollie: ${item.antecedencia_minutos} min antes. Depende do servidor e da conexão.", style = MaterialTheme.typography.bodySmall)
++                                }
++                                TextButton(enabled = !busy, onClick = { run { api.setAgendaState(item.id, AgendaState("cancelado")); reload(); notice = "Retirado da agenda da Ollie." } }) { Text(if(item.estado == "sugestao") "Descartar sugestão" else "Retirar da Ollie") }
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/agenda/AgendaModels.kt b/app/src/main/java/com/example/assistentecell/agenda/AgendaModels.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/agenda/AgendaModels.kt
+@@ -0,0 +1,38 @@
++package com.example.assistentecell.agenda
++
++import java.text.SimpleDateFormat
++import java.util.Calendar
++import java.util.Locale
++import java.util.TimeZone
++
++data class AgendaAction(val id: String, val texto: String, val quando: String, val tipo: String)
++data class AgendaItem(
++    val id: String, val tipo: String, val titulo: String, val inicio: String,
++    val dia_inteiro: Boolean, val antecedencia_minutos: Int, val estado: String,
++    val origem: String, val quando: String
++)
++data class AgendaState(val estado: String, val antecedencia_minutos: Int? = null)
++data class NewAgendaItem(val tipo: String, val titulo: String, val inicio: String,
++    val dia_inteiro: Boolean = false, val antecedencia_minutos: Int = 0)
++
++object AgendaDates {
++    fun instant(value: String): Long {
++        val cleaned = value.replace(Regex("\\.\\d+(?=Z|[+-]\\d{2}:\\d{2}$)"), "")
++        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ROOT).apply { isLenient = false }
++            .parse(cleaned)?.time ?: error("Data inválida recebida da agenda")
++    }
++
++    // ACTION_SET_ALARM não representa uma data absoluta. Nunca transformar semana que vem em amanhã.
++    fun isNextClockOccurrence(start: Long, now: Long = System.currentTimeMillis(), zone: TimeZone = TimeZone.getDefault()): Boolean {
++        if (start <= now) return false
++        val target = Calendar.getInstance(zone).apply { timeInMillis = start }
++        val next = Calendar.getInstance(zone).apply {
++            timeInMillis = now
++            set(Calendar.HOUR_OF_DAY, target.get(Calendar.HOUR_OF_DAY))
++            set(Calendar.MINUTE, target.get(Calendar.MINUTE))
++            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
++            if (timeInMillis <= now) add(Calendar.DAY_OF_MONTH, 1)
++        }
++        return start / 60000 == next.timeInMillis / 60000
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt b/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
+--- a/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
++++ b/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
+@@ -94,6 +94,13 @@
+             }
+ 
+             when (type) {
++                "AGENDA_REVISAR", "AGENDA" -> {
++                    if (!userInitiated) return
++                    if (parameter.isNotBlank() && !parameter.matches(Regex("[0-9a-fA-F-]{36}"))) return
++                    context.startActivity(Intent(context, com.example.assistentecell.agenda.AgendaActivity::class.java)
++                        .putExtra("agenda_id", parameter.takeIf { it.isNotBlank() })
++                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
++                }
+                 "WAKE_OLLIE", "ATIVAR_ASSISTENTE" -> {
+                     context.startService(Intent(context, com.example.assistentecell.assistant.OllieAssistantService::class.java)
+                         .setAction(Intent.ACTION_ASSIST))
+diff --git a/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt b/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
+--- a/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
++++ b/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
+@@ -7,6 +7,18 @@
+ import retrofit2.http.DELETE
+ 
+ interface CognitiveApiService {
++    @GET("api/v1/agenda")
++    suspend fun getAgenda(): List<com.example.assistentecell.agenda.AgendaItem>
++
++    @GET("api/v1/agenda/{id}")
++    suspend fun getAgendaItem(@retrofit2.http.Path("id") id: String): com.example.assistentecell.agenda.AgendaItem
++
++    @POST("api/v1/agenda")
++    suspend fun createAgendaItem(@Body item: com.example.assistentecell.agenda.NewAgendaItem): com.example.assistentecell.agenda.AgendaItem
++
++    @retrofit2.http.PATCH("api/v1/agenda/{id}")
++    suspend fun setAgendaState(@retrofit2.http.Path("id") id: String, @Body state: com.example.assistentecell.agenda.AgendaState): com.example.assistentecell.agenda.AgendaItem
++
+     @GET("api/v1/pc/intervention/policy")
+     suspend fun getInterventionPolicy(): InterventionSettings
+ 
+diff --git a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+--- a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
++++ b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+@@ -541,7 +541,15 @@
+                                     ChatBridge.postMessage(
+                                         ChatMessage(text = texto, isFromUser = false, correlationId = correlacaoId,
+                                             awaitsAnswer = if (!json.has("aguarda_resposta") || json.isNull("aguarda_resposta")) null
+-                                                else json.opt("aguarda_resposta") == true)
++                                                else json.opt("aguarda_resposta") == true,
++                                            agendaActions = json.optJSONArray("acoes_agenda")?.let { actions ->
++                                                (0 until actions.length()).mapNotNull { index ->
++                                                    val action = actions.optJSONObject(index) ?: return@mapNotNull null
++                                                    val id = action.optString("id")
++                                                    if (!id.matches(Regex("[0-9a-fA-F-]{36}"))) return@mapNotNull null
++                                                    com.example.assistentecell.agenda.AgendaAction(id, action.optString("texto", "Ver na agenda"), action.optString("quando"), action.optString("tipo"))
++                                                }
++                                            } ?: emptyList())
+                                     )
+                                 }
+                             }
+diff --git a/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt b/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt
+--- a/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt
+@@ -1,5 +1,15 @@
+ package com.example.assistentecell.ui.screens
+ 
++import android.content.Intent
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.material.icons.outlined.EventNote
++import androidx.compose.foundation.text.ClickableText
++import androidx.compose.ui.text.buildAnnotatedString
++import androidx.compose.ui.text.SpanStyle
++import androidx.compose.ui.text.withStyle
++import androidx.compose.ui.text.TextStyle
++import androidx.compose.ui.text.style.TextDecoration
++import com.example.assistentecell.agenda.AgendaActivity
+ import androidx.compose.animation.animateColorAsState
+ import androidx.compose.animation.core.*
+ import androidx.compose.foundation.background
+@@ -35,6 +45,7 @@
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable
+ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
++    val context = LocalContext.current
+     val messages by viewModel.messages.collectAsState()
+     val isThinking by viewModel.isThinking.collectAsState()
+     val isConnected by viewModel.isConnected.collectAsState()
+@@ -86,6 +97,9 @@
+                             )
+                         }
+                     }
++                    IconButton(onClick = { context.startActivity(Intent(context, AgendaActivity::class.java)) }) {
++                        Icon(Icons.Outlined.EventNote, contentDescription = "Sua agenda")
++                    }
+                     IconButton(onClick = { viewModel.toggleVoice() }, modifier = Modifier.size(40.dp)) {
+                         Icon(
+                             if (isVoiceEnabled) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+@@ -183,6 +197,7 @@
+ 
+ @Composable
+ fun ChatBubble(message: ChatMessage) {
++    val context = LocalContext.current
+     val alignment = if (message.isFromUser) Alignment.CenterEnd else Alignment.CenterStart
+     val bubbleColor = if (message.isFromUser) Color.White.copy(alpha = 0.05f) else Color(0xFF9D4EDD).copy(alpha = 0.12f)
+     val textColor = Color.White
+@@ -212,12 +227,26 @@
+                     shape = shape
+                 )
+         ) {
+-            Text(
+-                text = message.text,
+-                color = textColor,
+-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), 
+-                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 18.sp)
+-            )
++            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
++                val annotated = buildAnnotatedString {
++                    append(message.text)
++                    message.agendaActions.forEach { action ->
++                        val start = if(action.quando.isBlank()) -1 else message.text.indexOf(action.quando)
++                        if (start >= 0) {
++                            addStyle(SpanStyle(color = Color(0xFFA3E6CB), textDecoration = TextDecoration.Underline), start, start + action.quando.length)
++                            addStringAnnotation("agenda", action.id, start, start + action.quando.length)
++                        }
++                    }
++                }
++                ClickableText(text = annotated, style = MaterialTheme.typography.bodyMedium.copy(color = textColor, lineHeight = 18.sp), onClick = { offset ->
++                    annotated.getStringAnnotations("agenda", offset, offset).firstOrNull()?.let {
++                        context.startActivity(Intent(context, AgendaActivity::class.java).putExtra("agenda_id", it.item))
++                    }
++                })
++                message.agendaActions.forEach { action ->
++                    TextButton(onClick = { context.startActivity(Intent(context, AgendaActivity::class.java).putExtra("agenda_id", action.id)) }) { Text(action.texto) }
++                }
++            }
+         }
+     }
+ }
+diff --git a/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt b/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
+--- a/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
++++ b/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
+@@ -12,7 +12,8 @@
+     val isFromUser: Boolean,
+     val correlationId: String? = null,
+     val timestamp: Long = System.currentTimeMillis(),
+-    val awaitsAnswer: Boolean? = null
++    val awaitsAnswer: Boolean? = null,
++    val agendaActions: List<com.example.assistentecell.agenda.AgendaAction> = emptyList()
+ )
+ 
+ object ChatBridge {
+diff --git a/app/src/test/java/com/example/assistentecell/AgendaDatesTest.kt b/app/src/test/java/com/example/assistentecell/AgendaDatesTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/com/example/assistentecell/AgendaDatesTest.kt
+@@ -0,0 +1,24 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.agenda.AgendaDates
++import org.junit.Assert.*
++import org.junit.Test
++import java.util.TimeZone
++
++class AgendaDatesTest {
++    private val zone = TimeZone.getTimeZone("America/Sao_Paulo")
++    @Test fun parseUtcOffsetAndFraction() {
++        assertEquals(AgendaDates.instant("2030-10-23T07:00:00-03:00"), AgendaDates.instant("2030-10-23T10:00:00.123456+00:00"))
++    }
++    @Test fun clockOnlyAcceptsNextOccurrence() {
++        val now = AgendaDates.instant("2030-10-22T20:00:00-03:00")
++        assertTrue(AgendaDates.isNextClockOccurrence(AgendaDates.instant("2030-10-23T07:00:00-03:00"), now, zone))
++        assertFalse(AgendaDates.isNextClockOccurrence(AgendaDates.instant("2030-10-24T07:00:00-03:00"), now, zone))
++        assertFalse(AgendaDates.isNextClockOccurrence(AgendaDates.instant("2030-10-22T07:00:00-03:00"), now, zone))
++    }
++    @Test fun clockAcceptsTodayFutureButNotTomorrowSameTime() {
++        val now = AgendaDates.instant("2030-10-22T10:00:00-03:00")
++        assertTrue(AgendaDates.isNextClockOccurrence(AgendaDates.instant("2030-10-22T15:00:00-03:00"), now, zone))
++        assertFalse(AgendaDates.isNextClockOccurrence(AgendaDates.instant("2030-10-23T15:00:00-03:00"), now, zone))
++    }
++}
