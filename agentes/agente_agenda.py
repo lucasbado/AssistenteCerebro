@@ -8,6 +8,7 @@ from core.tipos import CategoriaEvento, OrigemEvento, TipoAcao
 from servicos.agenda import agenda
 from servicos.tarefas import tarefas
 from servicos.calendario import avisar_celular
+from servicos.mensagens import origem_agenda_mensagem
 from servicos.datas_agenda import extrair_data, intencao_agenda, titulo_sem_data, completar_rascunho
 from servicos.controle_casa import normalizar
 from servicos.roteamento_pedidos import contexto_pedido, dispositivo_origem
@@ -89,7 +90,7 @@ class AgenteAgenda:
                     await self.responder(evento, 'O que você quer guardar nessa data?', pergunta=True)
                 return
             item = await agenda.salvar(tipo or 'compromisso', titulo, data['inicio'], data['dia_inteiro'],
-                origem=evento.pacote if externo else 'pedido', confirmar=tipo is not None,
+                origem=origem_agenda_mensagem(evento.pacote, evento.payload.get('conversa_ref')) if externo else 'pedido', confirmar=tipo is not None,
                 antecedencia_minutos=0)
             if not externo: await agenda.limpar_rascunho(chave)
             if not externo and tipo and tipo != 'alarme': await avisar_celular()

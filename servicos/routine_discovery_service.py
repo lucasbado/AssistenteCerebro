@@ -2,7 +2,7 @@
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, and_, or_
 from banco.database import AsyncSessionLocal
 from banco.models import EventoEpisodicoDB
 from servicos.catalogo_rotinas import catalogo_rotinas
@@ -28,8 +28,9 @@ class RoutineDiscoveryService:
             resultado = await session.execute(select(EventoEpisodicoDB).where(
                 EventoEpisodicoDB.timestamp >= agora - timedelta(days=21),
                 EventoEpisodicoDB.timestamp <= agora,
-                EventoEpisodicoDB.tipo.in_(["APP_FOREGROUND", "PC_ACTIVITY"]),
-                EventoEpisodicoDB.origem.in_(["ANDROID", "PC"]),
+                or_(and_(EventoEpisodicoDB.tipo.in_(["APP_FOREGROUND", "PC_ACTIVITY"]),
+                         EventoEpisodicoDB.origem.in_(["ANDROID", "PC"])),
+                    and_(EventoEpisodicoDB.tipo == 'SISTEMA_COMANDO_INTERNO', EventoEpisodicoDB.origem == 'USUARIO')),
             ).order_by(EventoEpisodicoDB.timestamp))
             observacoes = resultado.scalars().all()
         existentes = await self._get_existing_routine_names()
@@ -118,7 +119,36 @@ class RoutineDiscoveryService:
                 evidencia = (len(dias), len(dias_periodo[periodo]), dias, max(datas))
                 adicionar(f"Rotina {periodo}: {alvo}", f"automacao_temporal_{dispositivo}",
                           alvo, evidencia, periodo=periodo)
+        sugestoes.extend(self.analisar_assistencia(observacoes, sessoes, min_confidence, agora))
         return sorted(sugestoes, key=lambda s: (-s["conteudo"]["evidencia"]["confianca"], s["conteudo"]["nome"]))
+
+    def analisar_assistencia(self, observacoes, sessoes, min_confidence, agora):
+        dias_ativos, usos, ultimo = defaultdict(set), defaultdict(set), {}
+        for dispositivo, lista in sessoes.items():
+            for ts, _ in lista: dias_ativos[dispositivo, periodo_do_dia(ts)].add(horario_local(ts).date())
+        for e in observacoes:
+            p, ts = e.payload or {}, utc(e.timestamp)
+            if not (agora - timedelta(days=21) <= ts <= agora): continue
+            if (e.origem != 'USUARIO' or e.tipo != 'SISTEMA_COMANDO_INTERNO' or p.get('tipo') != 'ASSISTENCIA_USADA'
+                or p.get('habilidade') != 'mensagens' or p.get('acao') != 'revisar' or p.get('dispositivo') not in {'PC', 'MOBILE'}): continue
+            dispositivo = 'pc' if p['dispositivo'] == 'PC' else 'mobile'
+            chave = dispositivo, periodo_do_dia(ts)
+            usos[chave].add(horario_local(ts).date())
+            dias_ativos[chave].add(horario_local(ts).date())
+            ultimo[chave] = max(ultimo.get(chave, ts), ts)
+        resultado = []
+        for (dispositivo, periodo), dias in usos.items():
+            total = len(dias_ativos[dispositivo, periodo])
+            confianca = len(dias) / total
+            if len(dias) < self.MIN_SAMPLES or len(dias) < self.MIN_DAYS or confianca < min_confidence or agora - ultimo[dispositivo, periodo] > timedelta(days=7): continue
+            destino = 'PC' if dispositivo == 'pc' else 'MOBILE'
+            resultado.append({'tipo': 'sugestao_regra', 'conteudo': {
+                'nome': f'Revisar mensagens: {periodo} no ' + ('PC' if dispositivo == 'pc' else 'celular'),
+                'skill_id': 'assistencia_mensagens_temporal', 'periodo': periodo, 'destino': destino,
+                'evidencia': {'amostras': len(dias), 'dias_distintos': len(dias), 'oportunidades': total,
+                    'confianca': round(confianca, 3), 'janela_dias': 21, 'ultima_observacao': ultimo[dispositivo, periodo].isoformat()},
+                'justificativa': f'Você revisou mensagens em {len(dias)} de {total} dias ativos nesse período. Posso oferecer a revisão quando houver itens, se você aprovar.'}})
+        return resultado
 
 
 routine_discovery_service = RoutineDiscoveryService()

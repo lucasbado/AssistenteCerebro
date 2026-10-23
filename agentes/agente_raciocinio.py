@@ -65,7 +65,7 @@ class AgenteRaciocinio:
             habitos_str = "\n".join(habitos_contexto) if habitos_contexto else "Nenhum padrão detectado ainda."
                 
             # 3. Gerenciamento de Memória de Trabalho
-            chave_conversa = "br.com.assistentecell.chat" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else evento.pacote
+            chave_conversa = "br.com.assistentecell.chat" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else evento.metadados.get('chave_conversa', evento.pacote)
             if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO and texto_u:
                 await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Usuário: {texto_u}"])
 

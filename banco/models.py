@@ -5,6 +5,25 @@ from datetime import datetime, timezone
 Base = declarative_base()
 
 
+class MensagemRevisaoDB(Base):
+    __tablename__ = 'mensagens_revisao'
+    id = Column(String(36), primary_key=True)
+    assinatura = Column(String(64), nullable=False, unique=True)
+    conversa = Column(String(64), nullable=False, index=True)
+    origem_conversa = Column(String(64), nullable=False, default='')
+    pacote = Column(String(255), nullable=False)
+    remetente = Column(String(150), nullable=False)
+    texto = Column(String(4000), nullable=False)
+    referencia_notificacao = Column(String(100), nullable=False, default='')
+    sinais = Column(JSON, nullable=False)
+    estado = Column(String(20), nullable=False, default='revisar', index=True)
+    rascunho = Column(String(2000), nullable=False, default='')
+    agenda_id = Column(String(36), nullable=True)
+    tarefa_id = Column(String(36), nullable=True)
+    recebido_em = Column(DateTime(timezone=True), nullable=False, index=True)
+    versao = Column(Integer, nullable=False, default=1)
+
+
 class TarefaDB(Base):
     __tablename__ = 'tarefas_pessoais'
     id = Column(String(36), primary_key=True)

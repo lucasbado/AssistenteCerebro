@@ -11,6 +11,7 @@ from servicos.controle_casa import normalizar
 from servicos.roteamento_pedidos import contexto_pedido, dispositivo_origem
 from servicos.tempo import horario_local
 from servicos.calendario import avisar_celular
+from servicos.mensagens import chave_tarefa_mensagem
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +44,9 @@ class AgenteTarefas:
                 from servicos.linguagem_tarefas import limpar_alvo
                 titulo = limpar_alvo(texto)
                 remetente = str(evento.payload.get('titulo', ''))[:150]
-                dia = horario_local(evento.timestamp).date().isoformat()
                 item = await tarefas.salvar(titulo, data['inicio'], data['dia_inteiro'], origem=evento.pacote,
                     contexto=f'{remetente}: {texto}'[:500], confirmar=False,
-                    chave_evento=f'mensagem:{evento.pacote}:{remetente}:{dia}:{normalizar(texto)}')
+                    chave_evento=chave_tarefa_mensagem(evento.pacote, remetente, texto, evento.timestamp, evento.payload.get('conversa_ref')))
                 if item['estado'] != 'sugestao': return
                 await kernel.publicar(evento.clonar(categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
                     acao=TipoAcao.INTENCAO_INTERACAO, origem=OrigemEvento.IA, pacote='sistema.tarefas',

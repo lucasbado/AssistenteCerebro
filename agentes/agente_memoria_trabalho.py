@@ -8,6 +8,7 @@ from core.evento import EventoCanonico
 from core.tipos import TipoAcao, CategoriaEvento
 from core.kernel import kernel
 from servicos.memoria_trabalho import memoria_trabalho
+from servicos.mensagens import chave_conversa as chave_mensagem
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +18,8 @@ DEBOUNCE_SECONDS = 5
 class AgenteMemoriaTrabalho:
     """
     Agente responsável por gerenciar a Memória de Trabalho. Sua principal função
-    é agrupar notificações de texto sequenciais do mesmo aplicativo (ex: várias
-    mensagens de WhatsApp de diferentes pessoas/grupos) para fornecer um contexto
-    mais rico
+    é agrupar notificações de texto sequenciais da mesma conversa para fornecer
+    contexto sem misturar pessoas ou grupos
     para a camada de raciocínio (LLM), evitando o "flood" de notificações e
     melhorando a compreensão.
     """
@@ -40,8 +40,7 @@ class AgenteMemoriaTrabalho:
         if not texto or not remetente:
             return
 
-        # A CHAVE DE AGRUPAMENTO AGORA É APENAS O PACOTE DO APP.
-        chave_conversa = evento.pacote
+        chave_conversa = 'notificacao::' + chave_mensagem(evento.pacote, remetente, evento.payload.get('conversa_ref'))
         logger.debug(f"🧠 [MemoriaTrabalho] Recebida mensagem ({tipo_cont}) de '{remetente}' no '{chave_conversa}'.")
 
         # Cancela o timer anterior se houver um, pois uma nova mensagem chegou
@@ -84,13 +83,14 @@ class AgenteMemoriaTrabalho:
 
             # 2. Gera um resumo em texto inteligente
             partes_resumo = []
-            nome_app = chave_conversa.split('.')[-1].capitalize() if '.' in chave_conversa else "Sistema"
-            if "whatsapp" in chave_conversa.lower(): nome_app = "WhatsApp"
-            elif "telegram" in chave_conversa.lower(): nome_app = "Telegram"
-            elif "discord" in chave_conversa.lower(): nome_app = "Discord"
-            elif "instagram" in chave_conversa.lower(): nome_app = "Instagram"
-            elif "messaging" in chave_conversa.lower() or "sms" in chave_conversa.lower(): nome_app = "SMS/Mensagens"
-            elif "tiktok" in chave_conversa.lower(): nome_app = "TikTok"
+            pacote = evento_original.pacote
+            nome_app = pacote.split('.')[-1].capitalize() if '.' in pacote else 'Sistema'
+            if 'whatsapp' in pacote: nome_app = 'WhatsApp'
+            elif 'telegram' in pacote: nome_app = 'Telegram'
+            elif 'discord' in pacote: nome_app = 'Discord'
+            elif 'instagram' in pacote: nome_app = 'Instagram'
+            elif 'messaging' in pacote or 'sms' in pacote: nome_app = 'SMS/Mensagens'
+            elif 'tiktok' in pacote: nome_app = 'TikTok'
 
             for remetente, dados in dados_por_remetente.items():
                 textos = dados["mensagens"]
@@ -120,9 +120,9 @@ class AgenteMemoriaTrabalho:
             # 3. Recupera o contexto histórico da conversa
             contexto_historico = await memoria_trabalho.obter_contexto(chave_conversa) or []
 
-            # 4. Atualiza a memória de trabalho persistente com as novas mensagens (fire-and-forget)
+            # 4. Persiste as novas mensagens antes de encaminhar para o raciocínio.
             mensagens_novas_formatadas = [f"{r}: {t} ({tp})" for r, t, tp in mensagens_unicas]
-            asyncio.create_task(memoria_trabalho.atualizar_conversa(chave_conversa, mensagens_novas_formatadas))
+            await memoria_trabalho.atualizar_conversa(chave_conversa, mensagens_novas_formatadas)
 
             # O payload agora inclui o pré-resumo detalhado e as mensagens completas
             payload_agrupado = {
@@ -132,7 +132,8 @@ class AgenteMemoriaTrabalho:
                 "pre_resumo": resumo_final_str,
                 "contexto_historico": contexto_historico
             }
-            await kernel.publicar(evento_original.clonar(acao=TipoAcao.INTENCAO_RACIOCINIO, payload=payload_agrupado))
+            await kernel.publicar(evento_original.clonar(acao=TipoAcao.INTENCAO_RACIOCINIO, payload=payload_agrupado,
+                metadados={**evento_original.metadados, 'chave_conversa': chave_conversa}))
         except asyncio.CancelledError:
             logger.debug(f"🧠 [MemoriaTrabalho] Debounce para '{chave_conversa}' resetado.")
         except Exception as e:

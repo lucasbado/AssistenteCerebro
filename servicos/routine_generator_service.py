@@ -30,6 +30,14 @@ class RoutineGeneratorService:
 
     async def _materialize_routine(self, sugestao):
         skill = sugestao.get("skill_id")
+        if skill == 'assistencia_mensagens_temporal':
+            periodo, destino = sugestao.get('periodo'), sugestao.get('destino')
+            if periodo not in {'MANHA', 'TARDE', 'NOITE', 'MADRUGADA'} or destino not in {'PC', 'MOBILE'}: return None
+            return {'nome': sugestao['nome'], 'justificativa': sugestao['justificativa'], 'evidencia': sugestao['evidencia'],
+                'ativa': False, 'cooldown_segundos': 3600, 'uma_vez_por_dia': True,
+                'gatilho': {'tipo': 'TIME_RANGE', 'inicio': self._get_time_for_period(periodo, 'inicio'),
+                    'fim': self._get_time_for_period(periodo, 'fim'), 'evento': 'TICK_ROTINA'},
+                'acoes': [{'alvo': 'IA', 'comando': 'REVISAR_MENSAGENS', 'parametro': destino}]}
         alvo = sugestao["action_parameter"].removeprefix("abrir_app:")
         rotina = {"nome": sugestao["nome"], "justificativa": sugestao["justificativa"],
                   "evidencia": sugestao.get("evidencia", {}), "ativa": False,

@@ -127,6 +127,10 @@ class AgenteRotina:
                         payload={"comando": comando, "parametro": param},
                         metadados={"rotina_aprovada": nome, **autorizacoes.get(indice, {})}))
                 elif alvo == "IA":
+                    if comando == 'REVISAR_MENSAGENS':
+                        from servicos.assistencia_mensagens import oferecer_revisao
+                        executou = await oferecer_revisao(evento_origem, nome, param) or executou
+                        continue
                     payload = {"titulo": nome, "texto": param, "tipo_ws": "NOTIFICACAO",
                                "tipo_interacao": comando, "chave_deduplicacao": f"rotina:{nome}"}
                     payload.update({k: acao[k] for k in ("acao_tipo", "acao_parametro", "acao_texto") if acao.get(k)})

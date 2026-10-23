@@ -34,6 +34,7 @@ from agentes.agente_casa import AgenteCasa
 from agentes.agente_plano import AgentePlano
 from agentes.agente_agenda import AgenteAgenda
 from agentes.agente_tarefas import AgenteTarefas
+from agentes.agente_mensagens import AgenteMensagens
 
 # Serviços
 from servicos.agente_contexto_sistema import AgenteContextoSistema
@@ -59,6 +60,7 @@ from api.contexto import router as contexto_router
 from api.agenda import router as agenda_router
 from api.tarefas import router as tarefas_router
 from api.calendario import router as calendario_router
+from api.mensagens import router as mensagens_router
 
 # Configuração de Logs
 logging.basicConfig(level=logging.INFO)
@@ -101,6 +103,11 @@ async def lifespan(app: FastAPI):
     agentes_inst["plano"] = AgentePlano()
     agentes_inst["agenda"] = AgenteAgenda()
     agentes_inst["tarefas"] = AgenteTarefas()
+    agentes_inst['mensagens'] = AgenteMensagens()
+    kernel.registrar(lambda e: e.categoria == CategoriaEvento.MENSAGEM_SOLICITADA
+        or (e.categoria == CategoriaEvento.NOTIFICACAO and e.acao == TipoAcao.NORMAL)
+        or (e.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO and e.payload.get('tipo') == 'TICK_MENSAGENS'),
+        agentes_inst['mensagens'].processar)
     kernel.registrar(lambda e: e.categoria in {CategoriaEvento.TAREFA_SOLICITADA, CategoriaEvento.NOTIFICACAO}
         or (e.categoria == CategoriaEvento.SISTEMA_COMANDO_INTERNO and e.payload.get('tipo') == 'TICK_TAREFAS'),
         agentes_inst['tarefas'].processar)
@@ -198,6 +205,8 @@ async def lifespan(app: FastAPI):
                 origem=OrigemEvento.SISTEMA, pacote='sistema.agenda', payload={'tipo': 'TICK_AGENDA'}))
             await kernel.publicar(EventoCanonico(categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO,
                 origem=OrigemEvento.SISTEMA, pacote='sistema.tarefas', payload={'tipo': 'TICK_TAREFAS'}))
+            await kernel.publicar(EventoCanonico(categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO,
+                origem=OrigemEvento.SISTEMA, pacote='sistema.mensagens', payload={'tipo': 'TICK_MENSAGENS'}))
             await asyncio.sleep(30)
 
     tasks = [
@@ -273,6 +282,7 @@ app.include_router(contexto_router, prefix="/api/v1/contexto", tags=["Contexto"]
 app.include_router(agenda_router, prefix='/api/v1/agenda')
 app.include_router(tarefas_router, prefix='/api/v1/tarefas')
 app.include_router(calendario_router, prefix='/api/v1/calendario')
+app.include_router(mensagens_router, prefix='/api/v1/mensagens')
 
 if __name__ == "__main__":
     import uvicorn

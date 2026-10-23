@@ -180,6 +180,10 @@ class GerenciadorNotificacoes:
             cliente = self.pc_master if destino == "PC" else self.mobile_client
             return await self._enviar_direto(cliente, dados_para_envio) if cliente is not None else False
 
+        if tipo_ws == 'NOTIFICACAO' and metadados.get('destino_notificacao') in {'PC', 'MOBILE'}:
+            cliente = self.pc_master if metadados['destino_notificacao'] == 'PC' else self.mobile_client
+            return await self._enviar_direto(cliente, dados_para_envio) if cliente is not None else False
+
         # ROTEAMENTO RESTRITO:
         # 1. MOBILE: Prioridade para comandos de sistema/luz e chat
         if tipo_ws in ["CHAT_RESPONSE", "NOTIFICACAO", "THINKING", "COMANDO_SISTEMA"] or is_mobile_cmd:

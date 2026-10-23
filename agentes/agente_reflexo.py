@@ -24,6 +24,10 @@ class AgenteReflexo:
             from servicos.agenda import agenda
             from servicos.roteamento_pedidos import dispositivo_origem
             texto = str(evento.payload.get('texto', ''))
+            from servicos.mensagens import pedido_mensagens
+            if pedido_mensagens(texto):
+                await kernel.publicar(evento.clonar(categoria=CategoriaEvento.MENSAGEM_SOLICITADA))
+                return
             from servicos.linguagem_tarefas import interpretar_tarefa, continua_tarefa
             from servicos.tarefas import tarefas
             contexto_tarefa = None

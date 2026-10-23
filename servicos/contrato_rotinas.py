@@ -100,8 +100,10 @@ def problemas_rotina(rotina):
             if comando in {"OPEN_APP", "ABRIR_APP_MOBILE", "ABRIR_URL_MOBILE"} and not parametro:
                 problemas.append("Escolha o aplicativo ou endereço da ação no celular.")
         elif alvo == "IA":
-            if comando != "NOTIFICAR" or not parametro:
+            if comando not in {'NOTIFICAR', 'REVISAR_MENSAGENS'} or not parametro:
                 problemas.append("A ação de notificação precisa de uma mensagem.")
+            if comando == 'REVISAR_MENSAGENS' and parametro not in {'PC', 'MOBILE'}:
+                problemas.append('Escolha PC ou celular para oferecer a revisão de mensagens.')
             if acao.get("acao_tipo") and not acao.get("acao_parametro"):
                 problemas.append("O botão da notificação precisa de um destino.")
         elif alvo == "CASA":

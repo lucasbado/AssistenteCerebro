@@ -188,3 +188,8 @@
 .task-filter select { padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: #12191a; color: var(--text); }
 .task-postpone { padding: 12px; margin-top: 14px; }
 .agenda-card details { color: var(--dim); margin-top: 12px; overflow-wrap: anywhere; }
+.message-review-list { display: grid; gap: 18px; max-width: 800px; }
+.message-review-card label { display: grid; gap: 8px; margin: 16px 0; color: var(--dim); }
+.message-review-card textarea { min-height: 90px; resize: vertical; padding: 12px; border: 1px solid #ffffff24; border-radius: 10px; color: var(--text); background: #0c1011; font: inherit; }
+.message-review-card blockquote { margin: 14px 0; padding: 12px 16px; border-left: 2px solid var(--purple); white-space: pre-wrap; overflow-wrap: anywhere; background: #c5a2ff08; }
+@media(max-height: 800px) { .sidebar-presence { display: none; } .sidebar-footer { margin-top: auto; } }

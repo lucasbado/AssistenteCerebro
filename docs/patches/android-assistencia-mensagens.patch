@@ -1,0 +1,347 @@
+diff --git a/app/src/androidTest/java/com/example/assistentecell/MessagesScreenTest.kt b/app/src/androidTest/java/com/example/assistentecell/MessagesScreenTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/com/example/assistentecell/MessagesScreenTest.kt
+@@ -0,0 +1,17 @@
++package com.example.assistentecell
++import androidx.compose.ui.test.assertIsDisplayed
++import androidx.compose.ui.test.junit4.createAndroidComposeRule
++import androidx.compose.ui.test.onNodeWithText
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import com.example.assistentecell.messages.MessagesActivity
++import org.junit.Rule
++import org.junit.Test
++import org.junit.runner.RunWith
++@RunWith(AndroidJUnit4::class)
++class MessagesScreenTest {
++    @get:Rule val compose = createAndroidComposeRule<MessagesActivity>()
++    @Test fun reviewOpensWithoutSendingMessages() {
++        compose.onNodeWithText("Mensagens para revisar").assertIsDisplayed()
++        compose.onNodeWithText("Para revisar").assertIsDisplayed()
++    }
++}
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -152,5 +152,6 @@
+         <activity android:name=".agenda.AgendaActivity" android:exported="false" />
+         <activity android:name=".tarefas.TasksActivity" android:exported="false" />
+         <activity android:name=".calendar.CalendarSettingsActivity" android:exported="false" />
++        <activity android:name=".messages.MessagesActivity" android:exported="false" />
+     </application>
+ </manifest>
+diff --git a/app/src/main/java/com/example/assistentecell/automation/RoutineDescription.kt b/app/src/main/java/com/example/assistentecell/automation/RoutineDescription.kt
+--- a/app/src/main/java/com/example/assistentecell/automation/RoutineDescription.kt
++++ b/app/src/main/java/com/example/assistentecell/automation/RoutineDescription.kt
+@@ -19,6 +19,7 @@
+         val command = action.comando.uppercase()
+         val value = action.parametro
+         return when {
++            action.alvo == "IA" && command == "REVISAR_MENSAGENS" -> "Oferecer revisão das mensagens no " + if(value == "PC") "PC, quando houver itens" else "celular, quando houver itens"
+             action.alvo == "IA" -> "Avisar: $value" + (action.acao_texto?.let { " (botão: $it)" } ?: "")
+             command in setOf("OPEN_APP", "ABRIR_APP", "ABRIR_APP_MOBILE", "LAUNCH_APP") ->
+                 "Abrir ${label(value)} ${if (action.alvo == "PC") "no PC" else "no celular"}"
+diff --git a/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt b/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
+--- a/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
++++ b/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
+@@ -94,6 +94,12 @@
+             }
+ 
+             when (type) {
++                "MENSAGENS_REVISAR" -> {
++                    if (!userInitiated) return
++                    if (parameter.isNotBlank() && parameter != "pendentes" && !parameter.matches(Regex("[0-9a-fA-F-]{36}"))) return
++                    context.startActivity(Intent(context, com.example.assistentecell.messages.MessagesActivity::class.java)
++                        .putExtra("mensagem_id", parameter.takeIf { it.isNotBlank() && it != "pendentes" }).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
++                }
+                 "TAREFA_REVISAR", "TAREFAS" -> {
+                     if (!userInitiated) return
+                     if (parameter.isNotBlank() && !parameter.matches(Regex("[0-9a-fA-F-]{36}"))) return
+diff --git a/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt b/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
+--- a/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
++++ b/app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt
+@@ -7,6 +7,15 @@
+ import retrofit2.http.DELETE
+ 
+ interface CognitiveApiService {
++    @GET("api/v1/mensagens")
++    suspend fun getMessages(@retrofit2.http.Query("estado") state: String = "revisar"): List<com.example.assistentecell.messages.MessageReview>
++    @GET("api/v1/mensagens/{id}")
++    suspend fun getMessage(@retrofit2.http.Path("id") id: String): com.example.assistentecell.messages.MessageReview
++    @POST("api/v1/mensagens/revisao")
++    suspend fun reviewMessages(@Body usage: com.example.assistentecell.messages.ReviewUsage): List<com.example.assistentecell.messages.MessageReview>
++    @POST("api/v1/mensagens/{id}/acao")
++    suspend fun changeMessage(@retrofit2.http.Path("id") id: String, @Body action: com.example.assistentecell.messages.MessageChange): com.example.assistentecell.messages.MessageReview
++
+     @POST("api/v1/calendario/sincronizar")
+     suspend fun syncCalendar(@Body request: com.example.assistentecell.calendar.CalendarRequest): com.example.assistentecell.calendar.CalendarFeed
+ 
+diff --git a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+--- a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
++++ b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+@@ -71,6 +71,19 @@
+         
+         // 🔒 COFRE DE CLIQUES: Guarda o clique original da notificação para abrir depois
+         private val cofreIntencoes = mutableMapOf<String, android.app.PendingIntent>()
++        private data class ConversationTarget(val key: String, val pacote: String, val titulo: String,
++            val rawTitle: String, val posted: Long, val captured: Long, val intent: android.app.PendingIntent)
++        private val conversationTargets = java.util.concurrent.ConcurrentHashMap<String, ConversationTarget>()
++
++        fun abrirConversaRevisada(reference: String, pacote: String, titulo: String): Boolean {
++            val target = conversationTargets[reference] ?: return false
++            if(!com.example.assistentecell.messages.MessageOpeningPolicy.allowed(reference, pacote, titulo,
++                target.pacote, target.titulo, android.os.SystemClock.elapsedRealtime() - target.captured)) return false
++            val current = try { instance?.activeNotifications?.firstOrNull { it.key == target.key } } catch(_: Exception) { null }
++            if(current == null || current.packageName != pacote || current.postTime != target.posted ||
++                current.notification.extras.getCharSequence("android.title")?.toString().orEmpty() != target.rawTitle) return false
++            return try { target.intent.send(); true } catch(_: Exception) { false }
++        }
+ 
+         fun reconnect() {
+             instance?.let { listener ->
+@@ -318,6 +331,17 @@
+             atributosJson.put("titulo", titulo)
+             atributosJson.put("texto", texto)
+             atributosJson.put("tipo_conteudo", tipoConteudo)
++            if(tipoConteudo == "MSG") sbn.notification.contentIntent?.let { pending ->
++                val reference = java.util.UUID.randomUUID().toString()
++                val conversation = if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) sbn.notification.shortcutId ?: sbn.key else sbn.key
++                val opaque = java.security.MessageDigest.getInstance("SHA-256").digest((pacoteApp + "|" + conversation).toByteArray())
++                    .joinToString("") { "%02x".format(it) }
++                atributosJson.put("conversa_ref", opaque)
++                conversationTargets[reference] = ConversationTarget(sbn.key, pacoteApp, titulo.take(150), extras.getCharSequence("android.title")?.toString().orEmpty(), sbn.postTime,
++                    android.os.SystemClock.elapsedRealtime(), pending)
++                if(conversationTargets.size > 50) conversationTargets.minByOrNull { it.value.captured }?.key?.let { conversationTargets.remove(it) }
++                atributosJson.put("referencia_notificacao", reference)
++            }
+             if (remetenteReal.isNotEmpty()) atributosJson.put("remetente", remetenteReal)
+         }
+ 
+@@ -564,6 +588,14 @@
+                                                     val id = action.optString("id")
+                                                     if (!id.matches(Regex("[0-9a-fA-F-]{36}"))) return@mapNotNull null
+                                                     com.example.assistentecell.tarefas.TaskAction(id, action.optString("texto", "Ver tarefa"), action.optString("quando"))
++                                                }
++                                            } ?: emptyList(),
++                                            messageActions = json.optJSONArray("acoes_mensagens")?.let { actions ->
++                                                (0 until minOf(actions.length(), 10)).mapNotNull { index ->
++                                                    val action = actions.optJSONObject(index) ?: return@mapNotNull null
++                                                    val id = action.optString("id")
++                                                    if(id != "pendentes" && !id.matches(Regex("[0-9a-fA-F-]{36}"))) return@mapNotNull null
++                                                    com.example.assistentecell.messages.MessageAction(id, action.optString("texto", "Revisar mensagem"))
+                                                 }
+                                             } ?: emptyList())
+                                     )
+diff --git a/app/src/main/java/com/example/assistentecell/messages/MessageModels.kt b/app/src/main/java/com/example/assistentecell/messages/MessageModels.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/messages/MessageModels.kt
+@@ -0,0 +1,15 @@
++package com.example.assistentecell.messages
++
++data class MessageAction(val id: String, val texto: String)
++data class MessageReview(val id: String, val pacote: String, val remetente: String, val texto: String,
++    val sinais: List<String>, val estado: String, val rascunho: String, val versao: Int,
++    val agenda_id: String?, val tarefa_id: String?, val quando: String, val referencia_notificacao: String)
++data class MessageChange(val acao: String, val versao: Int, val texto: String = "")
++data class ReviewUsage(val dispositivo: String = "MOBILE")
++
++object MessageOpeningPolicy {
++    fun allowed(reference: String, expectedPackage: String, expectedTitle: String,
++        cachedPackage: String, cachedTitle: String, ageMillis: Long): Boolean =
++        reference.matches(Regex("[0-9a-fA-F-]{36}")) && expectedPackage == cachedPackage &&
++        expectedTitle == cachedTitle && ageMillis in 0..3600000
++}
+diff --git a/app/src/main/java/com/example/assistentecell/messages/MessagesActivity.kt b/app/src/main/java/com/example/assistentecell/messages/MessagesActivity.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/messages/MessagesActivity.kt
+@@ -0,0 +1,122 @@
++package com.example.assistentecell.messages
++
++import android.content.ClipData
++import android.content.ClipboardManager
++import android.os.Bundle
++import androidx.activity.ComponentActivity
++import androidx.activity.compose.setContent
++import androidx.compose.foundation.horizontalScroll
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++import com.example.assistentecell.ListenerDeNotificacoes
++import com.example.assistentecell.api.RetrofitClient
++import com.example.assistentecell.ui.theme.AssistenteCellTheme
++import kotlinx.coroutines.CancellationException
++import kotlinx.coroutines.launch
++
++class MessagesActivity : ComponentActivity() {
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        RetrofitClient.init(this)
++        setContent { AssistenteCellTheme(darkTheme = true, dynamicColor = false) { Inbox() } }
++    }
++    private fun copy(text: String) {
++        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Rascunho da Ollie", text))
++    }
++    @Composable private fun Inbox() {
++        val api = remember { RetrofitClient.cognitiveApiService }
++        val scope = rememberCoroutineScope()
++        var items by remember { mutableStateOf<List<MessageReview>>(emptyList()) }
++        var selected by remember { mutableStateOf(intent.getStringExtra("mensagem_id")) }
++        var filter by remember { mutableStateOf("revisar") }
++        var busy by remember { mutableStateOf(false) }
++        var error by remember { mutableStateOf<String?>(null) }
++        var feedback by remember { mutableStateOf<String?>(null) }
++        var registered by remember { mutableStateOf(false) }
++        fun run(action: suspend () -> Unit) {
++            if(busy) return
++            busy = true; error = null; feedback = null
++            scope.launch {
++                try { action() }
++                catch(e: CancellationException) { throw e }
++                catch(e: Exception) {
++                    error = if(e is retrofit2.HttpException) when(e.code()) {
++                        404 -> "Mensagens indisponíveis. Confira se o servidor recebeu a atualização."
++                        409 -> "Essa revisão mudou. Atualize a caixa antes de tentar novamente."
++                        422 -> try { org.json.JSONObject(e.response()?.errorBody()?.string().orEmpty()).optString("detail").take(400) }
++                            catch(_: Exception) { "Confira a ação e os dados da mensagem." }
++                        else -> "Não consegui concluir agora. Seu rascunho não foi enviado."
++                    } else e.message ?: "Não consegui concluir agora."
++                } finally { busy = false }
++            }
++        }
++        suspend fun load() {
++            val all = if(!registered && filter == "revisar") api.reviewMessages(ReviewUsage()).also { registered = true } else api.getMessages(filter)
++            val id = selected
++            items = if(id != null && all.none { it.id == id }) listOf(api.getMessage(id)) + all else all
++        }
++        suspend fun action(item: MessageReview, kind: String, text: String = ""): MessageReview {
++            val updated = api.changeMessage(item.id, MessageChange(kind, item.versao, text))
++            items = items.map { if(it.id == updated.id) updated else it }
++            feedback = when(kind) { "preparar_resposta" -> "Rascunho pronto para conferir."; "salvar_rascunho" -> "Rascunho guardado."; else -> "Atualizado." }
++            return updated
++        }
++        LaunchedEffect(filter) { run { load() } }
++        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
++            Column(Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
++                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
++                    TextButton(onClick = { finish() }) { Text("Voltar") }
++                    TextButton(enabled = !busy, onClick = { run { load() } }) { Text("Atualizar") }
++                }
++                Text("Mensagens para revisar", style = MaterialTheme.typography.headlineMedium)
++                Text("Convites, perguntas e possíveis prazos encontrados nas notificações. Você pode já ter respondido no aplicativo.")
++                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                    listOf("revisar" to "Para revisar", "resolvida" to "Resolvidas", "ignorada" to "Ignoradas").forEach { (value, label) ->
++                        FilterChip(enabled = !busy, selected = filter == value, onClick = { selected = null; filter = value }, label = { Text(label) })
++                    }
++                }
++                if(busy) LinearProgressIndicator(Modifier.fillMaxWidth())
++                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
++                feedback?.let { Text(it, color = MaterialTheme.colorScheme.secondary) }
++                if(selected != null) TextButton(onClick = { selected = null }) { Text("Ver todas") }
++                val visible = items.filter { if(selected != null) it.id == selected else it.estado == filter }
++                if(!busy && error == null && visible.isEmpty()) Text("Nenhuma mensagem nessa lista por enquanto.")
++                visible.forEach { item -> key(item.id) {
++                    var draft by remember { mutableStateOf(item.rascunho) }
++                    var instruction by remember { mutableStateOf("") }
++                    Card(Modifier.fillMaxWidth()) {
++                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
++                            Text(item.remetente, style = MaterialTheme.typography.titleLarge)
++                            Text(item.quando + " · " + item.sinais.joinToString(" · "), color = MaterialTheme.colorScheme.secondary)
++                            Text(item.texto)
++                            if(item.estado == "revisar") {
++                                OutlinedButton(enabled = !busy && item.agenda_id == null, onClick = { run { action(item, "guardar_agenda") } }) { Text(if(item.agenda_id == null) "Guardar compromisso" else "Guardado na agenda") }
++                                OutlinedButton(enabled = !busy && item.tarefa_id == null, onClick = { run { action(item, "criar_tarefa") } }) { Text(if(item.tarefa_id == null) "Criar tarefa" else "Tarefa guardada") }
++                                OutlinedTextField(enabled = !busy, value = instruction, onValueChange = { instruction = it.take(2000) }, label = { Text("O que você quer responder?") }, modifier = Modifier.fillMaxWidth())
++                                Button(enabled = !busy, onClick = { run { draft = action(item, "preparar_resposta", instruction).rascunho } }) { Text("Preparar resposta") }
++                                OutlinedTextField(enabled = !busy, value = draft, onValueChange = { draft = it.take(2000) }, label = { Text("Rascunho para conferir") }, modifier = Modifier.fillMaxWidth())
++                                TextButton(enabled = !busy && draft.isNotBlank(), onClick = { run { draft = action(item, "salvar_rascunho", draft).rascunho } }) { Text("Guardar rascunho") }
++                                OutlinedButton(enabled = draft.isNotBlank(), onClick = {
++                                    try { copy(draft); feedback = "Copiado. Confira o destinatário ao colar na conversa." }
++                                    catch(_: Exception) { error = "Não consegui copiar. Você pode selecionar o texto." }
++                                }) { Text("Copiar rascunho") }
++                                OutlinedButton(enabled = !busy && item.referencia_notificacao.isNotBlank(), onClick = {
++                                    val opened = ListenerDeNotificacoes.abrirConversaRevisada(item.referencia_notificacao, item.pacote, item.remetente)
++                                    if(!opened) error = "A notificação original não está disponível. Abra a conversa no aplicativo e confira o contato."
++                                }) { Text("Abrir conversa original") }
++                                TextButton(enabled = !busy, onClick = { run { action(item, "resolver") } }) { Text("Marcar resolvida") }
++                                TextButton(enabled = !busy, onClick = { run { action(item, "ignorar") } }) { Text("Ignorar") }
++                            } else Text(if(item.estado == "resolvida") "Resolvida" else "Ignorada")
++                            Text("Confira o rascunho e o destinatário. O envio é feito por você na conversa do aplicativo.", style = MaterialTheme.typography.bodySmall)
++                        }
++                    }
++                } }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt b/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt
+--- a/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt
+@@ -4,6 +4,8 @@
+ import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.material.icons.outlined.EventNote
+ import androidx.compose.material.icons.outlined.Checklist
++import androidx.compose.material.icons.outlined.MailOutline
++import com.example.assistentecell.messages.MessagesActivity
+ import com.example.assistentecell.tarefas.TasksActivity
+ import androidx.compose.foundation.text.ClickableText
+ import androidx.compose.ui.text.buildAnnotatedString
+@@ -99,6 +101,9 @@
+                             )
+                         }
+                     }
++                    IconButton(onClick = { context.startActivity(Intent(context, MessagesActivity::class.java)) }) {
++                        Icon(Icons.Outlined.MailOutline, contentDescription = "Mensagens para revisar")
++                    }
+                     IconButton(onClick = { context.startActivity(Intent(context, TasksActivity::class.java)) }) {
+                         Icon(Icons.Outlined.Checklist, contentDescription = "Suas tarefas")
+                     }
+@@ -248,6 +253,9 @@
+                         context.startActivity(Intent(context, AgendaActivity::class.java).putExtra("agenda_id", it.item))
+                     }
+                 })
++                message.messageActions.forEach { action ->
++                    TextButton(onClick = { context.startActivity(Intent(context, MessagesActivity::class.java).putExtra("mensagem_id", action.id.takeIf { it != "pendentes" })) }) { Text(action.texto) }
++                }
+                 message.taskActions.forEach { action ->
+                     TextButton(onClick = { context.startActivity(Intent(context, TasksActivity::class.java).putExtra("tarefa_id", action.id)) }) {
+                         Text(action.texto + " · " + action.quando)
+diff --git a/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt b/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
+--- a/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
++++ b/app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt
+@@ -14,7 +14,8 @@
+     val timestamp: Long = System.currentTimeMillis(),
+     val awaitsAnswer: Boolean? = null,
+     val agendaActions: List<com.example.assistentecell.agenda.AgendaAction> = emptyList(),
+-    val taskActions: List<com.example.assistentecell.tarefas.TaskAction> = emptyList()
++    val taskActions: List<com.example.assistentecell.tarefas.TaskAction> = emptyList(),
++    val messageActions: List<com.example.assistentecell.messages.MessageAction> = emptyList()
+ )
+ 
+ object ChatBridge {
+diff --git a/app/src/test/java/com/example/assistentecell/MessageOpeningPolicyTest.kt b/app/src/test/java/com/example/assistentecell/MessageOpeningPolicyTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/com/example/assistentecell/MessageOpeningPolicyTest.kt
+@@ -0,0 +1,16 @@
++package com.example.assistentecell
++import com.example.assistentecell.messages.MessageOpeningPolicy
++import org.junit.Assert.*
++import org.junit.Test
++class MessageOpeningPolicyTest {
++    private val reference = "77c02a43-3b74-4a33-ad15-274754721276"
++    @Test fun conversationMustMatchContactAndApp() {
++        assertTrue(MessageOpeningPolicy.allowed(reference, "com.whatsapp", "Ana", "com.whatsapp", "Ana", 1000))
++        assertFalse(MessageOpeningPolicy.allowed(reference, "com.whatsapp", "Ana", "com.whatsapp", "Bia", 1000))
++        assertFalse(MessageOpeningPolicy.allowed(reference, "com.whatsapp", "Ana", "org.telegram.messenger", "Ana", 1000))
++    }
++    @Test fun expiredOrInvalidReferencesNeverOpenAnotherApp() {
++        assertFalse(MessageOpeningPolicy.allowed(reference, "com.whatsapp", "Ana", "com.whatsapp", "Ana", 3600001))
++        assertFalse(MessageOpeningPolicy.allowed("123", "com.whatsapp", "Ana", "com.whatsapp", "Ana", 1000))
++    }
++}

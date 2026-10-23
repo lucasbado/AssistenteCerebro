@@ -1,0 +1,60 @@
+{
+  "base": "Arquivos locais posteriores a android-tarefas-calendario.patch; caixa de revisao, rascunhos e contexto por conversa. Nao representa o repositorio Android inteiro.",
+  "files": [
+    {
+      "path": "app/src/androidTest/java/com/example/assistentecell/MessagesScreenTest.kt",
+      "before_sha256": null,
+      "after_sha256": "65cc495d6705d855305bef2aceab0c53242469559bf3af76743f4406e67f7413"
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "before_sha256": "9186d41353ceddb726cbde920bab90e2d900b028b98c2e4b5ccd84d7d3e115be",
+      "after_sha256": "02069405fe9393fc2b2dd898f487849922cc3be6984d9ce22a3800ea9f2dbf3e"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/automation/RoutineDescription.kt",
+      "before_sha256": "1b29660ad9c14c6145957b24319cd17a43ec4ea12ce6e64975ea2f4f906c2409",
+      "after_sha256": "bc080ee23bf499dab3739594c4558221d01c013ab14a620fe5a82f091f605085"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt",
+      "before_sha256": "05347421e02d0bd607c86fd6138bc71958a95edd625f5d8d9808cc316ec4ef6b",
+      "after_sha256": "afab39388bba4d794988ed572024f620615798ec1c1efa786c0a0475261a403f"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/data/api/CognitiveApiService.kt",
+      "before_sha256": "79861b480cb5dd8bf82523e3e1b0692290401a77b987b7babaf6752554987891",
+      "after_sha256": "8852bbd29cf2b9b98228bb254d03eeb02543ecde7d9b151861f7cdd0d455f03d"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt",
+      "before_sha256": "a8b26403d364c33c837ac411b8fd0c84fbd6d7ade05b7f91b30d1eb3f7f000d8",
+      "after_sha256": "3f636aff7161a9d06193717eb5b784cfcbe1d2cb1ca79a02b7fb401df194dc07"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/messages/MessageModels.kt",
+      "before_sha256": null,
+      "after_sha256": "8ad8ef45b91312e1f3d8a77e8191924128e9be31f436da64a2ffab7562c7b315"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/messages/MessagesActivity.kt",
+      "before_sha256": null,
+      "after_sha256": "56262737b41bc9674fd747224107e74d425b26327cb9857c16f09a0153ea3f1f"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ui/screens/ChatScreen.kt",
+      "before_sha256": "6066e1233ee96140e7e520bd59a45b89e5f99f3ac125be63bc1c327695f5f4c1",
+      "after_sha256": "4dfd4a26921226b6980e115b252633f4bb01424f81d15296ba6a86e9fb2ff13d"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/websocket/ChatBridge.kt",
+      "before_sha256": "3935dfb5235e0830a301371d13f708c3f3a694bd7eb744a91bdd5b21195f85ea",
+      "after_sha256": "14045a16ce6dc9a42d928592146b459bb09307bc9e8719933049b6a7e764cd35"
+    },
+    {
+      "path": "app/src/test/java/com/example/assistentecell/MessageOpeningPolicyTest.kt",
+      "before_sha256": null,
+      "after_sha256": "96e3c7b9c315ebc2405f60307f7c8dff3bb8c49cb0eaa4035f93c977fc5e907f"
+    }
+  ]
+}
