@@ -25,7 +25,8 @@ anterior com precisão. O histórico novo começa com esta atualização.
   não duplicam a geração. Contatos novos guardam o nome sem inferir relações.
 - Reservas transacionais impedem ultrapassar o orçamento por concorrência.
   Uso informado pela API substitui a estimativa. Falhas de rede ambíguas
-  conservam a estimativa; recusas 4xx não contam como geração.
+  conservam a estimativa; recusas de autenticação, modelo ausente e cota não
+  contam como geração. Erro de JSON pode ter gerado tokens e mantém estimativa.
 - HTTP 429 coloca o modelo em espera compartilhada, usando `Retry-After`
   ou o prazo informado pela Groq. Não há nova tentativa sem JSON por esse erro.
 

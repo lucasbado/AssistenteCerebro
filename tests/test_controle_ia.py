@@ -113,9 +113,10 @@ async def test_notificacao_renovada_nao_gasta_de_novo_e_contatos_nao_se_misturam
 
 async def test_revisao_resolvida_nao_reanalisa(banco_teste):
     from servicos.mensagens import caixa_mensagens
-    item = await caixa_mensagens.registrar('com.whatsapp', {'titulo': 'Ana', 'texto': 'Você vem?'}, datetime.now(timezone.utc))
+    texto = 'Você confirma a reunião amanhã?'
+    item = await caixa_mensagens.registrar('com.whatsapp', {'titulo': 'Ana', 'texto': texto}, datetime.now(timezone.utc))
     await caixa_mensagens.mudar_estado(item['id'], 1, 'resolvida')
-    assert await triagem.reservar('com.whatsapp', 'Ana', 'Você vem?') is None
+    assert await triagem.reservar('com.whatsapp', 'Ana', texto) is None
 
 
 def cloudflare(monkeypatch, handler, consumo=None):

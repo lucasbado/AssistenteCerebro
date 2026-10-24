@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 type Message = { id: string; remetente: string; texto: string; sinais: string[]; estado: string; quando: string;
-  rascunho: string; versao: number; agenda_id: string | null; tarefa_id: string | null; pacote: string };
+  rascunho: string; versao: number; agenda_id: string | null; tarefa_id: string | null; pacote: string;
+  prioridade?: number; motivo?: string };
 async function request(path = '', options: RequestInit = {}) {
   const base = await invoke<string>('get_api_url'), token = await invoke<string>('get_auth_token');
   const response = await fetch(`${base.replace(/\/$/, '')}/api/v1/mensagens${path}`, {
@@ -42,7 +43,7 @@ export default function MessagesPanel({ selected, onAll }: { selected: string | 
   }
   const visible = items.filter(i => (selected ? i.id === selected : i.estado === filter));
   return <section className="agenda-panel" aria-label="Mensagens para revisar">
-    <div className="agenda-toolbar"><div><h2>Uma resposta, um convite, um próximo passo.</h2><p>Possíveis pendências encontradas nas notificações. Você pode já ter respondido no aplicativo.</p></div>
+    <div className="agenda-toolbar"><div><h2>O que merece sua atenção.</h2><p>Pedidos, prazos e decisões selecionados pelo contexto recebido. Os mais importantes aparecem primeiro; você pode já ter respondido no aplicativo.</p></div>
       <button className="button" disabled={busy} onClick={() => void run(() => load())}>Atualizar</button></div>
     <label className="task-filter">Mostrar <select disabled={busy} value={filter} onChange={e => { setFilter(e.target.value); onAll(); }}><option value="revisar">Para revisar</option><option value="resolvida">Resolvidas</option><option value="ignorada">Ignoradas</option></select></label>
     {error && <p className="agenda-error" role="alert">{error}</p>}{busy && <p role="status">Conferindo suas mensagens…</p>}
@@ -62,6 +63,7 @@ function MessageCard({ item, busy, action }: { item: Message; busy: boolean; act
   }
   return <article className="agenda-card message-review-card"><span className="eyebrow">{item.sinais.join(' · ')}</span><h3>{item.remetente}</h3>
     <p>{item.quando} · {item.estado === 'revisar' ? 'Para revisar' : item.estado}</p><blockquote>{item.texto}</blockquote>
+    {item.motivo && <p>{item.motivo}</p>}
     {item.estado === 'revisar' && <>
       <div className="agenda-actions"><button className="button" disabled={busy || !!item.agenda_id} onClick={() => void act('guardar_agenda')}>{item.agenda_id ? 'Guardado na agenda' : 'Guardar compromisso'}</button>
         <button className="button" disabled={busy || !!item.tarefa_id} onClick={() => void act('criar_tarefa')}>{item.tarefa_id ? 'Tarefa guardada' : 'Criar tarefa'}</button></div>

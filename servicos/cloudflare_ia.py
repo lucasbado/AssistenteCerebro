@@ -44,7 +44,7 @@ class CloudflareProvider:
             return texto
         except Exception as erro:
             status = getattr(getattr(erro, 'response', None), 'status_code', None)
-            if reserva is not None: await self.consumo.concluir(reserva, recusado=status is not None and 400 <= status < 500)
+            if reserva is not None: await self.consumo.concluir(reserva, recusado=status in {401, 403, 404, 429})
             if status in {401, 403, 429}:
                 # Não insistir na cota esgotada ou credencial inválida a cada pergunta.
                 segundos = 60

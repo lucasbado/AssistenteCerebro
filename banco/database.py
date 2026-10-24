@@ -45,6 +45,9 @@ async def inicializar_banco(engine=None):
         # Migra bancos existentes antes de create_all criar índices das colunas novas.
         def migrar(sync_conn):
             inspector = inspect(sync_conn)
+            if inspector.has_table('mensagens_revisao'):
+                if 'analise' not in {c['name'] for c in inspector.get_columns('mensagens_revisao')}:
+                    sync_conn.exec_driver_sql('ALTER TABLE mensagens_revisao ADD COLUMN analise JSON')
             if inspector.has_table("task_queue"):
                 if "locked_until" not in {c["name"] for c in inspector.get_columns("task_queue")}:
                     tipo_data = "TIMESTAMP WITH TIME ZONE" if sync_conn.dialect.name == "postgresql" else "TIMESTAMP"

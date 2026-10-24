@@ -6,6 +6,7 @@ import pytest
 from groq import APIStatusError
 
 from servicos.llm_providers import GroqProvider
+from servicos.consumo_ia import uso_ia
 
 
 def resposta(texto='{"mensagem_dinamica":"Tudo certo"}'):
@@ -102,3 +103,17 @@ async def test_modelos_indisponiveis_nao_produzem_sucesso_falso(provider):
     with pytest.raises(ValueError, match="Todos os modelos"):
         await provider.gerar("oi", "JSON")
     assert criar.await_count == chamadas
+
+
+async def test_selecao_de_mensagens_limita_reasoning_sem_mudar_conversa(provider):
+    with uso_ia('selecao_mensagens'):
+        await provider.gerar('analise', 'JSON', 600)
+    assert provider.client.chat.completions.create.call_args.kwargs['reasoning_effort'] == 'low'
+    await provider.gerar('conversa', 'JSON', 900)
+    assert 'reasoning_effort' not in provider.client.chat.completions.create.call_args.kwargs
+
+
+async def test_json_falhou_pode_ter_consumido_tokens_e_preserva_estimativa(provider):
+    provider.client.chat.completions.create.side_effect = [erro(400, 'json_validate_failed'), resposta()]
+    await provider.gerar('analise', 'JSON')
+    assert provider.consumo.concluir.call_args_list[0].kwargs['recusado'] is False

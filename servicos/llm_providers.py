@@ -7,7 +7,7 @@ import httpx
 from typing import Protocol, runtime_checkable
 from groq import AsyncGroq
 from dotenv import load_dotenv
-from servicos.consumo_ia import consumo_ia
+from servicos.consumo_ia import consumo_ia, escopo_ia
 
 load_dotenv()
 logger = logging.getLogger("LLMProviders")
@@ -74,6 +74,8 @@ class GroqProvider:
                     "messages": [{"role": "system", "content": system_mod}, {"role": "user", "content": prompt}],
                     "model": modelo, "temperature": 0.1, "max_tokens": max_tokens, "timeout": 25.0,
                 }
+                if escopo_ia.get()[0] == 'selecao_mensagens' and modelo in {'openai/gpt-oss-120b', 'openai/gpt-oss-20b'}:
+                    parametros['reasoning_effort'] = 'low'
                 if modelo not in self._sem_json_object:
                     parametros["response_format"] = {"type": "json_object"}
                 try:
@@ -98,7 +100,7 @@ class GroqProvider:
                 status = getattr(e, "status_code", None)
                 codigo = self._erro_api(e).get("code")
                 if reserva is not None:
-                    await self.consumo.concluir(reserva, recusado=status is not None and 400 <= status < 500)
+                    await self.consumo.concluir(reserva, recusado=status in {401, 403, 404, 429})
                 if status == 429:
                     await self.consumo.bloquear(modelo, self._tempo_espera(e))
                 if status == 401 or (status == 403 and codigo != "model_permission_blocked"):

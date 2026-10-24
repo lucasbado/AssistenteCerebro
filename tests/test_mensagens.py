@@ -91,9 +91,9 @@ async def test_vinculos_reaproveitam_sugestoes_sem_duplicar(banco_teste):
 
 
 async def test_sem_data_nao_chuta_compromisso_e_retencao_expira(banco_teste):
-    item = await registrar(texto='Vamos conversar?')
+    item = await registrar(texto='Pode enviar o contrato?')
     with pytest.raises(ValueError): await caixa_mensagens.vincular(item['id'], 1, 'agenda')
-    velho = await caixa_mensagens.registrar('com.whatsapp', {'titulo': 'Bia', 'texto': 'Vamos conversar?'}, datetime.now(timezone.utc) - timedelta(days=15))
+    velho = await caixa_mensagens.registrar('com.whatsapp', {'titulo': 'Bia', 'texto': 'Pode enviar o contrato?'}, datetime.now(timezone.utc) - timedelta(days=15))
     with pytest.raises(LookupError): await caixa_mensagens.obter(velho['id'])
     await caixa_mensagens.limpar_antigas()
     assert len(await caixa_mensagens.listar()) == 1

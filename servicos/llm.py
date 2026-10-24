@@ -26,6 +26,11 @@ class ServicoLLM:
         self.cloudflare = CloudflareProvider()
         self.pc = ponte_ia_pc
 
+    async def aclose(self):
+        await self.ollama.http_client.aclose()
+        if self.groq.client is not None:
+            await self.groq.client.close()
+
     def _pick_provider(self):
         # A espera por modelo é persistida e compartilhada pelo provider.
         if self.groq.disponivel():
@@ -75,6 +80,11 @@ compromisso. Não inclua comandos de dispositivo ou ferramentas no resultado.'''
         if not isinstance(rascunho, str) or not rascunho.strip() or len(rascunho) > 2000:
             raise ValueError('Não consegui preparar uma resposta válida. Você pode escrever e salvar seu rascunho.')
         return rascunho.strip()
+
+    async def avaliar_mensagem_para_revisao(self, texto, contexto):
+        from servicos.selecao_mensagens import SYSTEM_SELECAO
+        prompt = json.dumps({'mensagem_atual': texto, 'recebidas_na_mesma_conversa': contexto}, ensure_ascii=False)
+        return json.loads(await self._gerar(prompt, SYSTEM_SELECAO, max_tokens=600, funcao='selecao_mensagens'))
 
     async def classificar_evento(self, categoria: str, pacote: str, payload: dict, historico: list[str] | None = None, timestamp_dispositivo: datetime | None = None, knowledge: str = "", habits: str = "") -> dict:
         usuario = categoria in {'SISTEMA_COMANDO_USUARIO', 'CHAT'}

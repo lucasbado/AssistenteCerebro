@@ -52,6 +52,14 @@ class MensagemRevisaoDB(Base):
     tarefa_id = Column(String(36), nullable=True)
     recebido_em = Column(DateTime(timezone=True), nullable=False, index=True)
     versao = Column(Integer, nullable=False, default=1)
+    analise = Column(JSON, nullable=True)
+
+
+class ConversaRevisaoDB(Base):
+    __tablename__ = 'conversas_revisao'
+    conversa = Column(String(64), primary_key=True)
+    mensagens = Column(JSON, nullable=False)
+    atualizado_em = Column(DateTime(timezone=True), nullable=False, index=True)
 
 
 class TarefaDB(Base):

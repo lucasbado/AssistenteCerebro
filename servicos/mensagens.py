@@ -4,7 +4,7 @@ import hashlib
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, or_
 from sqlalchemy.exc import IntegrityError
 from banco.database import AsyncSessionLocal
 from banco.models import MensagemRevisaoDB
@@ -12,6 +12,7 @@ from servicos.controle_casa import normalizar
 from servicos.datas_agenda import extrair_data, titulo_sem_data
 from servicos.linguagem_tarefas import pendencia_mensagem, limpar_alvo
 from servicos.tempo import horario_local, utc
+from servicos import selecao_mensagens
 
 PACOTES = {'com.whatsapp', 'com.whatsapp.w4b', 'org.telegram.messenger', 'com.google.android.apps.messaging',
     'com.samsung.android.messaging', 'org.thoughtcrime.securesms', 'com.instagram.android', 'com.discord'}
@@ -52,10 +53,26 @@ def sinais_mensagem(texto):
 
 
 def apresentar(i):
+    analise = i.analise or {}
     return {'id': i.id, 'pacote': i.pacote, 'remetente': i.remetente, 'texto': i.texto, 'sinais': list(i.sinais),
         'estado': i.estado, 'rascunho': i.rascunho, 'versao': i.versao, 'agenda_id': i.agenda_id, 'tarefa_id': i.tarefa_id,
         'recebido_em': utc(i.recebido_em).isoformat(), 'quando': horario_local(i.recebido_em).strftime('%d/%m às %H:%M'),
-        'referencia_notificacao': i.referencia_notificacao}
+        'referencia_notificacao': i.referencia_notificacao,
+        'prioridade': analise.get('prioridade', 0), 'motivo': analise.get('motivo', '')}
+
+
+def reavaliar_item(item):
+    analise = item.analise
+    manual = bool(item.rascunho or item.tarefa_id or item.agenda_id)
+    if manual and (not isinstance(analise, dict) or not analise.get('selecionar')):
+        analise = selecao_mensagens.decisao(True, 75, 'Mensagem que você já separou ou começou a revisar.', item.sinais)
+        item.analise = analise
+    if not isinstance(analise, dict) or analise.get('versao') != selecao_mensagens.VERSAO:
+        analise = selecao_mensagens.avaliar_local(selecao_mensagens.limpar_remetente(item.texto, item.remetente))
+        if item.rascunho or item.tarefa_id or item.agenda_id:
+            analise = selecao_mensagens.decisao(True, max(75, analise['prioridade']), 'Mensagem que você já separou ou começou a revisar.', item.sinais)
+        item.analise = analise
+    return analise
 
 
 class ConflitoMensagem(ValueError): pass
@@ -67,21 +84,35 @@ class CaixaMensagens:
     async def limpar_antigas(self):
         async with AsyncSessionLocal() as session, session.begin():
             await session.execute(delete(MensagemRevisaoDB).where(MensagemRevisaoDB.recebido_em < datetime.now(timezone.utc) - timedelta(days=14)))
+        await selecao_mensagens.limpar_contextos()
 
     async def registrar(self, pacote, payload, timestamp):
         if pacote not in PACOTES or payload.get('tipo_conteudo', 'MSG') != 'MSG': return None
         texto, remetente = str(payload.get('texto', '')).strip(), str(payload.get('titulo', '')).strip()[:150]
-        sinais = sinais_mensagem(texto)
-        if not texto or not remetente or not sinais or len(texto) > 4000: return None
+        if not texto or not remetente or len(texto) > 4000: return None
         origem_conversa = referencia_conversa(payload.get('conversa_ref'))
         conversa = chave_conversa(pacote, remetente, origem_conversa)
         dia = horario_local(timestamp).date().isoformat()
         assinatura = hashlib.sha256(f'{conversa}|{dia}|{normalizar(texto)}'.encode()).hexdigest()
+        async with AsyncSessionLocal() as session:
+            existente = (await session.execute(select(MensagemRevisaoDB).where(MensagemRevisaoDB.assinatura == assinatura))).scalar_one_or_none()
+            if existente:
+                analise = reavaliar_item(existente)
+                if existente.estado != 'revisar': return apresentar(existente)
+            else: analise = None
+        if analise is None:
+            sender = str(payload.get('remetente', '')).strip()
+            grupo = bool(sender and normalizar(sender) != normalizar(remetente))
+            atual = selecao_mensagens.limpar_remetente(texto, sender or remetente)
+            analise = await selecao_mensagens.selecionar(conversa, atual, timestamp, grupo=grupo)
+        if not analise.get('selecionar'): return None
+        sinais = analise['sinais']
         async with self._lock:
             try:
                 async with AsyncSessionLocal() as session, session.begin():
                     existente = (await session.execute(select(MensagemRevisaoDB).where(MensagemRevisaoDB.assinatura == assinatura))).scalar_one_or_none()
                     if existente:
+                        existente.analise = analise
                         referencia = str(payload.get('referencia_notificacao') or '')[:100]
                         if existente.estado == 'revisar' and referencia and referencia != existente.referencia_notificacao:
                             existente.referencia_notificacao = referencia
@@ -89,7 +120,7 @@ class CaixaMensagens:
                         return apresentar(existente)
                     item = MensagemRevisaoDB(id=str(uuid.uuid4()), assinatura=assinatura, conversa=conversa, pacote=pacote,
                         remetente=remetente, texto=texto, sinais=sinais, recebido_em=utc(timestamp), estado='revisar', rascunho='', versao=1, origem_conversa=origem_conversa,
-                        referencia_notificacao=str(payload.get('referencia_notificacao') or '')[:100])
+                        referencia_notificacao=str(payload.get('referencia_notificacao') or '')[:100], analise=analise)
                     session.add(item)
                     await session.flush()
                     return apresentar(item)
@@ -99,11 +130,20 @@ class CaixaMensagens:
 
     async def listar(self, estado='revisar'):
         if estado not in {'revisar', 'resolvida', 'ignorada'}: raise ValueError('Filtro de mensagens inválido.')
-        async with AsyncSessionLocal() as session:
-            itens = (await session.execute(select(MensagemRevisaoDB).where(MensagemRevisaoDB.estado == estado,
+        async with AsyncSessionLocal() as session, session.begin():
+            query = select(MensagemRevisaoDB).where(MensagemRevisaoDB.estado == estado,
                 MensagemRevisaoDB.recebido_em >= datetime.now(timezone.utc) - timedelta(days=14))
-                .order_by(MensagemRevisaoDB.recebido_em.desc()).limit(100))).scalars().all()
-            return [apresentar(i) for i in itens]
+            if estado == 'revisar':
+                query = query.where(or_(MensagemRevisaoDB.analise['versao'].as_integer().is_(None),
+                    MensagemRevisaoDB.analise['versao'].as_integer() != selecao_mensagens.VERSAO,
+                    MensagemRevisaoDB.analise['selecionar'].as_boolean() == True,
+                    MensagemRevisaoDB.rascunho != '', MensagemRevisaoDB.tarefa_id.is_not(None), MensagemRevisaoDB.agenda_id.is_not(None)))
+                query = query.order_by(MensagemRevisaoDB.analise['prioridade'].as_integer().desc().nulls_last())
+            itens = (await session.execute(query.order_by(MensagemRevisaoDB.recebido_em.desc()).limit(2000))).scalars().all()
+            if estado == 'revisar':
+                itens = [i for i in itens if reavaliar_item(i).get('selecionar')]
+                itens.sort(key=lambda i: (i.analise.get('prioridade', 0), utc(i.recebido_em)), reverse=True)
+            return [apresentar(i) for i in itens[:100]]
 
     async def obter(self, identificador):
         async with AsyncSessionLocal() as session:
