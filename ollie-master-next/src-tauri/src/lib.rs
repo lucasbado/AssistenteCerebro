@@ -6,6 +6,7 @@ use tokio::time::sleep;
 use std::sync::atomic::{AtomicBool, Ordering};
 mod desktop_voice;
 mod desktop_listening;
+mod local_ai;
 
 static MONITORING_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -210,6 +211,8 @@ pub fn run() {
             get_cloud_url,
             get_api_url,
             get_auth_token,
+            local_ai::probe_local_ai,
+            local_ai::generate_local_ai,
             desktop_voice::speak_response,
             desktop_voice::stop_speech,
             desktop_listening::desktop_listening_preferences,

@@ -23,7 +23,8 @@ def provider(monkeypatch):
     monkeypatch.delenv("GROQ_FALLBACK_MODELS", raising=False)
     criar = AsyncMock(return_value=resposta())
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=criar)))
-    return GroqProvider(client=client)
+    consumo = SimpleNamespace(reservar=AsyncMock(return_value='teste'), concluir=AsyncMock(), bloquear=AsyncMock())
+    return GroqProvider(client=client, consumo=consumo)
 
 
 async def test_groq_comeca_pelo_modelo_ativo_sem_tentar_llamas_retirados(provider):

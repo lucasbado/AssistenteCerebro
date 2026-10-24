@@ -51,7 +51,7 @@ def ler_resposta_conversa(data):
 
 def falha_conversa(erro):
     limite = getattr(erro, 'status_code', None) == 429 or any(
-        termo in str(erro).lower() for termo in ('rate limit', 'rate_limit', '429'))
+        termo in str(erro).lower() for termo in ('rate limit', 'rate_limit', '429', 'orçamento de ia', 'limite do provedor'))
     texto = ('A IA atingiu o limite de uso agora e não consegui responder. Tente de novo mais tarde.'
              if limite else 'Não consegui gerar uma resposta agora. Tente de novo em instantes.')
     return {'intencao_captada': 'FALLBACK_ERRO', 'tipo_interacao': 'NOTIFICAR',

@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from servicos.confirmacao_pc import ConfirmacoesPC
+from servicos.ponte_ia_pc import ponte_ia_pc
 
 logger = logging.getLogger("WebSocket")
 router = APIRouter()
@@ -113,6 +114,7 @@ class GerenciadorNotificacoes:
         except: pass
 
     def desconectar(self, websocket: WebSocket):
+        ponte_ia_pc.desconectar(websocket)
         self._capacidades.pop(websocket, None)
         for ponte, _, futuro in tuple(self._pedidos_casa.values()):
             if ponte is websocket and not futuro.done():
@@ -276,13 +278,16 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            logger.info(f"📥 [WS] Mensagem recebida: {data}")
             try:
                 msg = json.loads(data)
                 tipo = msg.get("tipo_ws")
+                logger.debug('[WS] Mensagem recebida: %s (%s bytes)', tipo, len(data))
                 
                 # Roteamento de comandos entre dispositivos (Relé)
-                if tipo == "COMANDO_PC" or msg.get("destino") == "PC_MASTER":
+                if tipo == 'IA_RESULTADO':
+                    if websocket is central_alertas.pc_master:
+                        ponte_ia_pc.confirmar(websocket, msg)
+                elif tipo == "COMANDO_PC" or msg.get("destino") == "PC_MASTER":
                     resultado = await central_alertas.enviar_comando_pc(msg)
                     await websocket.send_json({"tipo_ws": "COMANDO_ACEITO", **resultado})
 
@@ -307,13 +312,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     cliente_id = msg.get("id")
                     capacidades = msg.get("capacidades", [])
                     if cliente_id in {"PC_MASTER", "MOBILE"}:
-                        central_alertas._capacidades[websocket] = {"CASA"} if isinstance(capacidades, list) and "CASA" in capacidades else set()
+                        permitidas = {'CASA', 'LOCAL_LLM'} if cliente_id == 'PC_MASTER' else {'CASA'}
+                        central_alertas._capacidades[websocket] = permitidas.intersection(c for c in capacidades if isinstance(c, str)) if isinstance(capacidades, list) else set()
                     if cliente_id == "PC_MASTER":
                         # 🛡️ ANTI-DUPLICIDADE: Se for a mesma conexão, ignora. 
                         # Se for nova, substitui a antiga para garantir que o link master seja único.
                         if central_alertas.pc_master and central_alertas.pc_master != websocket:
                             logger.warning("🔄 [WS] Novo link PC_MASTER recebido. Finalizando conexão anterior...")
                             old_ws = central_alertas.pc_master
+                            ponte_ia_pc.desconectar(old_ws)
                             try:
                                 # Tenta fechar graciosamente para evitar que o cliente entre em loop infinito de reconexão
                                 await old_ws.close(1001, "New master session started")

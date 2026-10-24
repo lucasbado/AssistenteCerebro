@@ -3,6 +3,7 @@ import DesktopInterface, { type DesktopPage, type DesktopMessage, type Intervent
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { DesktopReplies } from './desktopReplies';
+import { createLocalAiBridge, type LocalAiResult } from './localAiBridge';
 import { decodeTaskActions } from './taskActions';
 import { decodeMessageActions } from './messageActions';
 import { DesktopVoice } from './desktopVoice';
@@ -438,6 +439,10 @@ export default function App() {
       }
     });
 
+    const localAi = createLocalAiBridge(r => invoke<LocalAiResult>('generate_local_ai', {
+      prompt: r.prompt, system: r.system, maxTokens: r.max_tokens,
+    }));
+    let aiProbeTimer: number | undefined;
     const setupWS = async () => {
       if (!isComponentMounted || isConnecting) return;
       isConnecting = true;
@@ -458,12 +463,27 @@ export default function App() {
           setIsConnected(true);
           addLog("📡 Sincronização com Cloud concluída.", "text-neon-cyan");
           ws.send(JSON.stringify({ tipo_ws: "REGISTRO", id: "PC_MASTER", capacidades: ["CASA"] }));
+          const announceAi = async () => {
+            const state = await invoke<{ disponivel: boolean }>('probe_local_ai').catch(() => ({ disponivel: false }));
+            if (isComponentMounted && activeSocket === ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ tipo_ws: 'REGISTRO', id: 'PC_MASTER', capacidades: state.disponivel ? ['CASA', 'LOCAL_LLM'] : ['CASA'] }));
+            }
+          };
+          void announceAi();
+          window.clearInterval(aiProbeTimer);
+          aiProbeTimer = window.setInterval(() => void announceAi(), 60000);
         };
 
         ws.onmessage = (event) => {
           if (!isComponentMounted) return;
           let data;
           try { data = JSON.parse(event.data); } catch { return; }
+          if (data.tipo_ws === 'IA_SOLICITACAO') {
+            void localAi(data, result => {
+              if (isComponentMounted && activeSocket === ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(result));
+            });
+            return;
+          }
 
           if (data.tipo_ws === "CHAT_RESPONSE") {
             addLog(`🤖 OLLIE: ${data.texto}`, "text-neon-purple text-[13px] font-bold");
@@ -518,6 +538,7 @@ export default function App() {
         };
 
         ws.onclose = () => {
+          window.clearInterval(aiProbeTimer);
           for (const request of pendingVoice.current.values()) request.reject(new Error('A conexão com a Ollie foi interrompida.'));
           isConnecting = false;
           if (!isComponentMounted) return;
@@ -555,6 +576,7 @@ export default function App() {
 
     return () => {
       isComponentMounted = false;
+      window.clearInterval(aiProbeTimer);
       if (unlistenHardware) unlistenHardware.then(u => u());
       if (unlistenWindow) unlistenWindow.then(u => u());
       if (activeSocket) activeSocket.close();

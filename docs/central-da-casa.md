@@ -1,5 +1,7 @@
 # A Ollie como central da casa
 
+Consumo de IA e alternativas gratuitas: [Groq, Cloudflare e processamento remoto no PC](ia-consumo-fallback.md).
+
 Roteamento por dispositivo e resposta em voz no PC: [Comandos por origem](roteamento-dispositivos.md).
 Revisão atual de sites, notificações, dock e wake word: [alterações e verificações pendentes](revisao-sites-dock-wakeword.md).
 Treino do detector “Hey Ollie”: [passo a passo no Colab e teste local](treinar-wakeword-ollie.md).

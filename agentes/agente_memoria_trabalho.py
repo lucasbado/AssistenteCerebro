@@ -9,6 +9,7 @@ from core.tipos import TipoAcao, CategoriaEvento
 from core.kernel import kernel
 from servicos.memoria_trabalho import memoria_trabalho
 from servicos.mensagens import chave_conversa as chave_mensagem
+from servicos import triagem_notificacoes
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,8 @@ class AgenteMemoriaTrabalho:
         tipo_cont = evento.payload.get("tipo_conteudo", "MSG")
 
         if not texto or not remetente:
+            return
+        if not triagem_notificacoes.relevante(evento.pacote, remetente, texto, tipo_cont):
             return
 
         chave_conversa = 'notificacao::' + chave_mensagem(evento.pacote, remetente, evento.payload.get('conversa_ref'))
@@ -70,6 +73,14 @@ class AgenteMemoriaTrabalho:
 
             # Remove duplicatas exatas preservando a ordem
             mensagens_unicas = list(dict.fromkeys(mensagens_agrupadas))
+            elegiveis, analises = [], []
+            for remetente, texto, tipo in mensagens_unicas:
+                identificador = await triagem_notificacoes.reservar(evento_original.pacote, remetente, texto, evento_original.payload.get('conversa_ref'))
+                if identificador:
+                    elegiveis.append((remetente, texto, tipo))
+                    analises.append(identificador)
+            mensagens_unicas = elegiveis
+            if not mensagens_unicas: return
 
             logger.info(f"🧠 [MemoriaTrabalho] Debounce finalizado para '{chave_conversa}'. Pré-processando {len(mensagens_unicas)} notificações.")
 
@@ -133,7 +144,7 @@ class AgenteMemoriaTrabalho:
                 "contexto_historico": contexto_historico
             }
             await kernel.publicar(evento_original.clonar(acao=TipoAcao.INTENCAO_RACIOCINIO, payload=payload_agrupado,
-                metadados={**evento_original.metadados, 'chave_conversa': chave_conversa}))
+                metadados={**evento_original.metadados, 'chave_conversa': chave_conversa, 'analises_notificacoes': analises}))
         except asyncio.CancelledError:
             logger.debug(f"🧠 [MemoriaTrabalho] Debounce para '{chave_conversa}' resetado.")
         except Exception as e:

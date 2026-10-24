@@ -88,6 +88,10 @@ class AgenteRaciocinio:
                     habits=habitos_str
                 )
 
+            if evento.metadados.get('analises_notificacoes'):
+                from servicos.triagem_notificacoes import finalizar
+                await finalizar(evento.metadados['analises_notificacoes'], not resultado.get('_ia_indisponivel'))
+
             # 🚀 EXTRAÇÃO ROBUSTA (SCAVENGER)
             exec_direta_raw = self._buscar_campo(resultado, "execucao_direta")
             msg_ia = self._buscar_campo(resultado, "mensagem_dinamica")

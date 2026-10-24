@@ -5,6 +5,12 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
+@pytest.fixture(autouse=True)
+def sem_cloudflare_real(monkeypatch):
+    # Os testes simulam falhas de IA; uma credencial local nunca autoriza uso real.
+    monkeypatch.delenv('CLOUDFLARE_API_TOKEN', raising=False)
+    monkeypatch.delenv('CLOUDFLARE_ACCOUNT_ID', raising=False)
+
 @pytest.fixture
 async def banco_teste(tmp_path, monkeypatch):
     from banco.database import _criar_motor, inicializar_banco

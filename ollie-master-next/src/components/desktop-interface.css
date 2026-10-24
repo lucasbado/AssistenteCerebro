@@ -184,6 +184,9 @@
 .agenda-panel .agenda-error { color: #ffb4ab; }
 @media(max-width: 700px) { .agenda-panel { padding: 12px; } }
 .task-overdue { color: #ffb4ab; }
+.ai-usage-panel { flex-shrink: 0; max-height: 340px; overflow: auto; margin-bottom: 16px; }
+.ai-usage-panel .panel-heading { justify-content: space-between; }
+.ai-usage-panel details { margin-block: 12px; color: var(--dim); }
 .task-filter { display: flex; gap: 12px; align-items: center; color: var(--dim); }
 .task-filter select { padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: #12191a; color: var(--text); }
 .task-postpone { padding: 12px; margin-top: 14px; }

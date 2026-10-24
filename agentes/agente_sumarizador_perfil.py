@@ -36,7 +36,8 @@ class AgenteSumarizadorPerfil:
         dados_formatados = await servico_perfil._formatar_dados_para_llm(dados_perfil)
 
         # 3. Chamar a LLM para gerar o resumo e cards
-        resultado_llm = await self.llm.resumir_perfil_usuario(dados_formatados)
+        resultado_llm = await self.llm.resumir_perfil_usuario(dados_formatados,
+            solicitado=evento.origem == OrigemEvento.USUARIO)
         resumo = resultado_llm.get("resumo")
         cards = resultado_llm.get("cards", [])
 

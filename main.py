@@ -283,6 +283,8 @@ app.include_router(agenda_router, prefix='/api/v1/agenda')
 app.include_router(tarefas_router, prefix='/api/v1/tarefas')
 app.include_router(calendario_router, prefix='/api/v1/calendario')
 app.include_router(mensagens_router, prefix='/api/v1/mensagens')
+from api.ia import router as ia_router
+app.include_router(ia_router, prefix='/api/v1/ia', tags=['IA'])
 
 if __name__ == "__main__":
     import uvicorn

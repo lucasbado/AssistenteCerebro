@@ -105,7 +105,7 @@ async def test_memoria_de_trabalho_isola_contatos(banco_teste, monkeypatch):
     publicar = AsyncMock()
     monkeypatch.setattr(kernel, 'publicar', publicar)
     agente = AgenteMemoriaTrabalho()
-    for nome, texto in [('Ana', 'Segredo da Ana'), ('Bia', 'Contexto da Bia')]:
+    for nome, texto in [('Ana', 'Segredo da Ana?'), ('Bia', 'Contexto da Bia?')]:
         await agente.processar(EventoCanonico(categoria=CategoriaEvento.NOTIFICACAO, origem=OrigemEvento.ANDROID,
             pacote='com.whatsapp', payload={'titulo': nome, 'texto': texto}))
     await asyncio.gather(*list(agente.timers.values()))

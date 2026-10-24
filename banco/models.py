@@ -5,6 +5,36 @@ from datetime import datetime, timezone
 Base = declarative_base()
 
 
+class ControleIADB(Base):
+    __tablename__ = 'controle_ia'
+    chave = Column(String(100), primary_key=True)
+    versao = Column(Integer, nullable=False, default=0)
+    dados = Column(JSON, nullable=False, default=dict)
+
+
+class UsoIADB(Base):
+    __tablename__ = 'uso_ia'
+    id = Column(String(36), primary_key=True)
+    criado_em = Column(DateTime(timezone=True), nullable=False, index=True)
+    provider = Column(String(30), nullable=False)
+    modelo = Column(String(150), nullable=False)
+    funcao = Column(String(40), nullable=False)
+    solicitado = Column(Integer, nullable=False)
+    entrada = Column(Integer, nullable=False)
+    saida = Column(Integer, nullable=False)
+    estimado = Column(Integer, nullable=False, default=1)
+    estado = Column(String(30), nullable=False)
+
+
+class CacheIADB(Base):
+    __tablename__ = 'cache_ia'
+    chave = Column(String(100), primary_key=True)
+    assinatura = Column(String(64), nullable=False, default='')
+    resultado = Column(JSON, nullable=True)
+    atualizado_em = Column(DateTime(timezone=True), nullable=True)
+    bloqueado_ate = Column(DateTime(timezone=True), nullable=False)
+
+
 class MensagemRevisaoDB(Base):
     __tablename__ = 'mensagens_revisao'
     id = Column(String(36), primary_key=True)

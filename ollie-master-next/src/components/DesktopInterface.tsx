@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import AgendaPanel, { type AgendaAction } from './AgendaPanel';
 import TasksPanel from './TasksPanel';
 import MessagesPanel from './MessagesPanel';
+import AiUsagePanel from './AiUsagePanel';
 import type { MessageAction } from '../messageActions';
 import type { TaskAction } from '../taskActions';
 import { Activity, ArrowUpRight, Check, ChevronRight, CircleAlert, Cpu, Database, MessageCircle, Mic, MicOff, Monitor,
@@ -153,7 +154,7 @@ export default function DesktopInterface(p: Props) {
           <section className="desktop-panel quick-actions"><div className="panel-heading"><Settings2 size={18} /><h2>Conexões do PC</h2></div><button className="action-row" onClick={p.onScan}><span><Monitor size={18} />Analisar aplicativos do PC</span><ChevronRight size={16} /></button><button className="action-row" onClick={p.onHardware}><span><Database size={18} />Reconectar controles de hardware</span><ChevronRight size={16} /></button><button className="action-row" onClick={p.onReconnect}><span><RefreshCw size={18} />Reconectar ao servidor</span><ChevronRight size={16} /></button></section>
         </div></div>}
 
-        {p.page === 'activity' && <section className="activity-panel"><div className="activity-heading"><div><Terminal size={18} /><strong>Registros desta sessão</strong></div><span>Últimos {p.logs.length} eventos</span></div>
+        {p.page === 'activity' && <section className="activity-panel"><AiUsagePanel /><div className="activity-heading"><div><Terminal size={18} /><strong>Registros desta sessão</strong></div><span>Últimos {p.logs.length} eventos</span></div>
           <div className="activity-log" ref={logScroll} onScroll={e => { const el = e.currentTarget; stickLog.current = el.scrollHeight - el.scrollTop - el.clientHeight < 70; }}>
             {p.logs.length === 0 && <p className="help-text">Os eventos de conexão e execução aparecerão aqui.</p>}{p.logs.map((log, i) => <div className={`activity-entry ${/red|orange/.test(log.c) ? 'entry-warning' : ''}`} key={`${log.t}-${i}`}><time>{log.t}</time><p>{log.m}</p></div>)}
           </div><p className="help-text activity-caption">Os registros técnicos ficam aqui. Suas mensagens estão em Conversa.</p></section>}
