@@ -8,6 +8,7 @@ Continuidade após perguntas e retomada da chamada: [turnos de voz e ilha](turno
 Interface do computador, navegação e estados: [revisão de UI/UX do PC](revisao-ui-desktop.md).
 Buscas, ações por etapa e janelas: [pedidos compostos e primeiro plano](pedidos-compostos-e-foco.md).
 Tom das conversas e retorno das ações: [personalidade e confirmações](personalidade-e-confirmacoes.md).
+Curiosidades, perguntas gerais e limites da IA: [conversa e perguntas](conversa-e-perguntas.md).
 Compromissos, sugestões de datas e despertador: [agenda da Ollie](agenda-e-despertador.md).
 Tarefas, pendências e cópias no calendário do celular: [tarefas e calendário](tarefas-e-calendario.md).
 Convites, perguntas e rascunhos ligados às rotinas: [ajuda com mensagens](assistencia-mensagens.md).

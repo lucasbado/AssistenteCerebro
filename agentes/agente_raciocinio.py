@@ -344,6 +344,9 @@ class AgenteRaciocinio:
 
     def _tentar_heuristica_local(self, texto: str) -> dict | None:
         if not texto: return None
+        from servicos.conversa import pedido_de_explicacao
+        if pedido_de_explicacao(texto):
+            return None
         t = texto.lower().strip()
         from servicos.plano_pedidos import interpretar_composto
         composto = interpretar_composto(texto)

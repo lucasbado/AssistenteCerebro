@@ -28,6 +28,11 @@ class AgenteReflexo:
             if pedido_mensagens(texto):
                 await kernel.publicar(evento.clonar(categoria=CategoriaEvento.MENSAGEM_SOLICITADA))
                 return
+            from servicos.conversa import pedido_de_explicacao
+            if pedido_de_explicacao(texto):
+                # Uma dúvida nova não preenche um rascunho pendente de tarefa/agenda.
+                await kernel.publicar(evento.clonar(acao=TipoAcao.EVENTO_COMPLEXO))
+                return
             from servicos.linguagem_tarefas import interpretar_tarefa, continua_tarefa
             from servicos.tarefas import tarefas
             contexto_tarefa = None
