@@ -7,8 +7,8 @@ import io
 logger = logging.getLogger("VoiceAPI")
 router = APIRouter()
 
-# Vozes recomendadas: pt-BR-FranciscaNeural (F), pt-BR-AntonioNeural (M), pt-BR-ThalitaNeural (F - Suave)
-DEFAULT_VOICE = "pt-BR-ThalitaNeural"
+# Nomes conferidos no catálogo público do Edge TTS.
+DEFAULT_VOICE = "pt-BR-ThalitaMultilingualNeural"
 
 @router.get("/speak")
 async def speak(text: str, voice: str = DEFAULT_VOICE, rate: float = 1.0, pitch: float = 1.0):
@@ -18,15 +18,17 @@ async def speak(text: str, voice: str = DEFAULT_VOICE, rate: float = 1.0, pitch:
     """
     if not text:
         raise HTTPException(status_code=400, detail="Texto não fornecido.")
+    if voice == "pt-BR-ThalitaNeural":
+        voice = DEFAULT_VOICE  # Compatibilidade com clientes anteriores.
     
     try:
         # Converte parâmetros numéricos para o formato do Edge TTS (ex: 1.2 -> "+20%")
-        rate_str = f"{int((rate - 1.0) * 100):+d}%"
-        pitch_str = f"{int((pitch - 1.0) * 100):+d}Hz" # O Edge aceita Hz ou % para pitch
+        rate_str = f"{round((rate - 1.0) * 100):+d}%"
+        pitch_str = f"{round((pitch - 1.0) * 100):+d}Hz"
         
         logger.info(f"🎙️ Gerando voz ({voice}): '{text[:30]}...' | Rate: {rate_str} | Pitch: {pitch_str}")
         
-        communicate = edge_tts.Communicate(text, voice, rate=rate_str)
+        communicate = edge_tts.Communicate(text, voice, rate=rate_str, pitch=pitch_str)
         
         audio_stream = io.BytesIO()
         async for chunk in communicate.stream():

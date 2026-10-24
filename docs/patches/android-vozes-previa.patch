@@ -1,0 +1,792 @@
+diff --git a/app/src/androidTest/java/com/example/assistentecell/VoicePickerTest.kt b/app/src/androidTest/java/com/example/assistentecell/VoicePickerTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/com/example/assistentecell/VoicePickerTest.kt
+@@ -0,0 +1,49 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.ui.theme.AssistenteCellTheme
++import androidx.test.platform.app.InstrumentationRegistry
++import android.graphics.Bitmap
++import java.io.File
++import androidx.compose.runtime.*
++import androidx.compose.ui.test.*
++import androidx.compose.ui.test.junit4.createAndroidComposeRule
++import androidx.activity.compose.setContent
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import com.example.assistentecell.ui.components.VoicePickerDialog
++import com.example.assistentecell.voice.*
++import org.junit.Assert.*
++import org.junit.Rule
++import org.junit.Test
++import org.junit.runner.RunWith
++
++@RunWith(AndroidJUnit4::class)
++class VoicePickerTest {
++    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
++
++    @Test fun previewUsesTappedVoiceWithoutChangingSelectionAndCanStop() {
++        var selected = VoiceCatalog.DEFAULT_ID
++        var requested: String? = null
++        var stopped = false
++        compose.activityRule.scenario.onActivity { activity ->
++          activity.setContent {
++            var preview by remember { mutableStateOf(VoicePreviewState()) }
++            AssistenteCellTheme(darkTheme = true, dynamicColor = false) {
++                VoicePickerDialog(VoiceCatalog.natural, selected, preview, { selected = it }, {
++                    requested = it; preview = VoicePreviewState(it, PreviewPhase.PREPARING, "Preparando a amostra…")
++                }, { stopped = true; preview = VoicePreviewState() }, {})
++            }
++        }
++        }
++        val francisca = "cloud:pt-BR-FranciscaNeural"
++        compose.onNodeWithTag("voice-preview-$francisca").performClick()
++        compose.runOnIdle { assertEquals(francisca, requested); assertEquals(VoiceCatalog.DEFAULT_ID, selected) }
++        compose.onNodeWithText("Preparando a amostra…").assertIsDisplayed()
++        compose.onNodeWithTag("voice-preview-$francisca").performClick()
++        compose.runOnIdle { assertTrue(stopped) }
++        val image = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
++        File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "voice-picker.png").outputStream().use {
++            image.compress(Bitmap.CompressFormat.PNG, 100, it)
++        }
++        image.recycle()
++    }
++}
+diff --git a/app/src/androidTest/java/com/example/assistentecell/VoicePlaybackTest.kt b/app/src/androidTest/java/com/example/assistentecell/VoicePlaybackTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/com/example/assistentecell/VoicePlaybackTest.kt
+@@ -0,0 +1,73 @@
++package com.example.assistentecell
++
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import androidx.test.platform.app.InstrumentationRegistry
++import com.example.assistentecell.api.RetrofitClient
++import com.example.assistentecell.voice.*
++import android.os.SystemClock
++import org.junit.Assert.*
++import org.junit.Assume.assumeNotNull
++import org.junit.Test
++import org.junit.runner.RunWith
++
++@RunWith(AndroidJUnit4::class)
++class VoicePlaybackTest {
++    private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
++
++    private fun manager(): VoiceManager {
++        lateinit var result: VoiceManager
++        instrumentation.runOnMainSync {
++            RetrofitClient.init(instrumentation.targetContext)
++            result = VoiceManager(instrumentation.targetContext)
++        }
++        return result
++    }
++
++    private fun checkPlayback(manager: VoiceManager, id: String) {
++        val prefs = instrumentation.targetContext.getSharedPreferences("sistema_prefs", 0)
++        val before = prefs.getString("selected_voice", "")
++        instrumentation.runOnMainSync { manager.previewVoice(id) }
++        var heard = false
++        val deadline = SystemClock.elapsedRealtime() + 32000
++        var state: VoicePreviewState
++        do {
++            state = manager.previewState.value
++            heard = heard || state.phase == PreviewPhase.PLAYING
++            if(state.phase in listOf(PreviewPhase.DONE, PreviewPhase.ERROR)) break
++            SystemClock.sleep(25)
++        } while(SystemClock.elapsedRealtime() < deadline)
++        assertEquals("Amostra não concluída: ${state.message}", PreviewPhase.DONE, state.phase)
++        assertTrue("Não houve início de reprodução", heard)
++        assertEquals(id, state.voiceId)
++        assertEquals("Ouvir não pode salvar outra voz", before, prefs.getString("selected_voice", ""))
++    }
++
++    @Test fun namedCloudPreviewPlaysWithoutChangingSavedVoice() {
++        val manager = manager()
++        try { checkPlayback(manager, "cloud:pt-BR-FranciscaNeural") }
++        finally { instrumentation.runOnMainSync { manager.shutdown() } }
++    }
++
++    @Test fun installedLocalVoicePlaysThroughLocalEngine() {
++        val manager = manager()
++        try {
++            val deadline = SystemClock.elapsedRealtime() + 6000
++            while(manager.availableVoices.value.none { it.localName != null } && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(50)
++            val voice = manager.availableVoices.value.firstOrNull { it.localName != null && it.description.contains("sem internet") }
++            assumeNotNull(voice)
++            checkPlayback(manager, voice!!.id)
++        } finally { instrumentation.runOnMainSync { manager.shutdown() } }
++    }
++
++    @Test fun stoppingPreviewPreventsLatePlayback() {
++        val manager = manager()
++        try {
++            instrumentation.runOnMainSync {
++                manager.previewVoice("cloud:pt-BR-AntonioNeural")
++                manager.stopPreview()
++            }
++            SystemClock.sleep(1200)
++            assertEquals(PreviewPhase.IDLE, manager.previewState.value.phase)
++        } finally { instrumentation.runOnMainSync { manager.shutdown() } }
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/network/BackendVoiceTransport.kt b/app/src/main/java/com/example/assistentecell/network/BackendVoiceTransport.kt
+--- a/app/src/main/java/com/example/assistentecell/network/BackendVoiceTransport.kt
++++ b/app/src/main/java/com/example/assistentecell/network/BackendVoiceTransport.kt
+@@ -8,11 +8,12 @@
+ 
+ /** Usa o mesmo cliente autenticado do chat, sem colocar credenciais na URL do áudio. */
+ class BackendVoiceTransport(private val client: OkHttpClient, private val baseUrl: () -> String) {
+-    fun download(text: String, rate: Float, pitch: Float, destination: File) {
++    fun download(text: String, rate: Float, pitch: Float, destination: File, voice: String? = null) {
+         val url = baseUrl().toHttpUrl().newBuilder()
+             .addPathSegments("api/v1/voice/speak")
+             .addQueryParameter("text", text).addQueryParameter("rate", rate.toString())
+-            .addQueryParameter("pitch", pitch.toString()).build()
++            .addQueryParameter("pitch", pitch.toString())
++            .apply { if(voice != null) addQueryParameter("voice", voice) }.build()
+         client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+             if (!response.isSuccessful) throw IOException("Voz recusada: HTTP ${response.code}")
+             val body = response.body ?: throw IOException("Áudio ausente")
+diff --git a/app/src/main/java/com/example/assistentecell/ui/components/VoicePickerDialog.kt b/app/src/main/java/com/example/assistentecell/ui/components/VoicePickerDialog.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/ui/components/VoicePickerDialog.kt
+@@ -0,0 +1,61 @@
++package com.example.assistentecell.ui.components
++
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.items
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.outlined.PlayArrow
++import androidx.compose.material.icons.outlined.Stop
++import androidx.compose.material3.*
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.platform.testTag
++import androidx.compose.ui.unit.dp
++import com.example.assistentecell.voice.*
++
++@Composable
++fun VoicePickerDialog(voices: List<OllieVoice>, selected: String, preview: VoicePreviewState,
++    onSelect: (String) -> Unit, onPreview: (String) -> Unit, onStop: () -> Unit, onDismiss: () -> Unit) {
++    AlertDialog(onDismissRequest = onDismiss, title = { Text("Escolha a voz da Ollie") }, text = {
++        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
++            Text("Toque em Ouvir para comparar. A amostra usa o volume de mídia e não muda sua escolha.")
++            if(voices.none { it.id == selected }) Text("A voz salva não está disponível. Escolha outra opção.", color = MaterialTheme.colorScheme.error)
++            LazyColumn(Modifier.heightIn(max = 390.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                for((natural, title) in listOf(true to "Vozes naturais", false to "Vozes do celular")) {
++                    val group = voices.filter { (it.cloudName != null) == natural }
++                    item { Text(title, style = MaterialTheme.typography.titleSmall) }
++                    if(group.isEmpty()) item { Text("As vozes do celular ainda não estão disponíveis. Confira os dados de voz nas configurações do Android.") }
++                    items(group, key = { it.id }) { voice ->
++                        val chosen = voice.id == selected
++                        val active = preview.voiceId == voice.id && preview.phase in listOf(PreviewPhase.PREPARING, PreviewPhase.PLAYING)
++                        Surface(onClick = { onSelect(voice.id) }, modifier = Modifier.fillMaxWidth().testTag("voice-select-${voice.id}"),
++                            shape = RoundedCornerShape(12.dp), color = if(chosen) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .5f) else Color.Transparent) {
++                            Column(Modifier.padding(10.dp)) {
++                                Row(verticalAlignment = Alignment.CenterVertically) {
++                                    RadioButton(selected = chosen, onClick = { onSelect(voice.id) })
++                                    Column(Modifier.weight(1f)) {
++                                        Text(voice.label, style = MaterialTheme.typography.titleMedium)
++                                        Text(voice.description, style = MaterialTheme.typography.bodySmall)
++                                        if(chosen) Text("Voz escolhida", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
++                                    }
++                                    TextButton(modifier = Modifier.testTag("voice-preview-${voice.id}"), onClick = { if(active) onStop() else onPreview(voice.id) }) {
++                                        Icon(if(active) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
++                                        Text(if(active) "Parar" else "Ouvir")
++                                    }
++                                }
++                                if(preview.voiceId == voice.id && preview.message.isNotEmpty()) {
++                                    if(preview.phase == PreviewPhase.PREPARING) LinearProgressIndicator(Modifier.fillMaxWidth())
++                                    Text(preview.message, style = MaterialTheme.typography.bodySmall,
++                                        color = if(preview.phase == PreviewPhase.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Pronto") } })
++}
+diff --git a/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt b/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt
+--- a/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt
+@@ -35,6 +35,8 @@
+     
+     val isVoiceEnabled by chatViewModel.isVoiceEnabled.collectAsState()
+     val selectedVoice by chatViewModel.selectedVoice.collectAsState()
++    val voiceOptions by chatViewModel.availableVoices.collectAsState()
++    val voicePreview by chatViewModel.voicePreview.collectAsState()
+     val voiceRate by chatViewModel.voiceRate.collectAsState()
+     val voicePitch by chatViewModel.voicePitch.collectAsState()
+     val isWakeWordEnabled by chatViewModel.isWakeWordEnabled.collectAsState()
+@@ -127,72 +129,14 @@
+     var showVoiceDialog by remember { mutableStateOf(false) }
+ 
+     if (showVoiceDialog) {
+-        val voices = chatViewModel.getAvailableVoices()
+-        AlertDialog(
+-            onDismissRequest = { showVoiceDialog = false },
+-            title = { 
+-                Text("Voz da Ollie", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+-            },
+-            text = {
+-                if (voices.isEmpty()) {
+-                    Text("Nenhuma voz disponível no momento. Verifique se os dados de voz do Google estão instalados.")
+-                } else {
+-                    LazyColumn(
+-                        modifier = Modifier.heightIn(max = 400.dp),
+-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+-                    ) {
+-                        items(voices) { voice ->
+-                            val isSelected = selectedVoice == voice.name
+-                            val friendlyName = chatViewModel.getFriendlyVoiceName(voice.name)
+-                            
+-                            Surface(
+-                                modifier = Modifier.fillMaxWidth(),
+-                                shape = RoundedCornerShape(12.dp),
+-                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else Color.Transparent,
+-                                border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+-                                onClick = { chatViewModel.setVoice(voice.name) }
+-                            ) {
+-                                Row(
+-                                    modifier = Modifier.padding(12.dp),
+-                                    verticalAlignment = Alignment.CenterVertically
+-                                ) {
+-                                    RadioButton(
+-                                        selected = isSelected,
+-                                        onClick = { chatViewModel.setVoice(voice.name) }
+-                                    )
+-                                    Spacer(Modifier.width(12.dp))
+-                                    Column(modifier = Modifier.weight(1f)) {
+-                                        Text(
+-                                            text = friendlyName,
+-                                            style = MaterialTheme.typography.bodyLarge,
+-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+-                                        )
+-                                        if (isSelected) {
+-                                            Text(
+-                                                "Voz Selecionada",
+-                                                style = MaterialTheme.typography.labelSmall,
+-                                                color = MaterialTheme.colorScheme.primary
+-                                            )
+-                                        }
+-                                    }
+-                                    IconButton(
+-                                        onClick = { chatViewModel.previewVoice(voice.name) },
+-                                        colors = IconButtonDefaults.iconButtonColors(
+-                                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+-                                        )
+-                                    ) {
+-                                        Icon(Icons.Outlined.PlayArrow, "Preview", tint = MaterialTheme.colorScheme.primary)
+-                                    }
+-                                }
+-                            }
+-                        }
+-                    }
+-                }
+-            },
+-            confirmButton = {
+-                Button(onClick = { showVoiceDialog = false }) { Text("Pronto") }
+-            }
+-        )
++        DisposableEffect(Unit) {
++            chatViewModel.refreshVoices()
++            onDispose { chatViewModel.stopVoicePreview() }
++        }
++        com.example.assistentecell.ui.components.VoicePickerDialog(
++            voices = voiceOptions, selected = selectedVoice, preview = voicePreview,
++            onSelect = chatViewModel::setVoice, onPreview = chatViewModel::previewVoice,
++            onStop = chatViewModel::stopVoicePreview, onDismiss = { showVoiceDialog = false })
+     }
+ 
+     if (showIpDialog) {
+@@ -444,7 +388,7 @@
+                 SettingsGroupCard(title = "Voz e Inteligência") {
+                     SettingItemNew(
+                         title = "Voz da Ollie",
+-                        subtitle = if (isVoiceEnabled) "Respostas em áudio ligadas" else "Falar respostas automaticamente",
++                        subtitle = (voiceOptions.find { it.id == selectedVoice }?.label ?: "Escolha uma voz") + if(isVoiceEnabled) " · respostas em áudio ligadas" else " · ouvir e escolher",
+                         icon = Icons.Outlined.RecordVoiceOver,
+                         showSwitch = true,
+                         checked = isVoiceEnabled,
+@@ -456,7 +400,7 @@
+                         Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                             Text("Velocidade: ${"%.1f".format(voiceRate)}x", style = MaterialTheme.typography.labelMedium)
+                             Slider(value = voiceRate, onValueChange = { chatViewModel.setVoiceRate(it) }, valueRange = 0.5f..2.0f, steps = 14)
+-                            Text("Tom (Pitch): ${"%.1f".format(voicePitch)}x", style = MaterialTheme.typography.labelMedium)
++                            Text("Tom da voz: ${"%.1f".format(voicePitch)}x", style = MaterialTheme.typography.labelMedium)
+                             Slider(value = voicePitch, onValueChange = { chatViewModel.setVoicePitch(it) }, valueRange = 0.5f..2.0f, steps = 14)
+                         }
+                     }
+diff --git a/app/src/main/java/com/example/assistentecell/ui/viewmodel/ChatViewModel.kt b/app/src/main/java/com/example/assistentecell/ui/viewmodel/ChatViewModel.kt
+--- a/app/src/main/java/com/example/assistentecell/ui/viewmodel/ChatViewModel.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/viewmodel/ChatViewModel.kt
+@@ -37,7 +37,7 @@
+     private val _isVoiceEnabled = MutableStateFlow(prefs.getBoolean("voice_active", false))
+     val isVoiceEnabled: StateFlow<Boolean> = _isVoiceEnabled.asStateFlow()
+ 
+-    private val _selectedVoice = MutableStateFlow(prefs.getString("selected_voice", "") ?: "")
++    private val _selectedVoice = MutableStateFlow(com.example.assistentecell.voice.VoiceCatalog.selectedId(prefs.getString("selected_voice", "")))
+     val selectedVoice: StateFlow<String> = _selectedVoice.asStateFlow()
+ 
+     private val _voiceRate = MutableStateFlow(prefs.getFloat("voice_rate", 1.0f))
+@@ -135,10 +135,14 @@
+         _isListening.value = false
+     }
+ 
+-    fun getAvailableVoices() = voiceManager.getAvailableVoices()
++    val availableVoices = voiceManager.availableVoices
++    val voicePreview = voiceManager.previewState
++    fun refreshVoices() = voiceManager.refreshAvailableVoices()
++    fun stopVoicePreview() = voiceManager.stopPreview()
+ 
+     fun setVoice(voiceName: String) {
+-        voiceManager.setVoice(voiceName)
++        if(!voiceManager.setVoice(voiceName)) return
++        voiceManager.stopPreview()
+         _selectedVoice.value = voiceName
+         prefs.edit { putString("selected_voice", voiceName) }
+     }
+@@ -153,7 +157,13 @@
+         prefs.edit { putFloat("voice_pitch", pitch) }
+     }
+ 
+-    fun previewVoice(voiceName: String) = voiceManager.speak("Olá, eu sou a Ollie.")
++    fun previewVoice(voiceName: String) {
++        if(ChatBridge.isAssistantSessionBusy.value) {
++            voiceManager.previewUnavailable(voiceName, "Termine a conversa por voz antes de ouvir a amostra.")
++            return
++        }
++        voiceManager.previewVoice(voiceName)
++    }
+ 
+     fun getFriendlyVoiceName(voiceName: String) = voiceManager.getFriendlyName(voiceName)
+ 
+diff --git a/app/src/main/java/com/example/assistentecell/voice/VoiceCatalog.kt b/app/src/main/java/com/example/assistentecell/voice/VoiceCatalog.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/voice/VoiceCatalog.kt
+@@ -0,0 +1,32 @@
++package com.example.assistentecell.voice
++
++data class LocalVoiceInfo(val name: String, val country: String, val network: Boolean)
++
++data class OllieVoice(val id: String, val label: String, val description: String,
++    val cloudName: String? = null, val localName: String? = null)
++
++enum class PreviewPhase { IDLE, PREPARING, PLAYING, DONE, ERROR }
++data class VoicePreviewState(val voiceId: String? = null, val phase: PreviewPhase = PreviewPhase.IDLE,
++    val message: String = "")
++
++object VoiceCatalog {
++    const val DEFAULT_ID = "cloud:pt-BR-ThalitaMultilingualNeural"
++    val natural = listOf(
++        OllieVoice(DEFAULT_ID, "Thalita", "Português do Brasil · feminina · precisa de internet", cloudName = "pt-BR-ThalitaMultilingualNeural"),
++        OllieVoice("cloud:pt-BR-FranciscaNeural", "Francisca", "Português do Brasil · feminina · precisa de internet", cloudName = "pt-BR-FranciscaNeural"),
++        OllieVoice("cloud:pt-BR-AntonioNeural", "Antônio", "Português do Brasil · masculina · precisa de internet", cloudName = "pt-BR-AntonioNeural")
++    )
++
++    fun selectedId(saved: String?): String = when(saved) {
++        null, "", "pt-BR-ThalitaNeural", "cloud:pt-BR-ThalitaNeural" -> DEFAULT_ID
++        else -> natural.firstOrNull { it.cloudName == saved }?.id ?: saved
++    }
++
++    fun options(local: List<LocalVoiceInfo>): List<OllieVoice> = natural +
++        local.distinctBy { it.name }.sortedWith(compareBy<LocalVoiceInfo> { it.country != "BR" }.thenBy { it.name })
++            .mapIndexed { index, voice ->
++                val region = when(voice.country) { "BR" -> "Português do Brasil"; "PT" -> "Português de Portugal"; else -> "Português" }
++                OllieVoice(voice.name, "Voz do celular ${index + 1}", region + " · " +
++                    if(voice.network) "precisa de internet" else "funciona sem internet", localName = voice.name)
++            }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/voice/VoiceManager.kt b/app/src/main/java/com/example/assistentecell/voice/VoiceManager.kt
+--- a/app/src/main/java/com/example/assistentecell/voice/VoiceManager.kt
++++ b/app/src/main/java/com/example/assistentecell/voice/VoiceManager.kt
+@@ -17,6 +17,10 @@
+ import java.io.File
+ import com.example.assistentecell.network.BackendVoiceTransport
+ import java.util.Locale
++import kotlin.coroutines.resume
++import kotlin.coroutines.resumeWithException
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.asStateFlow
+ 
+ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
+     companion object { private var listeningOwner: VoiceManager? = null }
+@@ -33,6 +37,12 @@
+     private val voiceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+     private var cloudJob: Job? = null
+     private var cloudAudioFile: File? = null
++
++    private var speechGeneration = 0
++    private val _availableVoices = MutableStateFlow(VoiceCatalog.options(emptyList()))
++    val availableVoices = _availableVoices.asStateFlow()
++    private val _previewState = MutableStateFlow(VoicePreviewState())
++    val previewState = _previewState.asStateFlow()
+ 
+     override fun onInit(status: Int) {
+         Log.d("VoiceManager", "INIT TTS - Status: $status")
+@@ -56,11 +66,7 @@
+                     .build()
+                 tts?.setAudioAttributes(attrs)
+ 
+-                val prefs = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
+-                val savedVoice = prefs.getString("selected_voice", "")
+-                if (!savedVoice.isNullOrEmpty()) {
+-                    setVoice(savedVoice)
+-                }
++                refreshAvailableVoices()
+             }
+         }
+         ttsInitialized.complete(isTtsReady)
+@@ -68,113 +74,157 @@
+ 
+     fun speak(text: String, interactive: Boolean = false, onComplete: (() -> Unit)? = null) {
+         if (Looper.myLooper() != Looper.getMainLooper()) {
+-            Handler(Looper.getMainLooper()).post { speak(text, interactive, onComplete) }
++            Handler(Looper.getMainLooper()).post { speak(text, interactive, onComplete) }; return
++        }
++        val prefs = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
++        if (!interactive && prefs.getBoolean("focus_mode_active", false)) { onComplete?.invoke(); return }
++        val selected = VoiceCatalog.selectedId(prefs.getString("selected_voice", ""))
++        val option = availableVoices.value.find { it.id == selected }
++            ?: OllieVoice(selected, "Voz do celular", "", localName = selected)
++        beginPlayback(text, option, false, onComplete)
++    }
++
++    fun previewVoice(id: String) {
++        if (Looper.myLooper() != Looper.getMainLooper()) {
++            Handler(Looper.getMainLooper()).post { previewVoice(id) }; return
++        }
++        val option = availableVoices.value.find { it.id == id }
++        if (option == null) {
++            _previewState.value = VoicePreviewState(id, PreviewPhase.ERROR, "Essa voz não está disponível. Escolha outra opção.")
+             return
+         }
++        beginPlayback("Oi! Eu sou a Ollie. Esta é uma amostra da voz ${option.label}. Como posso te ajudar?", option, true, null)
++    }
++
++    fun previewUnavailable(id: String, message: String) {
++        stopPreview()
++        _previewState.value = VoicePreviewState(id, PreviewPhase.ERROR, message)
++    }
++
++    fun stopPreview() {
++        if (_previewState.value.phase in listOf(PreviewPhase.PREPARING, PreviewPhase.PLAYING)) stopSpeaking()
++        else _previewState.value = VoicePreviewState()
++    }
++
++    private fun beginPlayback(text: String, option: OllieVoice, preview: Boolean, onComplete: (() -> Unit)?) {
++        stopSpeaking()
++        stopListening()
++        val generation = speechGeneration
+         val prefs = context.getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE)
+-        
+-        // 🛡️ MODO FOCO: Se estiver ativo, a Ollie fica em silêncio absoluto
+-        if (!interactive && prefs.getBoolean("focus_mode_active", false)) {
+-            Log.d("VoiceManager", "🔇 Modo Foco Ativo: Silenciando fala")
+-            onComplete?.invoke()
+-            return
+-        }
+-
+-        val rate = prefs.getFloat("voice_rate", 1.0f)
+-        val pitch = prefs.getFloat("voice_pitch", 1.0f)
+-        
+-        Log.d("VoiceManager", "📢 Solicitando fala: $text (Rate: $rate, Pitch: $pitch)")
+-        // Tenta falar via Nuvem (Edge TTS) para maior qualidade
+-        stopListening()
++        val rate = prefs.getFloat("voice_rate", 1f).coerceIn(.5f, 2f)
++        val pitch = prefs.getFloat("voice_pitch", 1f).coerceIn(.5f, 2f)
++        if (preview) _previewState.value = VoicePreviewState(option.id, PreviewPhase.PREPARING, "Preparando a amostra…")
+         VoiceActivity.setBusy("$ownerId.speak", true)
+-        speakCloud(text, rate, pitch) {
+-            VoiceActivity.setBusy("$ownerId.speak", false)
+-            onComplete?.invoke()
+-        }
+-    }
+-
+-    private fun speakCloud(text: String, rate: Float, pitch: Float, onComplete: (() -> Unit)?) {
+-        cloudJob?.cancel()
+-        mediaPlayer?.release()
+-        mediaPlayer = null
+-        cloudAudioFile?.delete()
+-        cloudAudioFile = null
+         cloudJob = voiceScope.launch {
+-            val audioFile = File.createTempFile("ollie-voice-", ".mp3", context.cacheDir)
+             try {
+-                withContext(Dispatchers.IO) {
+-                    val client = RetrofitClient.backendHttpClient.newBuilder()
+-                        .callTimeout(6, java.util.concurrent.TimeUnit.SECONDS).build()
+-                    BackendVoiceTransport(client) { RetrofitClient.getBaseUrl() }
+-                        .download(text, rate, pitch, audioFile)
+-                }
+-                cloudAudioFile = audioFile
+-                mediaPlayer = MediaPlayer().apply {
+-                    setAudioAttributes(AudioAttributes.Builder()
+-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+-                        .setUsage(AudioAttributes.USAGE_ASSISTANT).build())
+-                    setDataSource(audioFile.absolutePath)
+-                    setOnPreparedListener { Log.d("VoiceManager", "Cloud playback started"); it.start() }
+-                    setOnCompletionListener {
+-                        it.release()
+-                        if (mediaPlayer === it) mediaPlayer = null
+-                        audioFile.delete()
+-                        Log.d("VoiceManager", "Cloud playback completed")
+-                        onComplete?.invoke()
++                withTimeout(if(preview) 30000L else 180000L) {
++                    if(option.cloudName != null) {
++                        try { playCloud(text, option, rate, pitch, generation, preview) }
++                        catch(e: CancellationException) { throw e }
++                        catch(e: Exception) {
++                            if(preview) throw e // Não tocar outra voz como se fosse a escolhida.
++                            Log.w("VoiceManager", "Voz da internet indisponível; usando voz do celular.")
++                            playLocal(text, null, rate, pitch, generation, preview)
++                        }
++                    } else playLocal(text, option.localName, rate, pitch, generation, preview)
++                }
++                if(generation == speechGeneration && preview)
++                    _previewState.value = VoicePreviewState(option.id, PreviewPhase.DONE, "Amostra concluída. Você pode ouvir outra voz.")
++            } catch(e: CancellationException) {
++                if(e is TimeoutCancellationException && generation == speechGeneration && preview)
++                    _previewState.value = VoicePreviewState(option.id, PreviewPhase.ERROR, "A amostra demorou demais. Confira a conexão e tente novamente.")
++                else throw e
++            } catch(e: Exception) {
++                Log.w("VoiceManager", "Falha na reprodução de voz: ${e.javaClass.simpleName}")
++                if(generation == speechGeneration && preview) {
++                    val message = if(option.cloudName != null)
++                        "Não consegui tocar essa voz. Confira a internet e a conexão com o servidor."
++                        else "Não consegui tocar essa voz do celular. Confira se os dados de voz estão instalados."
++                    _previewState.value = VoicePreviewState(option.id, PreviewPhase.ERROR, message)
++                }
++            } finally {
++                if(generation == speechGeneration) {
++                    releaseAudio()
++                    tts?.stop()
++                    VoiceActivity.setBusy("$ownerId.speak", false)
++                    onComplete?.invoke()
++                }
++            }
++        }
++    }
++
++    private fun audioAttributes(preview: Boolean) = AudioAttributes.Builder()
++        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
++        .setUsage(if(preview) AudioAttributes.USAGE_MEDIA else AudioAttributes.USAGE_ASSISTANT).build()
++
++    private fun started(generation: Int, preview: Boolean, source: String) {
++        if(generation != speechGeneration) return
++        Log.d("VoiceManager", "${if(preview) "Preview" else "Voice"} playback started: $source")
++        if(preview) _previewState.value = _previewState.value.copy(phase = PreviewPhase.PLAYING, message = "Tocando amostra…")
++    }
++
++    private suspend fun playCloud(text: String, option: OllieVoice, rate: Float, pitch: Float, generation: Int, preview: Boolean) {
++        val file = File.createTempFile("ollie-voice-", ".mp3", context.cacheDir)
++        cloudAudioFile = file
++        try {
++            withContext(Dispatchers.IO) {
++                val client = RetrofitClient.backendHttpClient.newBuilder()
++                    .callTimeout(if(preview) 15L else 6L, java.util.concurrent.TimeUnit.SECONDS).build()
++                BackendVoiceTransport(client) { RetrofitClient.getBaseUrl() }.download(text, rate, pitch, file, option.cloudName)
++            }
++            currentCoroutineContext().ensureActive()
++            suspendCancellableCoroutine<Unit> { continuation ->
++                val player = MediaPlayer()
++                mediaPlayer = player
++                player.setAudioAttributes(audioAttributes(preview))
++                player.setDataSource(file.absolutePath)
++                player.setOnPreparedListener {
++                    if(continuation.isActive && generation == speechGeneration) {
++                        started(generation, preview, option.id); it.start()
+                     }
+-                    setOnErrorListener { player, _, _ ->
+-                        player.release()
+-                        if (mediaPlayer === player) mediaPlayer = null
+-                        audioFile.delete()
+-                        speakLocal(text, rate, pitch, onComplete)
+-                        true
+-                    }
+-                    prepareAsync()
+-                }
+-            } catch (e: CancellationException) {
+-                audioFile.delete()
+-                throw e
+-            } catch (_: Exception) {
+-                audioFile.delete()
+-                speakLocal(text, rate, pitch, onComplete)
+-            }
+-        }
+-    }
+-
+-    private fun speakLocal(text: String, rate: Float, pitch: Float, onComplete: (() -> Unit)?) {
+-        if (!ttsInitialized.isCompleted) {
+-            cloudJob = voiceScope.launch {
+-                withTimeoutOrNull(2000) { ttsInitialized.await() }
+-                if (ttsInitialized.isCompleted) speakLocal(text, rate, pitch, onComplete)
+-                else onComplete?.invoke()
+-            }
+-            return
+-        }
+-        Log.d("VoiceManager", "🏠 Usando TTS Local (Ready: $isTtsReady)")
+-        if (isTtsReady) {
+-            tts?.setSpeechRate(rate)
+-            tts?.setPitch(pitch)
+-            
+-            val params = Bundle()
+-            params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "msg_id")
+-            
+-            tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+-                override fun onStart(utteranceId: String?) { Log.d("VoiceManager", "Local playback started") }
+-                override fun onDone(utteranceId: String?) {
+-                    Handler(Looper.getMainLooper()).post { onComplete?.invoke() }
+-                }
+-                override fun onError(utteranceId: String?) {
+-                    Handler(Looper.getMainLooper()).post { onComplete?.invoke() }
++                }
++                player.setOnCompletionListener { if(continuation.isActive) continuation.resume(Unit) }
++                player.setOnErrorListener { _, _, _ ->
++                    if(continuation.isActive) continuation.resumeWithException(java.io.IOException("Falha no áudio da internet"))
++                    true
++                }
++                continuation.invokeOnCancellation { Handler(Looper.getMainLooper()).post { runCatching { player.release() } } }
++                player.prepareAsync()
++            }
++        } finally {
++            if(generation == speechGeneration) releaseAudio()
++            file.delete()
++        }
++    }
++
++    private suspend fun playLocal(text: String, name: String?, rate: Float, pitch: Float, generation: Int, preview: Boolean) {
++        if(!withTimeout(4000) { ttsInitialized.await() }) throw java.io.IOException("TTS indisponível")
++        val engine = tts ?: throw java.io.IOException("TTS indisponível")
++        if(name != null) {
++            val voice = engine.voices?.find { it.name == name } ?: throw java.io.IOException("Voz não instalada")
++            if(engine.setVoice(voice) != TextToSpeech.SUCCESS) throw java.io.IOException("Voz indisponível")
++        } else engine.language = Locale("pt", "BR")
++        engine.setAudioAttributes(audioAttributes(preview))
++        engine.setSpeechRate(rate); engine.setPitch(pitch)
++        val utterance = "$ownerId.$generation"
++        suspendCancellableCoroutine<Unit> { continuation ->
++            engine.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
++                override fun onStart(id: String?) { if(id == utterance) Handler(Looper.getMainLooper()).post { started(generation, preview, name ?: "local") } }
++                override fun onDone(id: String?) { if(id == utterance && continuation.isActive) continuation.resume(Unit) }
++                override fun onError(id: String?) {
++                    if(id == utterance && continuation.isActive) continuation.resumeWithException(java.io.IOException("Falha no TTS do celular"))
+                 }
+             })
+-            
+-            val result = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "msg_id")
+-            if (result != TextToSpeech.SUCCESS) onComplete?.invoke()
+-            Log.d("VoiceManager", "🎙️ Resultado TTS Local: $result")
+-        } else {
+-            onComplete?.invoke()
+-        }
+-    }
++            if(engine.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), utterance) != TextToSpeech.SUCCESS && continuation.isActive)
++                continuation.resumeWithException(java.io.IOException("TTS recusou o texto"))
++        }
++    }
++
++    private fun releaseAudio() {
++        mediaPlayer?.let { runCatching { it.release() } }; mediaPlayer = null
++        cloudAudioFile?.delete(); cloudAudioFile = null
++    }
++
+ 
+     fun startListening(onPartial: ((String) -> Unit)? = null,
+                        onError: ((String) -> Unit)? = null,
+@@ -281,25 +331,27 @@
+     }
+ 
+     fun stopSpeaking() {
++        speechGeneration++
+         cloudJob?.cancel(); cloudJob = null
+-        mediaPlayer?.release(); mediaPlayer = null
+-        cloudAudioFile?.delete(); cloudAudioFile = null
++        releaseAudio()
+         tts?.stop()
++        _previewState.value = VoicePreviewState()
+         VoiceActivity.setBusy("$ownerId.speak", false)
+     }
+ 
+-    fun getAvailableVoices() = tts?.voices?.filter { it.locale.language == "pt" }?.toList() ?: emptyList()
+-
+-    fun setVoice(voiceName: String) {
+-        val voice = tts?.voices?.find { it.name == voiceName }
+-        if (voice != null) {
+-            tts?.voice = voice
+-        }
+-    }
+-
+-    fun getFriendlyName(voiceName: String): String {
+-        return voiceName.replace("pt-br-x-", "").replace("-local", "").uppercase()
+-    }
++    fun refreshAvailableVoices() {
++        val local = runCatching { tts?.voices.orEmpty().filter {
++            it.locale.language == "pt" && !it.features.orEmpty().contains("notInstalled")
++        }.map { LocalVoiceInfo(it.name, it.locale.country, it.isNetworkConnectionRequired) } }.getOrDefault(emptyList())
++        _availableVoices.value = VoiceCatalog.options(local)
++    }
++
++    fun getAvailableVoices() = availableVoices.value
++
++    fun setVoice(voiceName: String): Boolean = availableVoices.value.any { it.id == VoiceCatalog.selectedId(voiceName) }
++
++    fun getFriendlyName(voiceName: String): String = availableVoices.value
++        .find { it.id == VoiceCatalog.selectedId(voiceName) }?.label ?: "Escolha uma voz"
+ 
+     fun shutdown() {
+         stopSpeaking()
+diff --git a/app/src/test/java/com/example/assistentecell/BackendVoiceTransportTest.kt b/app/src/test/java/com/example/assistentecell/BackendVoiceTransportTest.kt
+--- a/app/src/test/java/com/example/assistentecell/BackendVoiceTransportTest.kt
++++ b/app/src/test/java/com/example/assistentecell/BackendVoiceTransportTest.kt
+@@ -22,9 +22,10 @@
+             }.build()
+         val file = File.createTempFile("voice-test", ".mp3")
+         try {
+-            BackendVoiceTransport(client) { "https://example.test/" }.download("Luz apagada & pronto", 1f, 1f, file)
++            BackendVoiceTransport(client) { "https://example.test/" }.download("Luz apagada & pronto", 1f, 1f, file, "pt-BR-AntonioNeural")
+             assertEquals("Bearer test-token", received!!.header("Authorization"))
+             assertEquals("Luz apagada & pronto", received!!.url.queryParameter("text"))
++            assertEquals("pt-BR-AntonioNeural", received!!.url.queryParameter("voice"))
+             assertFalse(received!!.url.toString().contains("test-token"))
+             assertArrayEquals(byteArrayOf(1, 2, 3), file.readBytes())
+         } finally { file.delete(); client.dispatcher.executorService.shutdownNow() }
+diff --git a/app/src/test/java/com/example/assistentecell/VoiceCatalogTest.kt b/app/src/test/java/com/example/assistentecell/VoiceCatalogTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/com/example/assistentecell/VoiceCatalogTest.kt
+@@ -0,0 +1,26 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.voice.*
++import org.junit.Assert.*
++import org.junit.Test
++
++class VoiceCatalogTest {
++    @Test fun namesAreReadableAndIdentifiersRemainStable() {
++        val local = listOf(LocalVoiceInfo("pt-pt-x-abc-network", "PT", true), LocalVoiceInfo("pt-br-x-xyz-local", "BR", false))
++        val options = VoiceCatalog.options(local)
++        assertEquals(options, VoiceCatalog.options(local.reversed()))
++        assertEquals(listOf("Thalita", "Francisca", "Antônio"), options.take(3).map { it.label })
++        assertEquals("Voz do celular 1", options[3].label)
++        assertEquals("pt-br-x-xyz-local", options[3].id)
++        assertTrue(options[3].description.contains("sem internet"))
++        assertTrue(options[4].description.contains("Portugal"))
++        assertEquals("pt-br-x-xyz-local", VoiceCatalog.selectedId("pt-br-x-xyz-local"))
++    }
++
++    @Test fun defaultAndLegacyCloudNamesResolveToActualCatalog() {
++        assertEquals(VoiceCatalog.DEFAULT_ID, VoiceCatalog.selectedId(""))
++        assertEquals(VoiceCatalog.DEFAULT_ID, VoiceCatalog.selectedId("pt-BR-ThalitaNeural"))
++        assertEquals("cloud:pt-BR-FranciscaNeural", VoiceCatalog.selectedId("pt-BR-FranciscaNeural"))
++        assertEquals(3, VoiceCatalog.options(emptyList()).size)
++    }
++}

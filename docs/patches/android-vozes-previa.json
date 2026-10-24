@@ -1,0 +1,55 @@
+{
+  "base": "Arquivos locais posteriores a android-assistencia-mensagens.patch; selecao e previa de vozes. Nao representa o repositorio Android inteiro.",
+  "files": [
+    {
+      "path": "app/src/androidTest/java/com/example/assistentecell/VoicePickerTest.kt",
+      "before_sha256": null,
+      "after_sha256": "f4418004c5375d6c915ee539e8d63f9ef04223ec403090c196fcc8b9b23eb976"
+    },
+    {
+      "path": "app/src/androidTest/java/com/example/assistentecell/VoicePlaybackTest.kt",
+      "before_sha256": null,
+      "after_sha256": "c3f7ba623d369afb28f059936226c8e17be9f95cb019f7d3e93b4ed94e3ba6dd"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/network/BackendVoiceTransport.kt",
+      "before_sha256": "d8182f42e865d3a9b68cd20448b645ff267a50a51043b341c29c491c8fef1716",
+      "after_sha256": "2a8cb15e86fb8448ef82758ffff9c8e6b83d26bccbf095ef194fff61d1d8074f"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ui/components/VoicePickerDialog.kt",
+      "before_sha256": null,
+      "after_sha256": "49a13945b58df32d85f8b906f8e17a39ebe3652f8a8ea1ed87f5e1d4ef21d615"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt",
+      "before_sha256": "9631ab12459ad341e293470623e78cd01af9e5700d20c26e639be2a6c1c60287",
+      "after_sha256": "fc5f0c82f9ae61c96b42897eba3d6ce6b659f1943e87ad79dfdad5e04caa52ed"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ui/viewmodel/ChatViewModel.kt",
+      "before_sha256": "e5b522f74640086ebd252cdbf07b853ba1862050e31680da224001b60d9709c0",
+      "after_sha256": "1ccc34e78fc19b6f93e41efadad8bddc2f3224b7829a9e3c13d804826af7af4b"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/voice/VoiceCatalog.kt",
+      "before_sha256": null,
+      "after_sha256": "1def0bb53b33bc7b6f7923c69a749b778be7ff48593e1b478589f9c5d54ce28f"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/voice/VoiceManager.kt",
+      "before_sha256": "bb0e28d575bb1264e24af21b7e7f9c88967c96287248fdaefac9568be4bb074e",
+      "after_sha256": "3e5453242fb82bbbed6fef7809f5bf6b47af296c2e972ff444b80802902bb68d"
+    },
+    {
+      "path": "app/src/test/java/com/example/assistentecell/BackendVoiceTransportTest.kt",
+      "before_sha256": "bc8c72d6d4e9460d5e4f64e621f8b352598d89011f474959e6943cf1f0c29b43",
+      "after_sha256": "b81a3c60fb6966dbc353811da4cc8b4767889e927cabb43b11f687d83c4c548b"
+    },
+    {
+      "path": "app/src/test/java/com/example/assistentecell/VoiceCatalogTest.kt",
+      "before_sha256": null,
+      "after_sha256": "07bef3a570c559a97cd946163bc8644fe85a466d896470f1e32840622613423e"
+    }
+  ]
+}
