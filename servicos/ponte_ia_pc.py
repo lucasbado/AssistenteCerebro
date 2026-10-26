@@ -15,7 +15,7 @@ class PonteIAPC:
 
     def disponivel(self): return self.cliente() is not None
 
-    async def gerar(self, prompt, system, max_tokens=900, timeout=50):
+    async def gerar(self, prompt, system, max_tokens=900, timeout=50, registrar_uso=True):
         from api.websocket import central_alertas
         ws = self.cliente()
         if ws is None: raise ValueError('O PC com IA local está desconectado.')
@@ -30,9 +30,10 @@ class PonteIAPC:
                 raise ValueError('Conexão com a IA do PC interrompida.')
             resultado = await asyncio.wait_for(futuro, timeout)
             if resultado is None: raise ValueError('A IA do PC não conseguiu responder.')
-            try:
-                await consumo_ia.registrar_local(resultado['modelo'], resultado['entrada'], resultado['saida'])
-            except Exception: pass  # Uma falha na métrica não perde a resposta já gerada.
+            if registrar_uso:
+                try:
+                    await consumo_ia.registrar_local(resultado['modelo'], resultado['entrada'], resultado['saida'])
+                except Exception: pass  # Uma falha na métrica não perde a resposta já gerada.
             return resultado['texto']
         finally: self.pendentes.pop(identificador, None)
 

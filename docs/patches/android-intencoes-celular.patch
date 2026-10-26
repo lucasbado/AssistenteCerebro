@@ -1,0 +1,347 @@
+diff --git a/app/src/main/java/com/example/assistentecell/command/AppUiController.kt b/app/src/main/java/com/example/assistentecell/command/AppUiController.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/command/AppUiController.kt
+@@ -0,0 +1,95 @@
++package com.example.assistentecell.command
++
++import android.graphics.Rect
++import android.content.Context
++import android.os.Bundle
++import android.os.SystemClock
++import android.view.accessibility.AccessibilityNodeInfo
++import android.view.accessibility.AccessibilityWindowInfo
++import com.example.assistentecell.accessibility.OllieAccessibilityService
++import org.json.JSONArray
++import org.json.JSONObject
++import java.util.UUID
++
++/** Short-lived node references. No screen content is written to disk. All calls run on Main. */
++object AppUiController {
++    private data class Entry(val path: List<Int>, val fingerprint: String)
++    private data class Capture(val id: String, val pkg: String, val expires: Long, val entries: List<Entry>)
++    private var capture: Capture? = null
++
++    private fun root(pkg: String): AccessibilityNodeInfo? {
++        if (pkg in setOf("com.android.settings", "com.android.systemui", "com.google.android.permissioncontroller", "com.android.permissioncontroller", "com.google.android.packageinstaller")) return null
++        val service = OllieAccessibilityService.getInstance() ?: return null
++        val active = service.rootInActiveWindow
++        if (active?.packageName?.toString() == pkg) return active
++        // An assistant overlay may cover the app; do not bypass another application's foreground window.
++        val app = service.windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.root != null }
++        val node = app?.root ?: return null
++        return node.takeIf { it.packageName?.toString() == pkg }
++    }
++    fun foreground(pkg: String) = root(pkg) != null
++    private fun label(node: AccessibilityNodeInfo) = listOf(node.text, node.contentDescription, node.hintText, node.viewIdResourceName).filterNotNull().joinToString(" ")
++    private fun fingerprint(node: AccessibilityNodeInfo): String {
++        val rect = Rect(); node.getBoundsInScreen(rect)
++        return listOf(node.packageName, node.className, node.viewIdResourceName, label(node), rect.toShortString(),
++            node.isClickable, node.isEditable, node.isScrollable, node.isEnabled).joinToString("|")
++    }
++    private fun allowed(context: Context) = context.getSharedPreferences("app_screen_consent", Context.MODE_PRIVATE)
++        .getBoolean("remote_screen_interpretation", false)
++    fun snapshot(context: Context, pkg: String): MobileControlExecutor.Result {
++        if (!allowed(context)) { capture = null; return consentRequired() }
++        val root = root(pkg) ?: return unavailable()
++        val nodes = JSONArray()
++        val entries = mutableListOf<Entry>()
++        var visited = 0
++        var size = 0
++        fun visit(node: AccessibilityNodeInfo, path: List<Int>) {
++            if (++visited > 600 || entries.size >= 80 || path.size > 25) return
++            if (node.isVisibleToUser && !node.isPassword && node.isEnabled &&
++                (node.isClickable || node.isEditable || node.isScrollable || !node.text.isNullOrBlank() || !node.contentDescription.isNullOrBlank())) {
++                val safe = label(node)
++                val data = JSONObject().put("id", entries.size)
++                    .put("texto", if(node.isEditable) "" else node.text?.toString().orEmpty().take(160))
++                    .put("descricao", (node.contentDescription?.toString() ?: node.hintText?.toString().orEmpty()).take(160))
++                    .put("tipo", node.className?.toString().orEmpty().take(160))
++                    .put("clicavel", node.isClickable && AppUiPolicy.canTap(safe) && (!node.text.isNullOrBlank() || !node.contentDescription.isNullOrBlank()))
++                    .put("editavel", node.isEditable && AppUiPolicy.canType(safe, node.isPassword))
++                    .put("rolavel", node.isScrollable)
++                val cost = data.toString().length
++                if (size + cost <= 13000) {
++                    size += cost
++                    nodes.put(data)
++                    entries.add(Entry(path, fingerprint(node)))
++                }
++            }
++            for (i in 0 until node.childCount) node.getChild(i)?.let { visit(it, path + i) }
++        }
++        visit(root, emptyList())
++        val id = UUID.randomUUID().toString()
++        capture = Capture(id, pkg, SystemClock.elapsedRealtime() + 15000, entries)
++        return MobileControlExecutor.Result("concluido", "Tela consultada.", JSONObject().put("pacote", pkg).put("captura", id).put("nodes", nodes))
++    }
++    fun act(context: Context, r: MobileControlRequest): MobileControlExecutor.Result {
++        if (!allowed(context)) { capture = null; return consentRequired() }
++        val c = capture ?: return stale()
++        if (c.id != r.text("captura") || c.pkg != r.text("pacote") || c.expires < SystemClock.elapsedRealtime()) return stale()
++        val entry = c.entries.getOrNull(r.number("node")) ?: return stale()
++        var node = root(c.pkg) ?: return unavailable()
++        for (index in entry.path) node = node.getChild(index) ?: return stale()
++        if (!node.isVisibleToUser || !node.isEnabled || node.isPassword || fingerprint(node) != entry.fingerprint) return stale()
++        capture = null // One action per capture, including failures.
++        val safe = label(node)
++        val ok = when(r.action) {
++            "ui.tap" -> node.isClickable && AppUiPolicy.canTap(safe) && (!node.text.isNullOrBlank() || !node.contentDescription.isNullOrBlank()) && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
++            "ui.type" -> node.isEditable && AppUiPolicy.canType(safe, node.isPassword) && node.performAction(
++                AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, r.text("texto")) })
++            "ui.scroll" -> node.isScrollable && node.performAction(if(r.text("direcao") == "forward") AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
++            else -> false
++        }
++        return if(ok) MobileControlExecutor.Result("concluido", "O Android aceitou essa etapa na tela.")
++        else MobileControlExecutor.Result("encaminhado", "Essa etapa precisa de um toque seu no aplicativo.")
++    }
++    private fun stale() = MobileControlExecutor.Result("encaminhado", "A tela mudou. Parei para não tocar no elemento errado.")
++    private fun unavailable() = MobileControlExecutor.Result("permissao", "Deixe o aplicativo aberto e autorize Controle Ollie em Acessibilidade para eu consultar essa tela.")
++    private fun consentRequired() = MobileControlExecutor.Result("permissao", "A leitura de telas está desligada. Para navegar dentro de apps com IA, autorize o envio da tela em Configurações da Ollie → Controles do celular → Interpretação da tela por IA. Despertadores e controles nativos não precisam disso.")
++}
+diff --git a/app/src/main/java/com/example/assistentecell/command/AppUiPolicy.kt b/app/src/main/java/com/example/assistentecell/command/AppUiPolicy.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/command/AppUiPolicy.kt
+@@ -0,0 +1,14 @@
++package com.example.assistentecell.command
++
++import java.text.Normalizer
++
++/** Generic navigation never substitutes the dedicated confirmation flow for sensitive actions. */
++object AppUiPolicy {
++    fun normalized(value: String) = Normalizer.normalize(value, Normalizer.Form.NFD)
++        .replace(Regex("\\p{M}+"), "").lowercase().replace(Regex("[^a-z0-9 ]"), " ")
++    private val blocked = Regex("\\b(enviar|send|publicar|post|comprar|buy|pagar|pay|checkout|excluir|delete|apagar|remover|remove|permitir|allow|autorizar|confirmar|confirm|transferir|transferencia|transfer|ligar|call|chamar|instalar|install|aceitar|accept|assinar|subscribe|seguir|follow|curtir|like|senha|password|pin|otp|codigo de verificacao)\\b")
++    fun canTap(label: String): Boolean = label.isNotBlank() && !blocked.containsMatchIn(normalized(label))
++    fun canType(label: String, password: Boolean): Boolean = !password &&
++        Regex("\\b(busca|buscar|pesquisa|pesquisar|search|procurar|find)\\b").containsMatchIn(normalized(label)) &&
++        !blocked.containsMatchIn(normalized(label))
++}
+diff --git a/app/src/main/java/com/example/assistentecell/command/DeviceControlsActivity.kt b/app/src/main/java/com/example/assistentecell/command/DeviceControlsActivity.kt
+--- a/app/src/main/java/com/example/assistentecell/command/DeviceControlsActivity.kt
++++ b/app/src/main/java/com/example/assistentecell/command/DeviceControlsActivity.kt
+@@ -33,6 +33,8 @@
+ 
+     @Composable private fun Controls() {
+         var revision by remember { mutableIntStateOf(0) }
++        val screenPreferences = remember { getSharedPreferences("app_screen_consent", MODE_PRIVATE) }
++        var screenConsent by remember { mutableStateOf(screenPreferences.getBoolean("remote_screen_interpretation", false)) }
+         DisposableEffect(Unit) {
+             val observer = LifecycleEventObserver { _, event -> if(event == Lifecycle.Event.ON_RESUME) revision++ }
+             lifecycle.addObserver(observer)
+@@ -56,11 +58,24 @@
+                     startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+                 }
+                 ControlCard("Navegação entre telas", access, "Abrir acessibilidade") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
++                Card {
++                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
++                        Text("Interpretação da tela por IA", style = MaterialTheme.typography.titleMedium)
++                        Text("Opcional e desligada por padrão. Ao pedir uma tarefa dentro de um app, os textos e elementos visíveis dessa tela podem conter mensagens e dados pessoais. Eles serão enviados ao servidor da Ollie e à IA do PC ou Cloudflare para escolher a próxima etapa. Isso usa acessibilidade e só acontece durante seus pedidos, no app escolhido.")
++                        Text("Despertadores, timers, abertura de apps e controles nativos funcionam sem essa autorização.", style = MaterialTheme.typography.bodySmall)
++                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
++                            Text("Autorizar envio da tela à IA", Modifier.weight(1f))
++                            Switch(checked = screenConsent, onCheckedChange = {
++                                if(screenPreferences.edit().putBoolean("remote_screen_interpretation", it).commit()) screenConsent = it
++                            })
++                        }
++                    }
++                }
+                 ControlCard("Contatos para WhatsApp", contacts, "Autorizar contatos") { permission.launch(Manifest.permission.READ_CONTACTS) }
+                 Card {
+                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+-                        Text("Experimente por voz", style = MaterialTheme.typography.titleMedium)
+-                        Text("Ligue a lanterna\nColoque o volume de mídia em 40%\nColoque o celular no modo vibrar\nCrie um timer de 5 minutos\nColoque um despertador para 7:30\nAtive o GPS")
++                        Text("Peça do seu jeito", style = MaterialTheme.typography.titleMedium)
++                        Text("Ligue a lanterna\nColoque o volume de mídia em 40%\nColoque o celular no modo vibrar\nCrie um timer de 5 minutos\nMe acorde amanhã às sete e meia\nAtive o GPS")
+                         Text("Wi-Fi, Bluetooth e localização abrem os ajustes do Android. Alarmes e timers são encaminhados ao relógio; confira-os por lá.", style = MaterialTheme.typography.bodySmall)
+                     }
+                 }
+diff --git a/app/src/main/java/com/example/assistentecell/command/MobileControlExecutor.kt b/app/src/main/java/com/example/assistentecell/command/MobileControlExecutor.kt
+--- a/app/src/main/java/com/example/assistentecell/command/MobileControlExecutor.kt
++++ b/app/src/main/java/com/example/assistentecell/command/MobileControlExecutor.kt
+@@ -9,6 +9,7 @@
+ import android.hardware.camera2.CameraCharacteristics
+ import android.hardware.camera2.CameraManager
+ import android.media.AudioManager
++import android.net.Uri
+ import android.os.Build
+ import android.os.Handler
+ import android.os.Looper
+@@ -27,7 +28,7 @@
+     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+     private val requests = linkedMapOf<String, Pair<String, Deferred<JSONObject>>>()
+     private val execution = Mutex()
+-    data class Result(val status: String, val text: String)
++    data class Result(val status: String, val text: String, val data: JSONObject? = null)
+ 
+     fun execute(context: Context, message: JSONObject, reply: (String) -> Boolean) {
+         val request = runCatching { MobileControlRequest.parse(message.toString()) }.getOrElse { return }
+@@ -71,13 +72,14 @@
+         catch (_: TimeoutCancellationException) { Result("erro", "O celular não confirmou o resultado a tempo. Não vou repetir automaticamente.") }
+         catch (_: Exception) { Result("erro", "Não consegui executar esse controle no celular.") }
+         val envelope = envelope(r, result)
+-        prefs.edit().putString(r.id, JSONObject().put("digest", r.digest).put("time", System.currentTimeMillis()).put("result", envelope).toString()).commit()
++        val receipt = if(result.data == null) envelope else envelope(r, Result("encaminhado", "A consulta de tela anterior expirou. Faça uma nova consulta."))
++        prefs.edit().putString(r.id, JSONObject().put("digest", r.digest).put("time", System.currentTimeMillis()).put("result", receipt).toString()).commit()
+         return envelope
+     }
+ 
+     private fun envelope(r: MobileControlRequest, result: Result) = JSONObject()
+         .put("tipo_ws", "CELULAR_RESULTADO").put("id_comando", r.id).put("acao", r.action)
+-        .put("status", result.status).put("texto", result.text)
++        .put("status", result.status).put("texto", result.text).apply { result.data?.let { put("resultado", it) } }
+ 
+     private fun open(context: Context, intent: Intent, text: String, status: String = "encaminhado"): Result {
+         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+@@ -88,6 +90,27 @@
+         val audio = context.getSystemService(AudioManager::class.java)
+         val notifications = context.getSystemService(NotificationManager::class.java)
+         return when(r.action) {
++            "clock.open" -> open(context, Intent(AlarmClock.ACTION_SHOW_ALARMS), "Abri os despertadores no Relógio.")
++            "browser.open", "browser.search" -> {
++                val url = if(r.action == "browser.open") r.text("url") else "https://www.google.com/search?q=" + Uri.encode(r.text("termo"))
++                open(context, Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE),
++                    if(r.action == "browser.open") "Encaminhei o endereço ao navegador do celular." else "Encaminhei a pesquisa ao navegador do celular.")
++            }
++            "app.open" -> {
++                val pkg = r.text("pacote")
++                val intent = context.packageManager.getLaunchIntentForPackage(pkg)
++                if(intent == null) Result("indisponivel", "Esse aplicativo não está disponível para abrir neste celular.")
++                else {
++                    context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
++                    var visible = false
++                    repeat(8) { if(!visible) { delay(200); visible = AppUiController.foreground(pkg) } }
++                    val name = runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault("aplicativo")
++                    if(visible) Result("concluido", "Abri $name no celular.")
++                    else Result("encaminhado", "Pedi ao Android para abrir $name. Não consegui confirmar a tela; confira no celular.")
++                }
++            }
++            "ui.snapshot" -> AppUiController.snapshot(context, r.text("pacote"))
++            "ui.tap", "ui.type", "ui.scroll" -> AppUiController.act(context, r)
+             "flashlight.set" -> {
+                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
+                     Result("permissao", "Autorize a câmera em Controles do celular para eu usar a lanterna.")
+@@ -144,6 +167,7 @@
+                 val hour = "%02d:%02d".format(r.number("hora"), r.number("minuto"))
+                 open(context, Intent(AlarmClock.ACTION_SET_ALARM).putExtra(AlarmClock.EXTRA_HOUR, r.number("hora"))
+                     .putExtra(AlarmClock.EXTRA_MINUTES, r.number("minuto")).putExtra(AlarmClock.EXTRA_MESSAGE, "Ollie")
++                    .apply { if(r.args.has("dias")) putIntegerArrayListExtra(AlarmClock.EXTRA_DAYS, ArrayList(r.args["dias"].asJsonArray.map { it.asInt })) }
+                     .putExtra(AlarmClock.EXTRA_SKIP_UI, true), "Encaminhei o despertador das $hour ao relógio, para a próxima ocorrência desse horário. Confira por lá.")
+             }
+             "navigation" -> {
+diff --git a/app/src/main/java/com/example/assistentecell/command/MobileControlRequest.kt b/app/src/main/java/com/example/assistentecell/command/MobileControlRequest.kt
+--- a/app/src/main/java/com/example/assistentecell/command/MobileControlRequest.kt
++++ b/app/src/main/java/com/example/assistentecell/command/MobileControlRequest.kt
+@@ -12,6 +12,10 @@
+     fun flag(key: String) = args[key].asBoolean
+ 
+     companion object {
++        private fun packageArg(p: JsonObject) {
++            require(p["pacote"]?.asJsonPrimitive?.isString == true)
++            require(p["pacote"].asString.length <= 180 && p["pacote"].asString.matches(Regex("[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)+")))
++        }
+         fun parse(raw: String): MobileControlRequest {
+             require(raw.length <= 10000)
+             val obj = Gson().fromJson(raw, JsonObject::class.java)
+@@ -35,7 +39,38 @@
+                 "brightness.set" -> { keys("valor"); int("valor", 0..100) }
+                 "sound.mode" -> { keys("modo"); text("modo", setOf("silent", "vibrate", "normal")) }
+                 "timer.create" -> { keys("segundos"); int("segundos", 1..86400) }
+-                "alarm.create" -> { keys("hora", "minuto"); int("hora", 0..23); int("minuto", 0..59) }
++                "alarm.create" -> {
++                    if (p.has("dias")) {
++                        keys("hora", "minuto", "dias")
++                        val days = p["dias"].asJsonArray
++                        require(days.size() in 1..7)
++                        val values = days.map { v ->
++                            require(v.isJsonPrimitive && v.asJsonPrimitive.isNumber && v.toString().matches(Regex("[1-7]")))
++                            v.asInt
++                        }
++                        require(values.distinct().size == values.size)
++                    } else keys("hora", "minuto")
++                    int("hora", 0..23); int("minuto", 0..59)
++                }
++                "clock.open" -> keys()
++                "browser.open" -> {
++                    keys("url"); require(p["url"]?.asJsonPrimitive?.isString == true)
++                    val rawUrl = p["url"].asString
++                    require(rawUrl.length in 1..2048 && rawUrl.none { it.isWhitespace() || it.code < 32 })
++                    val uri = java.net.URI(rawUrl)
++                    require(uri.scheme in setOf("https", "http") && !uri.host.isNullOrBlank() && uri.rawUserInfo == null && (uri.port == -1 || uri.port in 1..65535))
++                }
++                "browser.search" -> { keys("termo"); require(p["termo"]?.asJsonPrimitive?.isString == true && p["termo"].asString.trim().length in 1..500) }
++                "app.open", "ui.snapshot" -> { keys("pacote"); packageArg(p) }
++                "ui.tap", "ui.type", "ui.scroll" -> {
++                    when(action) {
++                        "ui.type" -> { keys("pacote", "captura", "node", "texto"); require(p["texto"]?.asJsonPrimitive?.isString == true && p["texto"].asString.length in 1..500) }
++                        "ui.scroll" -> { keys("pacote", "captura", "node", "direcao"); text("direcao", setOf("forward", "backward")) }
++                        else -> keys("pacote", "captura", "node")
++                    }
++                    packageArg(p); int("node", 0..79)
++                    require(p["captura"]?.asJsonPrimitive?.isString == true && p["captura"].asString.matches(Regex("[a-f0-9-]{36}")))
++                }
+                 "navigation" -> { keys("destino"); text("destino", setOf("back", "home", "recents", "notifications")) }
+                 "settings.open" -> { keys("painel", "estado_desejado"); text("painel", setOf("location", "wifi", "bluetooth")); flag("estado_desejado") }
+                 "controls.open" -> keys()
+diff --git a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+--- a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
++++ b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+@@ -416,7 +416,7 @@
+                     put("tipo_ws", "REGISTRO")
+                     put("id", "MOBILE")
+                     put("connection_id", currentConnId)
+-                    put("capacidades", JSONArray().put("CONTROLE_MOBILE"))
++                    put("capacidades", JSONArray().put("CONTROLE_MOBILE").put("APPS_MOBILE"))
+                     if (!getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE).getString("ha_token", "").isNullOrBlank()) {
+                         getJSONArray("capacidades").put("CASA")
+                     }
+@@ -458,7 +458,7 @@
+                             put("tipo_ws", "REGISTRO")
+                             put("id", "MOBILE")
+                             put("connection_id", currentConnId)
+-                            put("capacidades", JSONArray().put("CONTROLE_MOBILE"))
++                            put("capacidades", JSONArray().put("CONTROLE_MOBILE").put("APPS_MOBILE"))
+                     if (!getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE).getString("ha_token", "").isNullOrBlank()) {
+                         getJSONArray("capacidades").put("CASA")
+                     } // 🛡️ IDENTIFICAÇÃO ROBUSTA
+diff --git a/app/src/test/java/com/example/assistentecell/AppUiPolicyTest.kt b/app/src/test/java/com/example/assistentecell/AppUiPolicyTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/com/example/assistentecell/AppUiPolicyTest.kt
+@@ -0,0 +1,36 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.command.AppUiPolicy
++import com.example.assistentecell.command.MobileControlRequest
++import org.junit.Assert.*
++import org.junit.Test
++
++class AppUiPolicyTest {
++    @Test fun genericUiDoesNotSendOrAuthorize() {
++        for(label in listOf("Enviar", "Send message", "button_send", "Confirmar compra", "Permitir", "Excluir", "Fazer transferência", "Ligar para Ana", "Publicar")) {
++            assertFalse(label, AppUiPolicy.canTap(label))
++        }
++        assertFalse(AppUiPolicy.canTap(""))
++        assertTrue(AppUiPolicy.canTap("Pesquisar"))
++        assertTrue(AppUiPolicy.canTap("Biblioteca"))
++    }
++    @Test fun typingOnlySearchFieldsNotChatOrPassword() {
++        assertTrue(AppUiPolicy.canType("Pesquisar", false))
++        assertTrue(AppUiPolicy.canType("search_input", false))
++        assertFalse(AppUiPolicy.canType("Mensagem", false))
++        assertFalse(AppUiPolicy.canType("Pesquisar", true))
++        assertFalse(AppUiPolicy.canType("Password search", false))
++    }
++    private fun parse(action: String, params: String) = MobileControlRequest.parse("""{"pedido_usuario":true,"id_comando":"teste","acao":"$action","parametros":$params}""")
++    @Test fun repeatedAlarmAndAppActionsHaveStrictContract() {
++        assertEquals("alarm.create", parse("alarm.create", """{"hora":7,"minuto":30,"dias":[2,3,4,5,6]}""").action)
++        assertEquals("app.open", parse("app.open", """{"pacote":"com.sec.android.app.clockpackage"}""").action)
++        assertEquals("ui.snapshot", parse("ui.snapshot", """{"pacote":"com.calculator"}""").action)
++        assertEquals("clock.open", parse("clock.open", "{}").action)
++        for(args in listOf("""{"hora":7,"minuto":30,"dias":[true]}""", """{"hora":7,"minuto":30,"dias":[2,2]}""")) {
++            assertTrue(runCatching { parse("alarm.create", args) }.isFailure)
++        }
++        assertTrue(runCatching { parse("app.open", """{"pacote":"com.app; shell"}""") }.isFailure)
++        assertTrue(runCatching { parse("ui.tap", """{"pacote":"com.app","captura":"a","node":0}""") }.isFailure)
++    }
++}

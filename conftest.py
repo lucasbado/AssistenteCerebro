@@ -10,6 +10,10 @@ def sem_cloudflare_real(monkeypatch):
     # Os testes simulam falhas de IA; uma credencial local nunca autoriza uso real.
     monkeypatch.delenv('CLOUDFLARE_API_TOKEN', raising=False)
     monkeypatch.delenv('CLOUDFLARE_ACCOUNT_ID', raising=False)
+    # O interpretador é compartilhado e pode ter sido importado na coleta após dotenv.
+    from servicos.cognicao_controles import cognicao_controles
+    monkeypatch.setattr(cognicao_controles.cloudflare, 'token', '')
+    monkeypatch.setattr(cognicao_controles.cloudflare, 'account', '')
 
 @pytest.fixture
 async def banco_teste(tmp_path, monkeypatch):

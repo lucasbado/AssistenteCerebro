@@ -112,10 +112,10 @@ def interpretar_abertura(texto, site_busca=None):
     return None
 
 
-async def responder_pedido(evento, texto):
+async def responder_pedido(evento, texto, pergunta=False):
     from core.tipos import CategoriaEvento, TipoAcao, OrigemEvento
     from core.kernel import kernel
     await kernel.publicar(evento.clonar(categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
         acao=TipoAcao.INTENCAO_INTERACAO, origem=OrigemEvento.IA,
-        payload={"texto": texto, "titulo": "Ollie", "tipo_ws": "CHAT_RESPONSE"},
+        payload={"texto": texto, "titulo": "Ollie", "tipo_ws": "CHAT_RESPONSE", **({'aguarda_resposta': True} if pergunta else {})},
         metadados={**contexto_pedido(evento), "tipo_destino": "CHAT"}))

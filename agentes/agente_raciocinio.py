@@ -214,12 +214,8 @@ class AgenteRaciocinio:
                         if comando in COMANDOS_LEGADOS:
                             # A LLM não pode usar o executor antigo com valores padrão implícitos.
                             if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
-                                from servicos.controle_celular import interpretar_controle
-                                from servicos.roteamento_pedidos import dispositivo_origem
-                                if interpretar_controle(texto_u, dispositivo_origem(evento)):
-                                    await kernel.publicar(evento.clonar(categoria=CategoriaEvento.CELULAR_ACAO_SOLICITADA, acao=TipoAcao.NORMAL))
-                                else:
-                                    await responder_pedido(evento, 'Preciso de um controle específico do celular. Diga, por exemplo: ligue a lanterna; volume de mídia em 40%; ou crie um timer de 5 minutos.')
+                                # Reinterpreta a intenção original pelo contrato validado, sem valores legados implícitos.
+                                await kernel.publicar(evento.clonar(categoria=CategoriaEvento.CELULAR_ACAO_SOLICITADA, acao=TipoAcao.NORMAL))
                             continue
                         from api.websocket import central_alertas
                         enviado = await central_alertas.enviar_comando_mobile({

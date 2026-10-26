@@ -1,4 +1,4 @@
-"""Composição mínima sem persistência, IA, aprendizado ou tarefas periódicas de banco."""
+"""Controles e interpretação pontual sem persistência, aprendizado ou polling de banco."""
 import asyncio
 from contextlib import asynccontextmanager
 

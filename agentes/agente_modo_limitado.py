@@ -17,10 +17,16 @@ class AgenteModoLimitado:
         }:
             return
         texto = str(evento.payload.get('texto', ''))
-        if interpretar_controle(texto, dispositivo_origem(evento)):
+        from servicos.dialogo_controles import dialogo_controles
+        if dialogo_controles.continua(dispositivo_origem(evento), texto) or interpretar_controle(dialogo_controles.resolver(dispositivo_origem(evento), texto), dispositivo_origem(evento), evento.timestamp):
             await kernel.publicar(evento.clonar(categoria=CategoriaEvento.CELULAR_ACAO_SOLICITADA))
             return
         try:
+            from servicos.roteamento_pedidos import destino_explicito
+            from servicos.interpretacao_celular import precisa_apps
+            if precisa_apps(texto) and (destino_explicito(texto) == 'MOBILE' or (dispositivo_origem(evento) == 'MOBILE' and destino_explicito(texto) != 'PC')):
+                await kernel.publicar(evento.clonar(categoria=CategoriaEvento.CELULAR_ACAO_SOLICITADA))
+                return
             plano = interpretar_composto(texto) or interpretar_abertura(texto)
             if plano:
                 etapas = preparar_plano(evento, plano['execucao_direta'])
@@ -35,5 +41,9 @@ class AgenteModoLimitado:
         except (ValueError, LookupError) as erro:
             await responder_pedido(evento, str(erro))
             return
-        await responder_pedido(evento, AVISO_LIMITADO +
-            ' Para controlar um aparelho, diga, por exemplo: ligue a lanterna; apague a luz; ou abra YouTube no PC.')
+        # A limitação da memória não impede interpretar um pedido novo de controle.
+        from servicos.datas_agenda import intencao_agenda
+        if intencao_agenda(texto) in {'listar', 'lembrete', 'compromisso'}:
+            await responder_pedido(evento, AVISO_LIMITADO)
+            return
+        await kernel.publicar(evento.clonar(categoria=CategoriaEvento.CELULAR_ACAO_SOLICITADA))

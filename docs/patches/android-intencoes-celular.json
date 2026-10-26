@@ -1,0 +1,40 @@
+{
+  "base": "Arquivos Android locais posteriores a android-controles-celular.patch; intencoes, apps e leitura de telas com autorizacao desligada por padrao. Aplicar sobre arquivos com os hashes before_sha256, sem sobrescrever mudancas divergentes.",
+  "files": [
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/AppUiController.kt",
+      "before_sha256": null,
+      "after_sha256": "2e31e7365412d16a5ed96024d9738367ed8382136e9eb59668b161143b0e4675"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/AppUiPolicy.kt",
+      "before_sha256": null,
+      "after_sha256": "f53f2d19ffc608757be69550cd01336f88ff9b0dda7b11251ff15d0934b788cc"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/DeviceControlsActivity.kt",
+      "before_sha256": "ebcece48f84946985a4b02b7e442c7a53f02a33d269dae9f0405ae0d354e1409",
+      "after_sha256": "77d07301509f7f795ef1f155ec757f101413e64ac5c67e5d611582ce59a3fe9d"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/MobileControlExecutor.kt",
+      "before_sha256": "d23df1e62fd1f2d9a9da6dd7d5f4fe7a1ed9d568d424c75afad9586997da3e58",
+      "after_sha256": "3d8829abbd8a49413b12cbd22501ef8b64a5b498258bc14a0c1a4b58413c7e81"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/MobileControlRequest.kt",
+      "before_sha256": "ffb4c20569fe854ba2eabab52a93fe7161e57bf18cfd8cdd7ecb4007d0578396",
+      "after_sha256": "c1c23e6a94299e028fe9e55e7a4727162bdb9309abbbccca064ecf7432eef773"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt",
+      "before_sha256": "09efa1e4be21093810c7da99852a91e8b933ccad7098c6779b9c477a2f5fb625",
+      "after_sha256": "7ff2567627cba0253b5f1a54f7ee4b0b54d63e1a5a5bc28d969cbca74008dbc9"
+    },
+    {
+      "path": "app/src/test/java/com/example/assistentecell/AppUiPolicyTest.kt",
+      "before_sha256": null,
+      "after_sha256": "451488c4c26b550b249072b7e5f9b0c45503d058468d5cd20da59002a70ef123"
+    }
+  ]
+}

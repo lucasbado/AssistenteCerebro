@@ -13,7 +13,7 @@ def _acao(nome, **parametros):
     return {"acao": nome, "parametros": parametros}
 
 
-def interpretar_controle(texto, origem="MOBILE"):
+def interpretar_controle(texto, origem="MOBILE", referencia=None):
     original = str(texto).strip()
     t = normalizar(original).strip(" .!?")
     t = re.sub(r"^(?:ei )?ollie[, ]+", "", t)
@@ -30,8 +30,12 @@ def interpretar_controle(texto, origem="MOBILE"):
         return {"esclarecimento": "Você mencionou os dois aparelhos. Esse controle é para o celular?"}
     if destino == "PC":
         return None
+    from servicos.linguagem_relogio import interpretar_relogio
+    relogio = interpretar_relogio(original, referencia)
+    if relogio:
+        return relogio
     if re.match(r"(?:mande|manda|envie|envia|enviar) (?:uma )?mensagem\b", t):
-        return {"esclarecimento": "Diga, por exemplo: mande mensagem para Ana no WhatsApp dizendo chego às oito. Vou mostrar o texto antes de enviar."}
+        return {"esclarecimento": "Quem deve receber a mensagem, em qual aplicativo e qual é o texto?", "interpretar_semanticamente": True}
     if re.search(r"\b(?:nao|nunca|se|quando|ontem|como fazer|como funciona)\b", t.replace("nao perturbe", "dnd")):
         return None
     t = re.sub(r" (?:no|pelo|pro|para o) (?:meu )?(?:celular|telefone|android)\b", "", t)
@@ -41,10 +45,10 @@ def interpretar_controle(texto, origem="MOBILE"):
     if len(partes) > 1:
         if len(partes) > 6:
             return {"esclarecimento": "Vamos dividir em até seis controles por pedido."}
-        planos = [interpretar_controle(p + " no celular", origem) for p in partes]
+        planos = [interpretar_controle(p + " no celular", origem, referencia) for p in partes]
         if all(p and p.get("acoes") for p in planos):
             return {"acoes": [a for p in planos for a in p["acoes"]]}
-        return {"esclarecimento": "Não consegui entender todas as etapas. Diga cada controle do celular separadamente."}
+        return {"esclarecimento": "Preciso organizar as etapas desse pedido.", "interpretar_semanticamente": True}
     m = re.fullmatch(r"(ligue|liga|ative|ativa|acenda|acende|desligue|desliga|desative|desativa|apague|apaga) (?:a |o )?(lanterna|flash|gps|localizacao|wi-?fi|bluetooth|nao perturbe)", t)
     if m:
         estado = m[1] in {"ligue", "liga", "ative", "ativa", "acenda", "acende"}
@@ -75,11 +79,12 @@ def interpretar_controle(texto, origem="MOBILE"):
         return {"acoes": [_acao("controls.open")]}
     m = re.fullmatch(r"(?:inicie|inicia|crie|cria|coloque|coloca|marque|marca|defina) (?:um )?(?:timer|temporizador)(?: (?:de|para))? (.+)", t)
     if m:
-        duracao = m[1]
+        from servicos.linguagem_relogio import numeros_falados
+        duracao = numeros_falados(m[1])
         partes = list(re.finditer(r"(\d+)\s*(horas?|h|minutos?|min|segundos?|s)\b", duracao))
         resto = re.sub(r"(\d+)\s*(horas?|h|minutos?|min|segundos?|s)\b", "", duracao).strip(" e,")
         if not partes or resto:
-            return {"esclarecimento": "Qual a duração? Diga, por exemplo: timer de 5 minutos."}
+            return {"esclarecimento": "Qual a duração do timer?", "interpretar_semanticamente": True}
         segundos = sum(int(p[1]) * (3600 if p[2].startswith("h") else 60 if p[2].startswith("m") else 1) for p in partes)
         if not 1 <= segundos <= 86400:
             return {"esclarecimento": "O timer precisa durar entre um segundo e 24 horas."}
@@ -96,7 +101,7 @@ def interpretar_controle(texto, origem="MOBILE"):
 def validar_acao(acao, parametros):
     """Contrato fechado, também aplicado antes de enviar para um dispositivo."""
     p = parametros
-    if not isinstance(p, dict):
+    if not isinstance(acao, str) or not isinstance(p, dict):
         raise ValueError("Parâmetros inválidos")
     def inteiro(chave, minimo, maximo):
         return type(p.get(chave)) is int and minimo <= p[chave] <= maximo
@@ -110,11 +115,44 @@ def validar_acao(acao, parametros):
         "sound.mode": ({"modo"}, lambda: p.get("modo") in {"normal", "vibrate", "silent"}),
         "timer.create": ({"segundos"}, lambda: inteiro("segundos", 1, 86400)),
         "alarm.create": ({"hora", "minuto"}, lambda: inteiro("hora", 0, 23) and inteiro("minuto", 0, 59)),
+        "clock.open": (set(), lambda: True),
+        "browser.open": ({'url'}, lambda: _url_valida(p.get('url'))),
+        "browser.search": ({'termo'}, lambda: isinstance(p.get('termo'), str) and 0 < len(p['termo'].strip()) <= 500),
+        "app.open": ({"pacote"}, lambda: isinstance(p.get('pacote'), str) and bool(re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+', p['pacote'])) and len(p['pacote']) <= 180),
+        "ui.snapshot": ({"pacote"}, lambda: isinstance(p.get('pacote'), str) and len(p['pacote']) <= 180 and bool(re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+', p['pacote']))),
+        "ui.tap": ({"pacote", "captura", "node"}, lambda: _ui_args(p)),
+        "ui.type": ({"pacote", "captura", "node", "texto"}, lambda: _ui_args(p) and isinstance(p.get('texto'), str) and 0 < len(p['texto']) <= 500),
+        "ui.scroll": ({"pacote", "captura", "node", "direcao"}, lambda: _ui_args(p) and p.get('direcao') in {'forward', 'backward'}),
         "settings.open": ({"painel", "estado_desejado"}, lambda: p.get("painel") in {"location", "wifi", "bluetooth"} and booleano("estado_desejado")),
         "navigation": ({"destino"}, lambda: p.get("destino") in {"back", "home", "recents", "notifications"}),
         "controls.open": (set(), lambda: True),
         "message.prepare": ({"app", "destinatario", "texto"}, lambda: p.get("app") in {"whatsapp", "instagram"} and all(isinstance(p.get(k), str) and 0 < len(p[k].strip()) <= n for k, n in (("destinatario", 100), ("texto", 2000)))),
     }
     regra = regras.get(acao)
-    if not regra or set(p) != regra[0] or not regra[1]():
+    if acao == 'alarm.create' and set(p) == {'hora', 'minuto', 'dias'}:
+        if (inteiro('hora', 0, 23) and inteiro('minuto', 0, 59) and isinstance(p['dias'], list)
+                and 1 <= len(p['dias']) <= 7 and all(type(d) is int and 1 <= d <= 7 for d in p['dias']) and len(set(p['dias'])) == len(p['dias'])):
+            return
+    try:
+        valido = regra and set(p) == regra[0] and regra[1]()
+    except (TypeError, AttributeError):
+        valido = False
+    if not valido:
         raise ValueError("Ação ou parâmetros de controle inválidos")
+
+
+def _ui_args(p):
+    return (isinstance(p.get('pacote'), str) and len(p['pacote']) <= 180 and bool(re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+', p['pacote']))
+            and isinstance(p.get('captura'), str) and bool(re.fullmatch(r'[a-f0-9-]{36}', p['captura']))
+            and type(p.get('node')) is int and 0 <= p['node'] < 80)
+
+
+def _url_valida(url):
+    from urllib.parse import urlsplit
+    if not isinstance(url, str) or not 0 < len(url) <= 2048 or any(c.isspace() or ord(c) < 32 for c in url):
+        return False
+    try:
+        u = urlsplit(url)
+        return u.scheme in {'https', 'http'} and bool(u.hostname) and not u.username and not u.password and (u.port is None or 1 <= u.port <= 65535)
+    except ValueError:
+        return False

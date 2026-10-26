@@ -33,14 +33,14 @@ Novos pedidos não passam a formar uma memória paralela.
 - Reconhecimento de voz no cliente e síntese da resposta pelo endpoint de voz.
 
 Exemplos: “ligue a lanterna”, “apague a luz”, “abra HBO Max no PC” e “crie um timer
-de 5 minutos”. Não há interpretação livre por LLM nesse modo. Um pedido que precise
-de IA ou persistência recebe uma explicação da indisponibilidade, sem anunciar
-que foi salvo ou executado.
+de 5 minutos”. A atualização de [interpretação de controles](intencao-controles-celular.md)
+acrescenta pedidos livres e conversa pontual por IA, sem consultar a Neon.
+Somente pedidos que dependem de persistência recebem o aviso de indisponibilidade.
 
 ## O que fica pausado
 
 Agenda da Ollie, tarefas, memória, histórico, revisão persistente de mensagens,
-aprendizado, rotinas aprendidas, consultas de IA e verificadores periódicos do
+aprendizado, rotinas aprendidas, histórico de consumo de IA e verificadores periódicos do
 banco não são iniciados. A criação de um despertador no Relógio Android continua
 separada da agenda persistente da Ollie.
 

@@ -91,7 +91,9 @@ def test_modo_forcado_nao_tenta_conectar_e_nem_cria_banco_alternativo(aplicativo
     iniciar.assert_not_awaited()
 
 
-def test_controles_conversa_e_feedback_funcionam_sem_sessao_sql(aplicativo):
+def test_controles_conversa_e_feedback_funcionam_sem_sessao_sql(aplicativo, monkeypatch):
+    from servicos.cognicao_controles import cognicao_controles
+    monkeypatch.setattr(cognicao_controles, 'gerar', AsyncMock(return_value={'resposta': 'Pareidolia é perceber formas familiares em estímulos vagos.', 'acoes': []}))
     app, _, _, central = aplicativo
     async def aguardar_mobile():
         async with asyncio.timeout(2):
@@ -128,9 +130,45 @@ def test_controles_conversa_e_feedback_funcionam_sem_sessao_sql(aplicativo):
                 mobile.send_json({'tipo_ws': 'CHAT_MESSAGE', 'texto': text})
                 reply = mobile.receive_json()
                 assert reply['tipo_ws'] == 'CHAT_RESPONSE'
-                assert 'modo limitado' in reply['texto'] and 'Não salvei' in reply['texto']
+                if text.startswith('me lembre'):
+                    assert 'modo limitado' in reply['texto'] and 'Não salvei' in reply['texto']
+                else:
+                    assert 'Pareidolia' in reply['texto']
             mobile.send_json({'tipo_ws': 'FEEDBACK', 'tipo_feedback': 'LIKE'})
             assert mobile.receive_json()['tipo_ws'] == 'RECURSO_INDISPONIVEL'
+
+
+def test_intencao_livre_e_pergunta_de_horario_funcionam_sem_sql(aplicativo, monkeypatch):
+    from servicos.cognicao_controles import cognicao_controles
+    from servicos.dialogo_controles import dialogo_controles
+    monkeypatch.setattr(dialogo_controles, 'pendentes', {})
+    monkeypatch.setattr(dialogo_controles, 'semanticos', {})
+    gerar = AsyncMock(side_effect=[
+        {'resposta': 'Que horas você quer acordar?', 'pergunta': True, 'acoes': []},
+        {'acoes': [{'acao': 'alarm.create', 'parametros': {'hora': 7, 'minuto': 30}}]},
+        {'acoes': [{'acao': 'app.open', 'parametros': {'pacote': 'com.calculator'}}]},
+    ])
+    monkeypatch.setattr(cognicao_controles, 'gerar', gerar)
+    app, _, _, _ = aplicativo
+    with TestClient(app) as client, client.websocket_connect('/api/v1/ws/alertas?token=token-limitado') as mobile:
+        mobile.receive_json()
+        mobile.send_json({'tipo_ws': 'REGISTRO', 'id': 'MOBILE', 'capacidades': ['CONTROLE_MOBILE', 'APPS_MOBILE']})
+        assert mobile.receive_json()['acao'] == 'ENVIAR_LISTA_APPS'
+        mobile.send_json({'tipo_ws': 'LISTA_APPS', 'apps': [{'n': 'Calculadora', 'p': 'com.calculator'}]})
+        mobile.send_json({'tipo_ws': 'CHAT_MESSAGE', 'texto': 'Acordar cedo é difícil, cuida de me despertar?'})
+        resposta = mobile.receive_json()
+        assert resposta['texto'] == 'Que horas você quer acordar?' and resposta['aguarda_resposta'] is True
+        mobile.send_json({'tipo_ws': 'CHAT_MESSAGE', 'texto': 'às sete e meia'})
+        comando = mobile.receive_json()
+        assert comando['acao'] == 'alarm.create' and comando['parametros'] == {'hora': 7, 'minuto': 30}
+        mobile.send_json({'tipo_ws': 'CELULAR_RESULTADO', 'id_comando': comando['id_comando'], 'acao': comando['acao'], 'status': 'encaminhado', 'texto': 'Encaminhei o despertador ao Relógio.'})
+        assert mobile.receive_json()['texto'] == 'Encaminhei o despertador ao Relógio.'
+        mobile.send_json({'tipo_ws': 'CHAT_MESSAGE', 'texto': 'Quero usar a calculadora agora'})
+        comando = mobile.receive_json()
+        assert comando['acao'] == 'app.open' and comando['parametros'] == {'pacote': 'com.calculator'}
+        mobile.send_json({'tipo_ws': 'CELULAR_RESULTADO', 'id_comando': comando['id_comando'], 'acao': comando['acao'], 'status': 'concluido', 'texto': 'Abri a Calculadora.'})
+        assert mobile.receive_json()['texto'] == 'Abri a Calculadora.'
+    assert 'Complemento do usuário' in gerar.call_args_list[1].args[0]['pedido_usuario']
 
 
 @pytest.mark.asyncio

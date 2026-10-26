@@ -25,7 +25,8 @@ class AgenteReflexo:
             from servicos.roteamento_pedidos import dispositivo_origem
             texto = str(evento.payload.get('texto', ''))
             from servicos.controle_celular import interpretar_controle
-            if interpretar_controle(texto, dispositivo_origem(evento)):
+            from servicos.dialogo_controles import dialogo_controles
+            if dialogo_controles.continua(dispositivo_origem(evento), texto) or interpretar_controle(dialogo_controles.resolver(dispositivo_origem(evento), texto), dispositivo_origem(evento), evento.timestamp):
                 await kernel.publicar(evento.clonar(categoria=CategoriaEvento.CELULAR_ACAO_SOLICITADA))
                 return
             from servicos.mensagens import pedido_mensagens
@@ -61,6 +62,11 @@ class AgenteReflexo:
             if pedido_casa:
                 await kernel.publicar(evento.clonar(
                     categoria=CategoriaEvento.CASA_ACAO_SOLICITADA, payload=pedido_casa))
+                return
+            from servicos.roteamento_pedidos import destino_explicito
+            from servicos.interpretacao_celular import precisa_apps
+            if precisa_apps(texto) and (destino_explicito(texto) == 'MOBILE' or (dispositivo_origem(evento) == 'MOBILE' and destino_explicito(texto) != 'PC')):
+                await kernel.publicar(evento.clonar(categoria=CategoriaEvento.CELULAR_ACAO_SOLICITADA))
                 return
             logger.info(f"💬 [Reflexo] Comando do usuário recebido. Elevando para complexo.")
             await kernel.publicar(evento.clonar(acao=TipoAcao.EVENTO_COMPLEXO))

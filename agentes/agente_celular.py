@@ -27,17 +27,41 @@ class AgenteCelular:
 
     async def _processar_pedido(self, evento):
         # Reinterpreta a ordem original; nunca aceita ações injetadas em um payload derivado.
-        plano = interpretar_controle(evento.payload.get("texto", ""), dispositivo_origem(evento))
-        if not plano:
+        from servicos.dialogo_controles import dialogo_controles
+        chave = dispositivo_origem(evento)
+        texto_original = str(evento.payload.get('texto', ''))
+        if dialogo_controles.cancelar(chave, texto_original):
+            await responder_pedido(evento, 'Beleza, cancelei esse pedido.')
             return
+        texto = dialogo_controles.resolver(chave, texto_original)
+        pedido = texto
+        plano = interpretar_controle(texto, chave, evento.timestamp)
+        if not plano or plano.get('interpretar_semanticamente'):
+            try:
+                from servicos.interpretacao_celular import interpretar_intencao
+                plano = await interpretar_intencao(evento, texto)
+            except ValueError as erro:
+                await responder_pedido(evento, str(erro), True)
+                return
+            except Exception:
+                await responder_pedido(evento, 'A interpretação ficou sem resposta agora. Tente de novo em instantes; não executei esse pedido.')
+                return
         if plano.get("esclarecimento"):
-            await responder_pedido(evento, plano["esclarecimento"])
+            dialogo_controles.guardar(chave, plano)
+            dialogo_controles.guardar_semantico(chave, texto, plano)
+            await responder_pedido(evento, plano["esclarecimento"], plano.get('pergunta', False))
             return
+        dialogo_controles.guardar(chave, plano)
+        dialogo_controles.guardar_semantico(chave, texto, plano)
         from api.websocket import central_alertas
         respostas = []
         for etapa in plano["acoes"]:
-            validar_acao(etapa["acao"], etapa["parametros"])
-            resultado = await central_alertas.executar_celular(etapa["acao"], etapa["parametros"])
+            if etapa['acao'] == 'app.task':
+                from servicos.interpretacao_celular import executar_tarefa_app
+                resultado = await executar_tarefa_app(evento, etapa['parametros']['pacote'], pedido)
+            else:
+                validar_acao(etapa["acao"], etapa["parametros"])
+                resultado = await central_alertas.executar_celular(etapa["acao"], etapa["parametros"])
             status = resultado.get("status")
             texto = resultado.get("texto") or {
                 "offline": "O celular está desconectado da Ollie.",
@@ -50,4 +74,6 @@ class AgenteCelular:
                 if len(plano["acoes"]) > len(respostas):
                     respostas.append("Parei as próximas etapas para você resolver essa primeiro.")
                 break
+        if plano.get('nota'):
+            respostas.append(plano['nota'])
         await responder_pedido(evento, " ".join(respostas))

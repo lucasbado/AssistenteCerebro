@@ -2,8 +2,8 @@
 import os
 
 AVISO_LIMITADO = (
-    "Estou em modo limitado porque o banco está indisponível. Posso atender controles diretos "
-    "do celular, PC e luzes, mas agenda, tarefas, memória e rotinas aprendidas estão pausadas. "
+    "Estou em modo limitado porque o banco está indisponível. Posso conversar, configurar despertadores e timers "
+    "e atender controles do celular, PC e luzes, mas agenda, tarefas, memória e rotinas aprendidas estão pausadas. "
     "Não salvei esse pedido na memória."
 )
 

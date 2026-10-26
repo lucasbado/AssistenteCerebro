@@ -33,6 +33,8 @@ class GerenciadorNotificacoes:
             return {"status": "offline"}
         if 'CONTROLE_MOBILE' not in self._capacidades.get(ws, set()):
             return {"status": "atualizar"}
+        if (acao.startswith(('app.', 'ui.', 'browser.')) or acao == 'clock.open' or 'dias' in parametros) and 'APPS_MOBILE' not in self._capacidades.get(ws, set()):
+            return {'status': 'atualizar'}
         return await self.controle_celular.executar(ws, self._enviar_direto, acao, parametros)
 
     async def executar_casa(self, identificador, acao, entity_id, timeout=20):
@@ -142,6 +144,8 @@ class GerenciadorNotificacoes:
             logger.warning("🔌 [WS] PC Master desconectado.")
         if self.mobile_client == websocket:
             self.mobile_client = None
+            from servicos.catalogo_apps_mobile import catalogo_apps_mobile
+            catalogo_apps_mobile.vincular(None)
             logger.warning("🔌 [WS] Celular desconectado.")
 
     async def enviar_alerta(self, payload: dict):
@@ -334,7 +338,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     cliente_id = msg.get("id")
                     capacidades = msg.get("capacidades", [])
                     if cliente_id in {"PC_MASTER", "MOBILE"}:
-                        permitidas = {'CASA', 'LOCAL_LLM'} if cliente_id == 'PC_MASTER' else {'CASA', 'CONTROLE_MOBILE'}
+                        permitidas = {'CASA', 'LOCAL_LLM'} if cliente_id == 'PC_MASTER' else {'CASA', 'CONTROLE_MOBILE', 'APPS_MOBILE'}
                         central_alertas._capacidades[websocket] = permitidas.intersection(c for c in capacidades if isinstance(c, str)) if isinstance(capacidades, list) else set()
                     if cliente_id == "PC_MASTER":
                         # 🛡️ ANTI-DUPLICIDADE: Se for a mesma conexão, ignora. 
@@ -373,6 +377,10 @@ async def websocket_endpoint(websocket: WebSocket):
                             logger.info(f"📱 [WS] Celular registrado ({conn_id})!")
                         else:
                             logger.debug(f"📱 [WS] Celular re-confirmou identidade ({conn_id}).")
+                        from servicos.catalogo_apps_mobile import catalogo_apps_mobile
+                        catalogo_apps_mobile.vincular(websocket)
+                        if 'APPS_MOBILE' in central_alertas._capacidades.get(websocket, set()) and not catalogo_apps_mobile.apps:
+                            await central_alertas._enviar_direto(websocket, {'tipo_ws': 'COMANDO_SISTEMA', 'acao': 'ENVIAR_LISTA_APPS'})
 
                 elif tipo == "CHAT_MESSAGE":
                     from core.kernel import kernel
@@ -403,8 +411,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 elif tipo == "LISTA_APPS":
                     from servicos.pc_control_service import pc_control_service
+                    from servicos.catalogo_apps_mobile import catalogo_apps_mobile
                     apps = msg.get("apps", [])
-                    pc_control_service.salvar_cache_apps(apps)
+                    if websocket is central_alertas.mobile_client and catalogo_apps_mobile.receber(websocket, apps):
+                        pc_control_service.salvar_cache_apps(list(catalogo_apps_mobile.apps))
                 
                 elif tipo == "STATUS_PC":
                     # Auto-registro se não estiver registrado

@@ -38,7 +38,7 @@ def test_ordens_validas_parametros_exatos(texto, acao, args):
 
 @pytest.mark.parametrize("texto", ["Não ligue a lanterna", "Nunca desligue o flash", "Se eu sair ligue a lanterna",
     "Como funciona a lanterna?", "Ontem ligue a lanterna", "Quanto tempo dura um timer?", "Ligue a lanterna no PC",
-    "Crie um alarme para amanhã às 7", "Me explique o GPS"])
+    "Me explique o GPS"])
 def test_nao_confunde_conversa_negacao_condicao_destino_e_data(texto):
     assert interpretar_controle(texto) is None
 

@@ -85,7 +85,7 @@ async def lifespan(app: FastAPI):
             if not quota_excedida(erro):
                 raise
             motivo_limitado = 'quota_banco_excedida'
-            logger.error('Cota do banco esgotada. Iniciando somente controles diretos; persistência, IA e rotinas pausadas.')
+            logger.error('Cota do banco esgotada. Iniciando controles e interpretação sem persistência; memória e rotinas aprendidas pausadas.')
     if motivo_limitado:
         from servicos.execucao_limitada import executar_modo_limitado
         async with executar_modo_limitado(app, motivo_limitado):
