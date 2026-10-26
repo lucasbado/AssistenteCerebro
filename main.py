@@ -42,6 +42,7 @@ from servicos.agente_contexto_sistema import AgenteContextoSistema
 from servicos.pc_control_service import pc_control_service
 from servicos.pc_listener_service import pc_listener_service
 from banco.database import inicializar_banco, async_engine
+from servicos.disponibilidade import modo_forcado, quota_excedida, estado_sistema
 
 # Routers (API)
 from api.eventos import router as eventos_router
@@ -75,7 +76,21 @@ async def lifespan(app: FastAPI):
     # --- STARTUP ---
     logger.info("Initializing AssistantCell Ecosystem...")
     kernel.limpar_listeners() # Evita duplicatas durante recarregamento
-    await inicializar_banco()
+    app.state.modo_limitado = False
+    motivo_limitado = 'configurado' if modo_forcado() else None
+    if not motivo_limitado:
+        try:
+            await inicializar_banco()
+        except Exception as erro:
+            if not quota_excedida(erro):
+                raise
+            motivo_limitado = 'quota_banco_excedida'
+            logger.error('Cota do banco esgotada. Iniciando somente controles diretos; persistência, IA e rotinas pausadas.')
+    if motivo_limitado:
+        from servicos.execucao_limitada import executar_modo_limitado
+        async with executar_modo_limitado(app, motivo_limitado):
+            yield
+        return
     
     # Instanciação Única de Agentes
     agentes_inst = {
@@ -209,9 +224,13 @@ async def lifespan(app: FastAPI):
                 origem=OrigemEvento.SISTEMA, pacote='sistema.agenda', payload={'tipo': 'TICK_AGENDA'}))
             await kernel.publicar(EventoCanonico(categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO,
                 origem=OrigemEvento.SISTEMA, pacote='sistema.tarefas', payload={'tipo': 'TICK_TAREFAS'}))
+            await asyncio.sleep(30)
+
+    async def loop_limpeza_mensagens():
+        while True:
             await kernel.publicar(EventoCanonico(categoria=CategoriaEvento.SISTEMA_COMANDO_INTERNO,
                 origem=OrigemEvento.SISTEMA, pacote='sistema.mensagens', payload={'tipo': 'TICK_MENSAGENS'}))
-            await asyncio.sleep(30)
+            await asyncio.sleep(3600)
 
     tasks = [
         asyncio.create_task(loop_clima()),
@@ -219,6 +238,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(loop_sumarizador()),
         asyncio.create_task(loop_relogio_rotinas()),
         asyncio.create_task(loop_agenda()),
+        asyncio.create_task(loop_limpeza_mensagens()),
         asyncio.create_task(kernel.iniciar()),
         asyncio.create_task(central_alertas.iniciar_monitor())
     ]
@@ -247,6 +267,8 @@ async def lifespan(app: FastAPI):
 # ==========================================
 app = FastAPI(title="AssistenteCell Master", lifespan=lifespan)
 from api.auth import AuthMiddleware
+from api.disponibilidade import DisponibilidadeMiddleware
+app.add_middleware(DisponibilidadeMiddleware)
 app.add_middleware(AuthMiddleware)
 
 # Middleware para Logar todas as requisições (ajuda a achar 404)
@@ -266,8 +288,13 @@ app.add_middleware(
 # Endpoints
 @app.get("/")
 @app.head("/")
-async def root():
-    return {"status": "AssistenteCell Ecosystem is Live", "version": "0.3.0-beta"}
+async def root(request: Request):
+    return {"status": "AssistenteCell Ecosystem is Live", "version": "0.3.0-beta", **estado_sistema(request.app)}
+
+@app.get('/health')
+async def health(request: Request):
+    # HTTP 200 informa que o serviço de controles está vivo; o corpo distingue o modo.
+    return {'status': 'online', **estado_sistema(request.app)}
 
 app.include_router(eventos_router, tags=["Gateway"])
 app.include_router(ws_router, prefix="/api/v1", tags=["WebSocket"])

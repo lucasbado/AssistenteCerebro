@@ -13,6 +13,10 @@ class MemoriaEpisodica:
     """
 
     async def arquivar_evento(self, evento: EventoCanonico) -> None:
+        if (evento.categoria.value == 'SISTEMA_COMANDO_INTERNO'
+                and evento.payload.get('tipo') in {'TICK_AGENDA', 'TICK_TAREFAS', 'TICK_MENSAGENS', 'TICK_ROTINA'}):
+            # Batidas do agendador não são acontecimentos pessoais; seus resultados continuam arquivados.
+            return
         async with AsyncSessionLocal() as session:
             pai_id = getattr(evento, "evento_pai", None)
 

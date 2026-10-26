@@ -18,6 +18,7 @@ class QueueWorker:
         self.session_factory = session_factory or AsyncSessionLocal
         self.rodando = False
         self._shutdown_event = asyncio.Event()
+        self._intervalo_ocioso = 5
 
     async def iniciar(self):
         self._shutdown_event.clear()
@@ -25,11 +26,17 @@ class QueueWorker:
         try:
             while not self._shutdown_event.is_set():
                 try:
-                    await self._processar_proxima_tarefa()
+                    processou = await self._processar_proxima_tarefa()
+                    intervalo = 0 if processou else self._intervalo_ocioso
+                    self._intervalo_ocioso = 5 if processou else min(900, self._intervalo_ocioso * 3)
                 except Exception:
                     logger.exception("Erro no worker")
+                    intervalo = 900
+                    self._intervalo_ocioso = 900
+                if intervalo == 0:
+                    continue
                 try:
-                    await asyncio.wait_for(self._shutdown_event.wait(), timeout=5)
+                    await asyncio.wait_for(self._shutdown_event.wait(), timeout=intervalo)
                 except asyncio.TimeoutError:
                     pass
         finally:
@@ -45,6 +52,10 @@ class QueueWorker:
             or_(TaskQueueDB.locked_until.is_(None), TaskQueueDB.locked_until < agora),
         ))
         async with self.session_factory() as session:
+            # Fila vazia não precisa executar dois UPDATEs e COMMIT a cada sondagem.
+            existe = (await session.execute(select(TaskQueueDB.id).where(disponivel).limit(1))).scalar_one_or_none()
+            if existe is None:
+                return False
             await session.execute(update(TaskQueueDB).where(disponivel, TaskQueueDB.attempts >= 3).values(status="dead", locked_until=None))
             candidato = select(TaskQueueDB.id).where(disponivel, TaskQueueDB.attempts < 3).order_by(TaskQueueDB.created_at, TaskQueueDB.id).limit(1).scalar_subquery()
             result = await session.execute(update(TaskQueueDB).where(TaskQueueDB.id == candidato, disponivel).values(
@@ -54,7 +65,7 @@ class QueueWorker:
             task_id = result.scalar_one_or_none()
             await session.commit()
             if task_id is None:
-                return
+                return False
             task = await session.get(TaskQueueDB, task_id)
             tentativa = task.attempts
             try:
@@ -72,6 +83,7 @@ class QueueWorker:
                 TaskQueueDB.id == task_id, TaskQueueDB.attempts == tentativa,
             ).values(status=status, locked_until=None))
             await session.commit()
+            return True
 
     async def _executar(self, session, task):
         payload = task.payload if isinstance(task.payload, dict) else json.loads(task.payload)

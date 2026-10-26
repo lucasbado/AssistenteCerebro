@@ -94,6 +94,9 @@ async def receber_evento(request: Request):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=e.errors())
 
     # 0. Verificação Anti-Spam (Grito de rastreio)
+    from servicos.disponibilidade import modo_limitado, AVISO_LIMITADO
+    if modo_limitado(request.app) and evento.categoria.upper() != 'SISTEMA_COMANDO_USUARIO':
+        raise HTTPException(status_code=503, detail=AVISO_LIMITADO)
     if _is_duplicate(evento):
         print(f"🛑 [GATEWAY] Evento {evento.categoria} do {evento.pacote} IGNORADO (DUPLICADO).")
         return {"status": "ignorado_como_duplicado"}

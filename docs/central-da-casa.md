@@ -2,6 +2,8 @@
 
 Controles Android, permissões e mensagens com revisão: [controles do celular](controles-celular.md).
 
+Recuperação quando a cota do banco acaba: [modo limitado sem trocar a memória](modo-limitado-neon.md).
+
 Consumo de IA e alternativas gratuitas: [Groq, Cloudflare e processamento remoto no PC](ia-consumo-fallback.md).
 
 Roteamento por dispositivo e resposta em voz no PC: [Comandos por origem](roteamento-dispositivos.md).

@@ -297,6 +297,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 msg = json.loads(data)
                 tipo = msg.get("tipo_ws")
                 logger.debug('[WS] Mensagem recebida: %s (%s bytes)', tipo, len(data))
+                from servicos.disponibilidade import modo_limitado, AVISO_LIMITADO
+                if modo_limitado(websocket.scope.get('app')) and tipo in {'FEEDBACK', 'SUGGESTION_REJECTED'}:
+                    await websocket.send_json({'tipo_ws': 'RECURSO_INDISPONIVEL', 'texto': AVISO_LIMITADO})
+                    continue
                 
                 # Roteamento de comandos entre dispositivos (Relé)
                 if tipo == 'CELULAR_RESULTADO':
