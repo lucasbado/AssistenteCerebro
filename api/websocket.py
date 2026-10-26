@@ -10,6 +10,7 @@ from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from servicos.confirmacao_pc import ConfirmacoesPC
 from servicos.ponte_ia_pc import ponte_ia_pc
+from servicos.ponte_celular import PonteCelular
 
 logger = logging.getLogger("WebSocket")
 router = APIRouter()
@@ -24,6 +25,15 @@ class GerenciadorNotificacoes:
         self._ultimo_status_pc = None
         self._capacidades = {}
         self._pedidos_casa = {}
+        self.controle_celular = PonteCelular()
+
+    async def executar_celular(self, acao, parametros):
+        ws = self.mobile_client
+        if ws is None or ws.client_state.value != 1:
+            return {"status": "offline"}
+        if 'CONTROLE_MOBILE' not in self._capacidades.get(ws, set()):
+            return {"status": "atualizar"}
+        return await self.controle_celular.executar(ws, self._enviar_direto, acao, parametros)
 
     async def executar_casa(self, identificador, acao, entity_id, timeout=20):
         if len(self._pedidos_casa) >= 32:
@@ -69,7 +79,11 @@ class GerenciadorNotificacoes:
         return {"pc": {"conectado": conectado(self.pc_master),
                        "segundos_sem_status": None if self._ultimo_status_pc is None else
                        round(time.monotonic() - self._ultimo_status_pc, 1)},
-                "mobile": {"conectado": conectado(self.mobile_client)}}
+                "mobile": {"conectado": conectado(self.mobile_client),
+                           "controle_disponivel": conectado(self.mobile_client) and 'CONTROLE_MOBILE' in self._capacidades.get(self.mobile_client, set())},
+                "casa": {"ponte_disponivel": self.ponte_casa_disponivel(),
+                         "pc_configurado": conectado(self.pc_master) and 'CASA' in self._capacidades.get(self.pc_master, set()),
+                         "mobile_configurado": conectado(self.mobile_client) and 'CASA' in self._capacidades.get(self.mobile_client, set())}}
 
     async def enviar_comando_pc(self, mensagem):
         msg = dict(mensagem)
@@ -115,6 +129,7 @@ class GerenciadorNotificacoes:
 
     def desconectar(self, websocket: WebSocket):
         ponte_ia_pc.desconectar(websocket)
+        self.controle_celular.desconectar(websocket)
         self._capacidades.pop(websocket, None)
         for ponte, _, futuro in tuple(self._pedidos_casa.values()):
             if ponte is websocket and not futuro.done():
@@ -284,7 +299,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 logger.debug('[WS] Mensagem recebida: %s (%s bytes)', tipo, len(data))
                 
                 # Roteamento de comandos entre dispositivos (Relé)
-                if tipo == 'IA_RESULTADO':
+                if tipo == 'CELULAR_RESULTADO':
+                    if websocket is central_alertas.mobile_client:
+                        central_alertas.controle_celular.confirmar(websocket, msg)
+                elif tipo == 'IA_RESULTADO':
                     if websocket is central_alertas.pc_master:
                         ponte_ia_pc.confirmar(websocket, msg)
                 elif tipo == "COMANDO_PC" or msg.get("destino") == "PC_MASTER":
@@ -312,7 +330,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     cliente_id = msg.get("id")
                     capacidades = msg.get("capacidades", [])
                     if cliente_id in {"PC_MASTER", "MOBILE"}:
-                        permitidas = {'CASA', 'LOCAL_LLM'} if cliente_id == 'PC_MASTER' else {'CASA'}
+                        permitidas = {'CASA', 'LOCAL_LLM'} if cliente_id == 'PC_MASTER' else {'CASA', 'CONTROLE_MOBILE'}
                         central_alertas._capacidades[websocket] = permitidas.intersection(c for c in capacidades if isinstance(c, str)) if isinstance(capacidades, list) else set()
                     if cliente_id == "PC_MASTER":
                         # 🛡️ ANTI-DUPLICIDADE: Se for a mesma conexão, ignora. 
@@ -340,6 +358,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         if central_alertas.mobile_client and central_alertas.mobile_client != websocket:
                             logger.warning(f"🔄 [WS] Novo MOBILE detectado ({conn_id}). Substituindo conexão antiga.")
                             old_ws = central_alertas.mobile_client
+                            central_alertas.controle_celular.desconectar(old_ws)
                             if old_ws in central_alertas.conexoes_ativas:
                                 central_alertas.conexoes_ativas.remove(old_ws)
                             try: await old_ws.close(1001, "Nova conexão MOBILE registrada")

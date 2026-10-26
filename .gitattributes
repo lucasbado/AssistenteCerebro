@@ -1,0 +1,2 @@
+# Patches preservam os espacos do contexto original; nao sao codigo novo com trailing whitespace.
+docs/patches/*.patch -whitespace

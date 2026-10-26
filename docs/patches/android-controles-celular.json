@@ -1,0 +1,55 @@
+{
+  "base": "Arquivos Android locais posteriores a android-vozes-previa.patch; controles Android com confirmacao. Aplicar sobre arquivos com os hashes before_sha256, sem sobrescrever mudancas divergentes.",
+  "files": [
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "before_sha256": "02069405fe9393fc2b2dd898f487849922cc3be6984d9ce22a3800ea9f2dbf3e",
+      "after_sha256": "40f7c47abc78b7e666bd4916e96986ba3624e38071b434cfd8970dfde8a9b28b"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/DeviceControlsActivity.kt",
+      "before_sha256": null,
+      "after_sha256": "ebcece48f84946985a4b02b7e442c7a53f02a33d269dae9f0405ae0d354e1409"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/MessageRecipientPolicy.kt",
+      "before_sha256": null,
+      "after_sha256": "750f1e50a0ff18210325b2975cbccbdde9e64454d43ec4f92bfc16e423c22841"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/MessageReviewActivity.kt",
+      "before_sha256": null,
+      "after_sha256": "604699dce86562bcc4faf641c43fc9bbc6eb689d21ed53faedbd161ff838480d"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/MobileControlExecutor.kt",
+      "before_sha256": null,
+      "after_sha256": "d23df1e62fd1f2d9a9da6dd7d5f4fe7a1ed9d568d424c75afad9586997da3e58"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/MobileControlRequest.kt",
+      "before_sha256": null,
+      "after_sha256": "ffb4c20569fe854ba2eabab52a93fe7161e57bf18cfd8cdd7ecb4007d0578396"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt",
+      "before_sha256": "afab39388bba4d794988ed572024f620615798ec1c1efa786c0a0475261a403f",
+      "after_sha256": "7aee86c5795bd942acecc14302b993ce49ca89e6a8eb04f70b4d5a8a484d7d3c"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt",
+      "before_sha256": "3f636aff7161a9d06193717eb5b784cfcbe1d2cb1ca79a02b7fb401df194dc07",
+      "after_sha256": "09efa1e4be21093810c7da99852a91e8b933ccad7098c6779b9c477a2f5fb625"
+    },
+    {
+      "path": "app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt",
+      "before_sha256": "fc5f0c82f9ae61c96b42897eba3d6ce6b659f1943e87ad79dfdad5e04caa52ed",
+      "after_sha256": "0b4e8c48b187f4c0fcf72ab52e1f9594d5c8a46e6830b719aaf22ccf5f389ecf"
+    },
+    {
+      "path": "app/src/test/java/com/example/assistentecell/MobileControlRequestTest.kt",
+      "before_sha256": null,
+      "after_sha256": "3ca8219e7a6a526fa4162f284eb0aa3d4d38c7fa34bf4b7a7724607440998588"
+    }
+  ]
+}

@@ -1,0 +1,688 @@
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -23,6 +23,8 @@
+     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+     <uses-permission android:name="android.permission.CAMERA" />
++    <uses-permission android:name="android.permission.READ_CONTACTS" />
++    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+     <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
+     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+@@ -53,6 +55,9 @@
+         android:icon="@mipmap/ic_launcher"
+         android:label="Ollie"
+         android:theme="@style/Theme.AppCompat.Light">
++
++        <activity android:name=".command.DeviceControlsActivity" android:exported="false" />
++        <activity android:name=".command.MessageReviewActivity" android:exported="false" />
+ 
+         <service
+             android:name=".assistant.OllieAssistantService"
+diff --git a/app/src/main/java/com/example/assistentecell/command/DeviceControlsActivity.kt b/app/src/main/java/com/example/assistentecell/command/DeviceControlsActivity.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/command/DeviceControlsActivity.kt
+@@ -0,0 +1,86 @@
++package com.example.assistentecell.command
++
++import android.Manifest
++import android.app.NotificationManager
++import android.content.Intent
++import android.content.pm.PackageManager
++import android.net.Uri
++import android.os.Bundle
++import android.provider.Settings
++import androidx.activity.ComponentActivity
++import androidx.activity.compose.setContent
++import androidx.activity.result.contract.ActivityResultContracts
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++import androidx.core.content.ContextCompat
++import androidx.lifecycle.Lifecycle
++import androidx.lifecycle.LifecycleEventObserver
++import com.example.assistentecell.accessibility.OllieAccessibilityService
++import com.example.assistentecell.ui.theme.AssistenteCellTheme
++
++class DeviceControlsActivity: ComponentActivity() {
++    private var permissionRevision by mutableIntStateOf(0)
++    private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { permissionRevision++ }
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        setContent { AssistenteCellTheme(darkTheme = true, dynamicColor = false) { Controls() } }
++    }
++
++    @Composable private fun Controls() {
++        var revision by remember { mutableIntStateOf(0) }
++        DisposableEffect(Unit) {
++            val observer = LifecycleEventObserver { _, event -> if(event == Lifecycle.Event.ON_RESUME) revision++ }
++            lifecycle.addObserver(observer)
++            onDispose { lifecycle.removeObserver(observer) }
++        }
++        val camera = (revision + permissionRevision).let { ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED }
++        val contacts = (revision + permissionRevision).let { ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED }
++        val write = revision.let { Settings.System.canWrite(this) }
++        val policy = revision.let { getSystemService(NotificationManager::class.java).isNotificationPolicyAccessGranted }
++        val access = revision.let { OllieAccessibilityService.getInstance() != null }
++        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
++            Column(Modifier.safeDrawingPadding().padding(24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
++                TextButton(onClick = { finish() }) { Text("Voltar") }
++                Text("Controles do celular", style = MaterialTheme.typography.headlineMedium)
++                Text("A Ollie executa seus pedidos e informa quando precisa de uma permissão ou de um toque seu.", color = MaterialTheme.colorScheme.onSurfaceVariant)
++                ControlCard("Lanterna", camera, "Autorizar câmera") { permission.launch(Manifest.permission.CAMERA) }
++                ControlCard("Brilho", write, "Permitir ajustes do sistema") {
++                    startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")))
++                }
++                ControlCard("Som e Não perturbe", policy, "Autorizar Não perturbe") {
++                    startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
++                }
++                ControlCard("Navegação entre telas", access, "Abrir acessibilidade") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
++                ControlCard("Contatos para WhatsApp", contacts, "Autorizar contatos") { permission.launch(Manifest.permission.READ_CONTACTS) }
++                Card {
++                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
++                        Text("Experimente por voz", style = MaterialTheme.typography.titleMedium)
++                        Text("Ligue a lanterna\nColoque o volume de mídia em 40%\nColoque o celular no modo vibrar\nCrie um timer de 5 minutos\nColoque um despertador para 7:30\nAtive o GPS")
++                        Text("Wi-Fi, Bluetooth e localização abrem os ajustes do Android. Alarmes e timers são encaminhados ao relógio; confira-os por lá.", style = MaterialTheme.typography.bodySmall)
++                    }
++                }
++                Card {
++                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
++                        Text("Mensagens com revisão", style = MaterialTheme.typography.titleMedium)
++                        Text("Mande mensagem para Ana no WhatsApp dizendo chego às oito")
++                        Text("Você confere o destinatário e toca para enviar. Com uma notificação ativa que permita resposta, a Ollie pode responder pelo próprio app. Para uma conversa nova no WhatsApp, ela abre o texto no aplicativo. Instagram sem notificação exige abrir a conversa manualmente.", style = MaterialTheme.typography.bodySmall)
++                        OutlinedButton(onClick = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Conferir acesso a notificações") }
++                    }
++                }
++            }
++        }
++    }
++
++    @Composable private fun ControlCard(title: String, granted: Boolean, action: String, click: () -> Unit) {
++        Card { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++            Text(title, style = MaterialTheme.typography.titleMedium)
++            Text(if(granted) "Disponível" else "Precisa de autorização", color = MaterialTheme.colorScheme.secondary)
++            OutlinedButton(onClick = click) { Text(action) }
++        } }
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/command/MessageRecipientPolicy.kt b/app/src/main/java/com/example/assistentecell/command/MessageRecipientPolicy.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/command/MessageRecipientPolicy.kt
+@@ -0,0 +1,13 @@
++package com.example.assistentecell.command
++
++import java.text.Normalizer
++import java.util.Locale
++
++/** Título exato, sem aproximação por nome ou grupo. O snapshot é revalidado ao enviar. */
++object MessageRecipientPolicy {
++    fun normalize(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFD)
++        .replace(Regex("\\p{M}+"), "").lowercase(Locale.ROOT).trim().replace(Regex("\\s+"), " ")
++    fun matches(recipient: String, title: String, group: Boolean): Boolean =
++        !group && recipient.isNotBlank() && normalize(recipient) == normalize(title)
++    fun uniquePhone(numbers: List<String>): String? = numbers.distinct().singleOrNull()
++}
+diff --git a/app/src/main/java/com/example/assistentecell/command/MessageReviewActivity.kt b/app/src/main/java/com/example/assistentecell/command/MessageReviewActivity.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/command/MessageReviewActivity.kt
+@@ -0,0 +1,156 @@
++package com.example.assistentecell.command
++
++import android.Manifest
++import android.app.Notification
++import android.app.PendingIntent
++import android.app.RemoteInput
++import android.content.Intent
++import android.content.pm.PackageManager
++import android.net.Uri
++import android.os.Build
++import android.os.Bundle
++import android.provider.ContactsContract
++import android.service.notification.StatusBarNotification
++import android.telephony.PhoneNumberUtils
++import androidx.activity.ComponentActivity
++import androidx.activity.compose.setContent
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++import androidx.core.content.ContextCompat
++import androidx.core.app.NotificationCompat
++import com.example.assistentecell.ListenerDeNotificacoes
++import com.example.assistentecell.ui.theme.AssistenteCellTheme
++import java.util.Locale
++import java.util.UUID
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.withContext
++
++/** Nenhum envio ocorre ao receber o comando. O toque confirma este destinatário e este corpo. */
++class MessageReviewActivity: ComponentActivity() {
++    private var snapshotKey: String? = null
++    private var snapshotTime = 0L
++    private lateinit var reviewId: String
++    private lateinit var app: String
++    private lateinit var recipient: String
++    private lateinit var body: String
++    private var consumed by mutableStateOf(false)
++
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        app = intent.getStringExtra("app").orEmpty()
++        recipient = intent.getStringExtra("recipient").orEmpty()
++        body = intent.getStringExtra("body").orEmpty()
++        if(app !in setOf("whatsapp", "instagram") || recipient.length !in 1..100 || body.length !in 1..2000) { finish(); return }
++        reviewId = savedInstanceState?.getString("review") ?: intent.getStringExtra("review_id") ?: UUID.randomUUID().toString()
++        consumed = getSharedPreferences("message_reviews", MODE_PRIVATE).getBoolean(reviewId, false)
++        if(savedInstanceState == null) {
++            replyCandidates().singleOrNull()?.let { snapshotKey = it.key; snapshotTime = it.postTime }
++        } else {
++            snapshotKey = savedInstanceState.getString("key")
++            snapshotTime = savedInstanceState.getLong("time")
++        }
++        setContent { AssistenteCellTheme(darkTheme = true, dynamicColor = false) { Review() } }
++    }
++
++    override fun onSaveInstanceState(outState: Bundle) {
++        outState.putString("review", reviewId); outState.putString("key", snapshotKey); outState.putLong("time", snapshotTime)
++        super.onSaveInstanceState(outState)
++    }
++
++    private val targetPackage: String get() = if(app == "whatsapp") "com.whatsapp" else "com.instagram.android"
++    private fun replyCandidates(): List<StatusBarNotification> = ListenerDeNotificacoes.activeMessageNotifications().filter { sbn ->
++        val n = sbn.notification
++        val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)
++        // Group summaries, group conversations and multiple indistinguishable titles never auto-select.
++        val group = style == null || (n.flags and Notification.FLAG_GROUP_SUMMARY) != 0 ||
++            (if(Build.VERSION.SDK_INT >= 28) style.isGroupConversation else style.conversationTitle != null)
++        sbn.packageName == targetPackage && MessageRecipientPolicy.matches(recipient, n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(), group)
++            && n.actions.orEmpty().count { a -> a.remoteInputs.orEmpty().count { it.allowFreeFormInput } == 1 } == 1
++    }
++
++    @Composable private fun Review() {
++        var notice by remember { mutableStateOf(if(consumed) "Este pedido já foi confirmado. Não vou enviá-lo outra vez." else "") }
++        var busy by remember { mutableStateOf(false) }
++        val scope = rememberCoroutineScope()
++        val canReply = snapshotKey != null
++        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
++            Column(Modifier.safeDrawingPadding().padding(24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(20.dp)) {
++                Text("Revisar mensagem", style = MaterialTheme.typography.headlineMedium)
++                Text("${if(app == "whatsapp") "WhatsApp" else "Instagram"} · $recipient", style = MaterialTheme.typography.titleMedium)
++                Card { Text(body, Modifier.fillMaxWidth().padding(20.dp), style = MaterialTheme.typography.bodyLarge) }
++                if(canReply) Text("Responder à notificação ativa dessa pessoa. Se ela mudar, vou pedir para revisar novamente.")
++                else Text(if(app == "whatsapp") "Vou abrir o texto no WhatsApp. Você confere a conversa e toca em Enviar por lá. Contatos com mais de um número precisam de um número explícito."
++                    else "Não há uma notificação individual com resposta disponível para esse nome. Abra a conversa no Instagram para escrever por lá.")
++                if(notice.isNotBlank()) Text(notice, color = MaterialTheme.colorScheme.secondary)
++                Button(enabled = !consumed && !busy, onClick = {
++                    busy = true
++                    scope.launch {
++                        try { notice = if(canReply) sendReply() else if(app == "whatsapp") composeWhatsApp() else openInstagram() }
++                        finally { busy = false }
++                    }
++                }) { Text(if(canReply) "Confirmar e responder a $recipient" else if(app == "whatsapp") "Preparar no WhatsApp" else "Abrir Instagram") }
++                TextButton(onClick = { finish() }) { Text("Fechar") }
++            }
++        }
++    }
++
++    private fun consume(): Boolean {
++        val prefs = getSharedPreferences("message_reviews", MODE_PRIVATE)
++        if(consumed || prefs.getBoolean(reviewId, false)) return false
++        if(!prefs.edit().putBoolean(reviewId, true).commit()) return false
++        consumed = true
++        return true
++    }
++
++    private fun sendReply(): String {
++        val current = replyCandidates().singleOrNull() ?: return "Essa notificação não está mais disponível ou o nome ficou ambíguo. Peça novamente para revisar."
++        if(current.key != snapshotKey || current.postTime != snapshotTime) return "A conversa mudou desde a revisão. Peça novamente antes de enviar."
++        val action = current.notification.actions.orEmpty().singleOrNull { a -> a.remoteInputs.orEmpty().count { it.allowFreeFormInput } == 1 }
++            ?: return "Esse aplicativo não oferece resposta nessa notificação."
++        val input = action.remoteInputs.single { it.allowFreeFormInput }
++        if(!consume()) return "Este pedido já foi confirmado."
++        return try {
++            val fill = Intent()
++            val results = Bundle().apply { putCharSequence(input.resultKey, body) }
++            RemoteInput.addResultsToIntent(action.remoteInputs, fill, results)
++            if(Build.VERSION.SDK_INT >= 28) RemoteInput.setResultsSource(fill, RemoteInput.SOURCE_FREE_FORM_INPUT)
++            action.actionIntent.send(this, 0, fill)
++            "Entreguei sua resposta ao $app. A confirmação de entrega fica no próprio aplicativo."
++        } catch (_: PendingIntent.CanceledException) { "A resposta não foi aceita pelo aplicativo. Confira a conversa antes de tentar de novo." }
++        catch (_: Exception) { "Não consegui confirmar a resposta. Confira no aplicativo antes de repetir." }
++    }
++
++    private fun resolvePhone(): String? {
++        val region = Locale.getDefault().country.takeIf { it.length == 2 } ?: "BR"
++        fun phone(raw: String): String? = PhoneNumberUtils.formatNumberToE164(raw, region)?.removePrefix("+")
++        if(recipient.matches(Regex("[+\\d ()-]+"))) return phone(recipient)
++        if(ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
++        val found = mutableListOf<String>()
++        contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
++            arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER), null, null, null)?.use { cursor ->
++            while(cursor.moveToNext()) if(MessageRecipientPolicy.normalize(cursor.getString(0).orEmpty()) == MessageRecipientPolicy.normalize(recipient))
++                phone(cursor.getString(1).orEmpty())?.let(found::add)
++        }
++        return MessageRecipientPolicy.uniquePhone(found)
++    }
++
++    private suspend fun composeWhatsApp(): String { return try {
++        val phone = withContext(Dispatchers.IO) { resolvePhone() } ?: return "Não achei um número único para esse nome. Autorize contatos nos Controles do celular ou peça usando o número com DDD e país."
++        // Uma segunda revisão no app de destino protege contra contatos renomeados e números antigos.
++        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$phone?text=${Uri.encode(body)}")).setPackage("com.whatsapp"))
++        consume()
++        "Texto preparado no WhatsApp. Confira o destinatário e toque em Enviar por lá."
++    } catch (_: Exception) { "Não consegui abrir essa conversa no WhatsApp." } }
++
++    private fun openInstagram(): String { return try {
++        val launch = packageManager.getLaunchIntentForPackage("com.instagram.android") ?: return "Instagram não está instalado."
++        startActivity(launch)
++        "Abri o Instagram. Escolha a conversa e envie por lá. Nenhuma mensagem foi enviada pela Ollie."
++    } catch (_: Exception) { "Não consegui abrir o Instagram." } }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/command/MobileControlExecutor.kt b/app/src/main/java/com/example/assistentecell/command/MobileControlExecutor.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/command/MobileControlExecutor.kt
+@@ -0,0 +1,185 @@
++package com.example.assistentecell.command
++
++import android.Manifest
++import android.accessibilityservice.AccessibilityService
++import android.app.NotificationManager
++import android.content.Context
++import android.content.Intent
++import android.content.pm.PackageManager
++import android.hardware.camera2.CameraCharacteristics
++import android.hardware.camera2.CameraManager
++import android.media.AudioManager
++import android.os.Build
++import android.os.Handler
++import android.os.Looper
++import android.provider.AlarmClock
++import android.provider.Settings
++import androidx.core.content.ContextCompat
++import com.example.assistentecell.accessibility.OllieAccessibilityService
++import kotlinx.coroutines.*
++import kotlinx.coroutines.sync.Mutex
++import kotlinx.coroutines.sync.withLock
++import org.json.JSONObject
++import kotlin.math.roundToInt
++
++/** Contrato fechado. Cada ID é reservado em disco antes de qualquer efeito, inclusive abrir telas. */
++object MobileControlExecutor {
++    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
++    private val requests = linkedMapOf<String, Pair<String, Deferred<JSONObject>>>()
++    private val execution = Mutex()
++    data class Result(val status: String, val text: String)
++
++    fun execute(context: Context, message: JSONObject, reply: (String) -> Boolean) {
++        val request = runCatching { MobileControlRequest.parse(message.toString()) }.getOrElse { return }
++        scope.launch {
++            val pending = synchronized(requests) {
++                val old = requests[request.id]
++                if (old != null && old.first != request.digest) return@launch
++                old?.second ?: run {
++                    requests.entries.removeAll { it.value.second.isCompleted }
++                    if (requests.size >= 16) return@launch
++                    scope.async { runPersisted(context.applicationContext, request) }.also {
++                        requests[request.id] = request.digest to it
++                    }
++                }
++            }
++            reply(pending.await().toString())
++        }
++    }
++
++    private suspend fun runPersisted(context: Context, r: MobileControlRequest): JSONObject {
++        val prefs = context.getSharedPreferences("mobile_control_receipts", Context.MODE_PRIVATE)
++        val previous = prefs.getString(r.id, null)
++        if (previous != null) {
++            val saved = JSONObject(previous)
++            if (saved.optString("digest") != r.digest) return envelope(r, Result("erro", "Esse pedido já foi usado com outros parâmetros."))
++            return saved.optJSONObject("result") ?: envelope(r, Result("erro", "Esse pedido começou antes, mas ficou sem confirmação. Não vou repetir automaticamente."))
++        }
++        // Ledger bounded. IDs aleatórios são gerados pelo servidor a cada pedido; não há replay após reconexão.
++        if (prefs.all.size >= 200) {
++            val oldest = prefs.all.entries.mapNotNull { entry ->
++                val value = runCatching { JSONObject(entry.value as String) }.getOrNull()
++                if(value?.has("result") == true) entry.key to value.optLong("time", 0) else null
++            }.minByOrNull { it.second }?.first
++            if(oldest == null) return envelope(r, Result("erro", "O registro de controles está ocupado. Tente novamente depois."))
++            prefs.edit().remove(oldest).commit()
++        }
++        if (!prefs.edit().putString(r.id, JSONObject().put("digest", r.digest).toString()).commit())
++            return envelope(r, Result("erro", "Não consegui registrar esse pedido no celular."))
++        val result = try { withTimeout(9000) { execution.withLock { withContext(Dispatchers.Main) { run(context, r) } } } }
++        catch (_: SecurityException) { Result("permissao", "O Android bloqueou esse controle. Abra Configurações → Controles do celular e confira as permissões.") }
++        catch (_: TimeoutCancellationException) { Result("erro", "O celular não confirmou o resultado a tempo. Não vou repetir automaticamente.") }
++        catch (_: Exception) { Result("erro", "Não consegui executar esse controle no celular.") }
++        val envelope = envelope(r, result)
++        prefs.edit().putString(r.id, JSONObject().put("digest", r.digest).put("time", System.currentTimeMillis()).put("result", envelope).toString()).commit()
++        return envelope
++    }
++
++    private fun envelope(r: MobileControlRequest, result: Result) = JSONObject()
++        .put("tipo_ws", "CELULAR_RESULTADO").put("id_comando", r.id).put("acao", r.action)
++        .put("status", result.status).put("texto", result.text)
++
++    private fun open(context: Context, intent: Intent, text: String, status: String = "encaminhado"): Result {
++        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
++        return Result(status, text)
++    }
++
++    private suspend fun run(context: Context, r: MobileControlRequest): Result {
++        val audio = context.getSystemService(AudioManager::class.java)
++        val notifications = context.getSystemService(NotificationManager::class.java)
++        return when(r.action) {
++            "flashlight.set" -> {
++                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
++                    Result("permissao", "Autorize a câmera em Controles do celular para eu usar a lanterna.")
++                else torch(context, r.flag("estado"))
++            }
++            "volume.set" -> {
++                val stream = mapOf("media" to AudioManager.STREAM_MUSIC, "alarm" to AudioManager.STREAM_ALARM,
++                    "ring" to AudioManager.STREAM_RING, "notification" to AudioManager.STREAM_NOTIFICATION).getValue(r.text("canal"))
++                val max = audio.getStreamMaxVolume(stream)
++                val value = (max * r.number("valor") / 100.0).roundToInt()
++                audio.setStreamVolume(stream, value, 0)
++                val actual = audio.getStreamVolume(stream)
++                if (actual != value) Result("erro", "O Android não confirmou o volume pedido.")
++                else Result("concluido", "Volume de ${mapOf("media" to "mídia", "alarm" to "alarme", "ring" to "toque", "notification" to "notificações")[r.text("canal")]} em ${(100.0 * actual / max.coerceAtLeast(1)).roundToInt()}% no celular.")
++            }
++            "brightness.set" -> if (!Settings.System.canWrite(context))
++                Result("permissao", "Autorize alterar configurações do sistema em Controles do celular para eu ajustar o brilho.")
++            else {
++                val value = (r.number("valor") * 255.0 / 100).roundToInt().coerceAtLeast(1)
++                val mode = Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
++                val changed = Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, value)
++                if (mode && changed && Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS) == value)
++                    Result("concluido", "Brilho em ${r.number("valor")}% no celular; deixei o ajuste manual.")
++                else Result("erro", "O Android não confirmou o brilho pedido.")
++            }
++            "sound.mode" -> {
++                val mode = mapOf("normal" to AudioManager.RINGER_MODE_NORMAL, "vibrate" to AudioManager.RINGER_MODE_VIBRATE, "silent" to AudioManager.RINGER_MODE_SILENT).getValue(r.text("modo"))
++                audio.ringerMode = mode
++                if (audio.ringerMode == mode) Result("concluido", "Celular no modo ${mapOf("normal" to "normal", "vibrate" to "vibrar", "silent" to "silencioso")[r.text("modo")] }.")
++                else Result("erro", "O Android não confirmou a mudança do modo de som.")
++            }
++            "dnd.set" -> if (!notifications.isNotificationPolicyAccessGranted)
++                Result("permissao", "Autorize Não perturbe em Controles do celular para eu mudar esse modo.")
++            else {
++                val filter = if(r.flag("estado")) NotificationManager.INTERRUPTION_FILTER_PRIORITY else NotificationManager.INTERRUPTION_FILTER_ALL
++                notifications.setInterruptionFilter(filter)
++                if (notifications.currentInterruptionFilter == filter) Result("concluido", "Não perturbe ${if(r.flag("estado")) "ativado" else "desativado"}.")
++                else Result("indisponivel", "O Android não confirmou o Não perturbe global. Confira esse modo nos ajustes do aparelho.")
++            }
++            "settings.open" -> {
++                val panel = r.text("painel")
++                val action = when(panel) {
++                    "location" -> Settings.ACTION_LOCATION_SOURCE_SETTINGS
++                    "wifi" -> if(Build.VERSION.SDK_INT >= 29) Settings.Panel.ACTION_WIFI else Settings.ACTION_WIFI_SETTINGS
++                    else -> Settings.ACTION_BLUETOOTH_SETTINGS
++                }
++                val name = mapOf("location" to "localização", "wifi" to "Wi-Fi", "bluetooth" to "Bluetooth")[panel]
++                open(context, Intent(action), "Abri os ajustes de $name. ${if(r.flag("estado_desejado")) "Ative" else "Desative"} por lá; o Android exige sua interação.")
++            }
++            "timer.create" -> open(context, Intent(AlarmClock.ACTION_SET_TIMER)
++                .putExtra(AlarmClock.EXTRA_LENGTH, r.number("segundos")).putExtra(AlarmClock.EXTRA_MESSAGE, "Ollie")
++                .putExtra(AlarmClock.EXTRA_SKIP_UI, true), "Encaminhei o timer de ${r.number("segundos")} segundos ao relógio. Confira o timer por lá.")
++            "alarm.create" -> {
++                val hour = "%02d:%02d".format(r.number("hora"), r.number("minuto"))
++                open(context, Intent(AlarmClock.ACTION_SET_ALARM).putExtra(AlarmClock.EXTRA_HOUR, r.number("hora"))
++                    .putExtra(AlarmClock.EXTRA_MINUTES, r.number("minuto")).putExtra(AlarmClock.EXTRA_MESSAGE, "Ollie")
++                    .putExtra(AlarmClock.EXTRA_SKIP_UI, true), "Encaminhei o despertador das $hour ao relógio, para a próxima ocorrência desse horário. Confira por lá.")
++            }
++            "navigation" -> {
++                val service = OllieAccessibilityService.getInstance()
++                if(service == null) Result("permissao", "Ative Controle Ollie em Acessibilidade, nos Controles do celular, para eu navegar entre telas.")
++                else {
++                    val action = mapOf("back" to AccessibilityService.GLOBAL_ACTION_BACK, "home" to AccessibilityService.GLOBAL_ACTION_HOME,
++                        "recents" to AccessibilityService.GLOBAL_ACTION_RECENTS, "notifications" to AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS).getValue(r.text("destino"))
++                    if(service.runGlobalAction(action)) Result("concluido", "Navegação atendida pelo Android.")
++                    else Result("erro", "O Android não aceitou essa navegação agora.")
++                }
++            }
++            "controls.open" -> open(context, Intent(context, DeviceControlsActivity::class.java), "Encaminhei a tela de controles do celular.")
++            "message.prepare" -> open(context, Intent(context, MessageReviewActivity::class.java)
++                .putExtra("review_id", r.id)
++                .putExtra("app", r.text("app")).putExtra("recipient", r.text("destinatario"))
++                .putExtra("body", r.text("texto")), "Preparei a mensagem para revisão no celular. Confira destinatário e texto antes de enviar.", "revisao")
++            else -> Result("indisponivel", "Esse controle ainda não está disponível.")
++        }
++    }
++
++    private suspend fun torch(context: Context, enabled: Boolean): Result {
++        val cameras = context.getSystemService(CameraManager::class.java)
++        val id = cameras.cameraIdList.firstOrNull {
++            val c = cameras.getCameraCharacteristics(it)
++            c.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true && c.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
++        } ?: return Result("indisponivel", "Não encontrei uma lanterna nesse aparelho.")
++        val observed = CompletableDeferred<Boolean>()
++        val callback = object: CameraManager.TorchCallback() {
++            override fun onTorchModeChanged(cameraId: String, state: Boolean) { if(cameraId == id && state == enabled) observed.complete(true) }
++        }
++        cameras.registerTorchCallback(callback, Handler(Looper.getMainLooper()))
++        try {
++            cameras.setTorchMode(id, enabled)
++            withTimeout(3000) { observed.await() }
++            return Result("concluido", "Lanterna ${if(enabled) "ligada" else "desligada"}.")
++        } finally { cameras.unregisterTorchCallback(callback) }
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/command/MobileControlRequest.kt b/app/src/main/java/com/example/assistentecell/command/MobileControlRequest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/com/example/assistentecell/command/MobileControlRequest.kt
+@@ -0,0 +1,53 @@
++package com.example.assistentecell.command
++
++import com.google.gson.JsonObject
++import com.google.gson.Gson
++import java.security.MessageDigest
++
++data class MobileControlRequest(val id: String, val action: String, val args: JsonObject) {
++    val digest: String get() = MessageDigest.getInstance("SHA-256")
++        .digest((action + args.toString()).toByteArray()).joinToString("") { "%02x".format(it) }
++    fun number(key: String) = args[key].asInt
++    fun text(key: String) = args[key].asString
++    fun flag(key: String) = args[key].asBoolean
++
++    companion object {
++        fun parse(raw: String): MobileControlRequest {
++            require(raw.length <= 10000)
++            val obj = Gson().fromJson(raw, JsonObject::class.java)
++            require(obj["pedido_usuario"]?.isJsonPrimitive == true && obj["pedido_usuario"].asJsonPrimitive.isBoolean && obj["pedido_usuario"].asBoolean)
++            val id = obj["id_comando"]?.asString.orEmpty()
++            require(obj["id_comando"]?.asJsonPrimitive?.isString == true)
++            require(id.matches(Regex("[\\w.:-]{1,128}")))
++            val action = obj["acao"]?.asString.orEmpty()
++            val p = obj["parametros"]?.asJsonObject ?: error("Parâmetros ausentes")
++            fun keys(vararg keys: String) { require(p.entrySet().map { it.key }.toSet() == keys.toSet()) }
++            fun int(key: String, range: IntRange) {
++                val v = p[key]?.asJsonPrimitive ?: error("Número ausente")
++                val number = v.toString().takeIf { v.isNumber && it.matches(Regex("\\d+")) }?.toLongOrNull()
++                require(number != null && number in range.first.toLong()..range.last.toLong())
++            }
++            fun text(key: String, values: Set<String>) { require(p[key]?.asJsonPrimitive?.isString == true && p[key].asString in values) }
++            fun flag(key: String) { require(p[key]?.asJsonPrimitive?.isBoolean == true) }
++            when(action) {
++                "flashlight.set", "dnd.set" -> { keys("estado"); flag("estado") }
++                "volume.set" -> { keys("valor", "canal"); int("valor", 0..100); text("canal", setOf("media", "alarm", "ring", "notification")) }
++                "brightness.set" -> { keys("valor"); int("valor", 0..100) }
++                "sound.mode" -> { keys("modo"); text("modo", setOf("silent", "vibrate", "normal")) }
++                "timer.create" -> { keys("segundos"); int("segundos", 1..86400) }
++                "alarm.create" -> { keys("hora", "minuto"); int("hora", 0..23); int("minuto", 0..59) }
++                "navigation" -> { keys("destino"); text("destino", setOf("back", "home", "recents", "notifications")) }
++                "settings.open" -> { keys("painel", "estado_desejado"); text("painel", setOf("location", "wifi", "bluetooth")); flag("estado_desejado") }
++                "controls.open" -> keys()
++                "message.prepare" -> {
++                    keys("app", "destinatario", "texto"); text("app", setOf("whatsapp", "instagram"))
++                    for ((key, max) in listOf("destinatario" to 100, "texto" to 2000)) {
++                        require(p[key]?.asJsonPrimitive?.isString == true && p[key].asString.trim().length in 1..max)
++                    }
++                }
++                else -> error("Controle desconhecido")
++            }
++            return MobileControlRequest(id, action, p)
++        }
++    }
++}
+diff --git a/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt b/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
+--- a/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
++++ b/app/src/main/java/com/example/assistentecell/command/SystemCommandHandler.kt
+@@ -81,6 +81,13 @@
+         }
+         
+         val alvo = json.optString("alvo", "MOBILE").uppercase()
++        val nativeControls = setOf("SET_TIMER", "TIMER", "SET_ALARM", "ALARME", "CONFIGURAR_DESPERTAR", "DESPERTAR", "CONFIGURAR_ALARME",
++            "TOGGLE_FLASHLIGHT", "LANTERNA", "SET_VOLUME", "VOLUME", "SET_BRIGHTNESS", "BRILHO", "SET_DND", "MODO_NAO_PERTURBE", "FOCO",
++            "TOGGLE_WIFI", "WIFI", "TOGGLE_BLUETOOTH", "BLUETOOTH", "GLOBAL_BACK", "VOLTAR", "GLOBAL_HOME", "HOME", "GLOBAL_RECENTS", "RECENTES", "CLICK_TEXT", "CLICAR")
++        if (type in nativeControls && !userInitiated) {
++            Log.w(TAG, "Controle remoto legado recusado; use CELULAR_EXECUTAR com parâmetros validados e confirmação")
++            return
++        }
+         if (type in AppOpeningPolicy.commands && !allowOpening(context, json, type, parameter, userInitiated)) return
+         
+         Log.d(TAG, "🚀 Processando Comando: $type | Alvo: $alvo | Param: $parameter")
+diff --git a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+--- a/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
++++ b/app/src/main/java/com/example/assistentecell/ListenerDeNotificacoes.kt
+@@ -68,6 +68,9 @@
+ 
+     companion object {
+         private var instance: ListenerDeNotificacoes? = null
++
++        fun activeMessageNotifications(): List<android.service.notification.StatusBarNotification> =
++            try { instance?.activeNotifications?.toList().orEmpty() } catch (_: Exception) { emptyList() }
+         
+         // 🔒 COFRE DE CLIQUES: Guarda o clique original da notificação para abrir depois
+         private val cofreIntencoes = mutableMapOf<String, android.app.PendingIntent>()
+@@ -116,7 +119,7 @@
+         fun enviarMensagemWebSocket(json: String): Boolean {
+             val ws = instance?.webSocket
+             return if (ws != null) {
+-                Log.d("AGENTE_WS", "📤 Enviando via WebSocket: $json")
++                Log.d("AGENTE_WS", "Enviando via WebSocket (${json.length} caracteres)")
+                 ws.send(json)
+             } else {
+                 Log.e("AGENTE_WS", "⚠️ Tentativa de envio sem WebSocket ativo")
+@@ -413,8 +416,9 @@
+                     put("tipo_ws", "REGISTRO")
+                     put("id", "MOBILE")
+                     put("connection_id", currentConnId)
++                    put("capacidades", JSONArray().put("CONTROLE_MOBILE"))
+                     if (!getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE).getString("ha_token", "").isNullOrBlank()) {
+-                        put("capacidades", JSONArray().put("CASA"))
++                        getJSONArray("capacidades").put("CASA")
+                     }
+                 }
+                 webSocket.send(registro.toString())
+@@ -428,6 +432,11 @@
+                 try {
+                     val json = JSONObject(text)
+                     val tipoWs = json.optString("tipo_ws", "NOTIFICACAO")
++                    if (tipoWs == "CELULAR_EXECUTAR") {
++                        com.example.assistentecell.command.MobileControlExecutor.execute(
++                            this@ListenerDeNotificacoes, json) { webSocket.send(it) }
++                        return
++                    }
+                     if (tipoWs == "CALENDARIO_ATUALIZAR") {
+                         com.example.assistentecell.calendar.CalendarMirror.enqueue(this@ListenerDeNotificacoes)
+                         return
+@@ -435,7 +444,7 @@
+ 
+                     // 🔇 SILÊNCIO: Não loga o status do PC para não poluir o Logcat
+                     if (tipoWs != "STATUS_PC") {
+-                        Log.d("AGENTE_WS", "📩 MENSAGEM RECEBIDA: $text")
++                        Log.d("AGENTE_WS", "Mensagem recebida: $tipoWs (${text.length} caracteres)")
+                     }
+ 
+                     val correlacaoId = json.optString("correlacao_id", "")
+@@ -449,8 +458,9 @@
+                             put("tipo_ws", "REGISTRO")
+                             put("id", "MOBILE")
+                             put("connection_id", currentConnId)
++                            put("capacidades", JSONArray().put("CONTROLE_MOBILE"))
+                     if (!getSharedPreferences("sistema_prefs", Context.MODE_PRIVATE).getString("ha_token", "").isNullOrBlank()) {
+-                        put("capacidades", JSONArray().put("CASA"))
++                        getJSONArray("capacidades").put("CASA")
+                     } // 🛡️ IDENTIFICAÇÃO ROBUSTA
+                         }
+                         webSocket.send(registro.toString())
+diff --git a/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt b/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt
+--- a/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt
++++ b/app/src/main/java/com/example/assistentecell/ui/screens/SettingsScreen.kt
+@@ -386,6 +386,12 @@
+ 
+             item {
+                 SettingsGroupCard(title = "Voz e Inteligência") {
++                    SettingItemNew(
++                        title = "Controles do celular",
++                        subtitle = "Lanterna, som, navegação e mensagens com revisão",
++                        icon = Icons.Outlined.Tune,
++                        onClick = { context.startActivity(Intent(context, com.example.assistentecell.command.DeviceControlsActivity::class.java)) }
++                    )
+                     SettingItemNew(
+                         title = "Voz da Ollie",
+                         subtitle = (voiceOptions.find { it.id == selectedVoice }?.label ?: "Escolha uma voz") + if(isVoiceEnabled) " · respostas em áudio ligadas" else " · ouvir e escolher",
+diff --git a/app/src/test/java/com/example/assistentecell/MobileControlRequestTest.kt b/app/src/test/java/com/example/assistentecell/MobileControlRequestTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/com/example/assistentecell/MobileControlRequestTest.kt
+@@ -0,0 +1,45 @@
++package com.example.assistentecell
++
++import com.example.assistentecell.command.MobileControlRequest
++import com.example.assistentecell.command.MessageRecipientPolicy
++import org.junit.Assert.*
++import org.junit.Test
++
++class MobileControlRequestTest {
++    private fun parse(action: String, args: String, authorized: String = "true") = MobileControlRequest.parse(
++        """{"id_comando":"pedido-1","pedido_usuario":$authorized,"acao":"$action","parametros":$args}""")
++    @Test fun preservesFalseZeroAndExactMessage() {
++        assertFalse(parse("dnd.set", """{"estado":false}""").flag("estado"))
++        assertEquals(0, parse("volume.set", """{"canal":"media","valor":0}""").number("valor"))
++        val message = parse("message.prepare", """{"app":"instagram","destinatario":"João","texto":"Não abra https://example.com/Case?A=B"}""")
++        assertEquals("Não abra https://example.com/Case?A=B", message.text("texto"))
++        assertEquals(message.digest, parse("message.prepare", message.args.toString()).digest)
++    }
++    @Test fun rejectsCoercionUnknownAndUnconfirmedActions() {
++        for ((action, args) in listOf(
++            "volume.set" to """{"canal":"media","valor":"50"}""",
++            "volume.set" to """{"canal":"media","valor":101}""",
++            "volume.set" to """{"canal":"media","valor":1.0}""",
++            "volume.set" to """{"canal":"media","valor":4294967296}""",
++            "flashlight.set" to """{"estado":"false"}""",
++            "flashlight.set" to """{"estado":1}""",
++            "timer.create" to """{"segundos":0}""",
++            "timer.create" to """{"segundos":86401}""",
++            "alarm.create" to """{"hora":24,"minuto":0}""",
++            "brightness.set" to """{"valor":50,"shell":"ls"}""",
++            "message.send" to """{"texto":"oi"}""",
++            "message.prepare" to """{"app":"whatsapp","destinatario":"","texto":"oi"}"""
++        )) { try { parse(action, args); fail("Deveria recusar $action $args") } catch (_: Exception) {} }
++        for(auth in listOf("false", "\"true\"", "1")) {
++            try { parse("flashlight.set", """{"estado":true}""", auth); fail("Autoridade inválida") } catch (_: Exception) {}
++        }
++    }
++    @Test fun exactRecipientNeverMatchesGroupSubstringOrTwoNumbers() {
++        assertTrue(MessageRecipientPolicy.matches("João", "joao", false))
++        assertFalse(MessageRecipientPolicy.matches("Ana", "Ana Trabalho", false))
++        assertFalse(MessageRecipientPolicy.matches("Família", "Família", true))
++        assertFalse(MessageRecipientPolicy.matches("", "", false))
++        assertNull(MessageRecipientPolicy.uniquePhone(listOf("5511999999999", "5511888888888")))
++        assertEquals("5511999999999", MessageRecipientPolicy.uniquePhone(listOf("5511999999999", "5511999999999")))
++    }
++}

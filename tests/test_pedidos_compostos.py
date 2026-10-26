@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -131,8 +131,9 @@ async def test_lista_da_llm_tambem_e_validada_por_etapa(cerebro):
 def transporte(monkeypatch, statuses=('concluido', 'concluido'), pc=True):
     import api.websocket as ws
     central = ws.GerenciadorNotificacoes()
-    central.pc_master = SimpleNamespace(client_state=SimpleNamespace(value=1)) if pc else None
-    central.mobile_client = SimpleNamespace(client_state=SimpleNamespace(value=1))
+    # O socket também identifica capacidades registradas e precisa ser hashable, como o WebSocket real.
+    central.pc_master = Mock(client_state=SimpleNamespace(value=1)) if pc else None
+    central.mobile_client = Mock(client_state=SimpleNamespace(value=1))
     ordem = []
     async def enviar(msg):
         ordem.append(('envio', msg['id_comando']))

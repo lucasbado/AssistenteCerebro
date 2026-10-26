@@ -125,6 +125,10 @@ class AgenteRaciocinio:
             if tem_abertura:
                 # A sugestão abaixo contém o botão real; não anunciar execução que foi negada.
                 msg_ia = None
+            from servicos.controle_celular import COMANDOS_LEGADOS
+            if any(isinstance(item, dict) and str(item.get('comando') or item.get('action') or '').lower().strip() in COMANDOS_LEGADOS
+                   and str(item.get('alvo', '')).upper() == 'MOBILE' for item in acoes_extraidas):
+                msg_ia = None
 
             # 📝 LOG COGNITIVO
             self._registrar_log_cognitivo(texto_u, habitos_contexto, resultado)
@@ -207,6 +211,16 @@ class AgenteRaciocinio:
                             payload={"comando": comando, "parametro": param},
                             metadados={**(contexto_pedido(evento) if explicito else evento.metadados), "pedido_explicito": explicito}))
                     elif a == "MOBILE":
+                        if comando in COMANDOS_LEGADOS:
+                            # A LLM não pode usar o executor antigo com valores padrão implícitos.
+                            if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+                                from servicos.controle_celular import interpretar_controle
+                                from servicos.roteamento_pedidos import dispositivo_origem
+                                if interpretar_controle(texto_u, dispositivo_origem(evento)):
+                                    await kernel.publicar(evento.clonar(categoria=CategoriaEvento.CELULAR_ACAO_SOLICITADA, acao=TipoAcao.NORMAL))
+                                else:
+                                    await responder_pedido(evento, 'Preciso de um controle específico do celular. Diga, por exemplo: ligue a lanterna; volume de mídia em 40%; ou crie um timer de 5 minutos.')
+                            continue
                         from api.websocket import central_alertas
                         enviado = await central_alertas.enviar_comando_mobile({
                             "tipo_ws": "COMANDO_SISTEMA", "acao": comando.upper(), "parametro": param,

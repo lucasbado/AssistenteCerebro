@@ -24,6 +24,10 @@ class AgenteReflexo:
             from servicos.agenda import agenda
             from servicos.roteamento_pedidos import dispositivo_origem
             texto = str(evento.payload.get('texto', ''))
+            from servicos.controle_celular import interpretar_controle
+            if interpretar_controle(texto, dispositivo_origem(evento)):
+                await kernel.publicar(evento.clonar(categoria=CategoriaEvento.CELULAR_ACAO_SOLICITADA))
+                return
             from servicos.mensagens import pedido_mensagens
             if pedido_mensagens(texto):
                 await kernel.publicar(evento.clonar(categoria=CategoriaEvento.MENSAGEM_SOLICITADA))
