@@ -92,4 +92,15 @@ de fundo frequentes podem impedir a suspensão por ociosidade.
 Os testes simulam a recusa de cota e proíbem qualquer criação de sessão SQL depois
 do startup limitado. Cobrem autenticação, estado de saúde, home, recusas de
 gravação, feedback e conversa completa com confirmações simuladas de celular, PC
-e luzes. A validação contra o Render depende do deploy desta correção.
+e luzes. A suíte completa passou em 575 testes, com dois ignorados.
+
+Após o usuário publicar o commit `fa2b3ab`, o Render retornou `/health` com
+`modo=limitado` e `motivo=quota_banco_excedida`. PC, celular e pontes da casa
+estavam conectados. A home mostrou o aviso e a agenda retornou 503.
+
+Um pedido de volume passou pela API e pelo kernel até o executor Android real,
+que confirmou a execução preservando o nível anterior do aparelho. Comandos
+somente de leitura `snapshot` e `casa_acao` (`consultar`) também retornaram
+`concluido` após execução no PC e consulta ao HA. Nenhum aplicativo foi aberto
+por esses dois testes e o estado da lâmpada não foi alterado. A confirmação
+subjetiva da chamada e da resposta em voz no celular foi solicitada ao usuário.
