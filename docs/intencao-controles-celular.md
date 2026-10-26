@@ -78,8 +78,20 @@ outros consumidores. Planos de interface também têm limites de tempo e etapas.
   timer de três minutos, pergunta de horário ausente e explicação de pareidolia.
 - Integração simulada autenticada: modo limitado sem sessão SQL, catálogo Android,
   pergunta e continuação do horário, execução e resposta correlacionada.
-- Validação física/instalação desta versão pendente: celular não localizado no ADB.
-  Nenhum despertador de teste foi criado.
+- APK instalado por depuração Wi-Fi em 26/10/2026, após o usuário disponibilizar o
+  aparelho e publicar o backend `85c7ed4` no Render. API online em modo limitado;
+  PC, celular e pontes da casa conectados.
+- Pedido real pela API → kernel → interpretação semântica → executor Android:
+  “Preciso levantar às 21:28. Faz o celular me acordar nesse horário?”. O Relógio
+  Samsung mostrou o alarme `Ollie`, às 21h28 de 26/10, ativado. Depois foi excluído
+  somente esse alarme, com verificação de nome, horário e seleção única. Os estados
+  dos outros alarmes visíveis foram preservados.
+- “Quero usar a calculadora no celular agora, abre ela pra mim” retornou
+  `app.open/concluido`; a Calculadora Samsung veio para o primeiro plano.
+- A autorização de leitura de telas por IA permaneceu desligada. O serviço da
+  assistente permaneceu vinculado (`mBound=true`), e wake word/listener estavam
+  ativos após a instalação. Esses testes reais usaram texto pela API; não são
+  uma nova medição de reconhecimento de voz ou de interação dentro de outros apps.
 
 As alterações Android estão em `patches/android-intencoes-celular.patch` e no
 manifesto de hashes correspondente, sobre a base de `android-controles-celular.patch`.
