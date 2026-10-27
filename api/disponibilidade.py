@@ -30,7 +30,7 @@ class DisponibilidadeMiddleware:
                 or path == '/api/v1/voice/speak'
                 or path in {'/api/v1/pc/conexoes', '/api/v1/pc/pc-apps', '/api/v1/pc/mobile-apps', '/api/v1/pc/comando'}
                 or path.startswith('/api/v1/pc/comando/')
-                or path in {'/api/v1/ha/webhook', '/api/v1/ha/buttons/preview', '/api/v1/ha/light/on', '/api/v1/ha/light/off', '/api/v1/ha/light/toggle'})
+                or path in {'/api/v1/ha/webhook', '/api/v1/ha/buttons/preview', '/api/v1/ha/light/on', '/api/v1/ha/light/off', '/api/v1/ha/light/toggle', '/api/v1/ha/audio'})
             if allowed:
                 return await self.app(scope, receive, send)
             await JSONResponse({'detail': AVISO_LIMITADO, 'codigo': 'persistencia_indisponivel', 'modo': 'limitado'}, status_code=503)(scope, receive, send)

@@ -314,6 +314,23 @@ class PcControlService:
                 self.inicializar()
             except: pass
 
+    def obter_vm_audio(self):
+        """Conexão somente com mixer já ativo; não abre GUI, Spotify nem reinicia o motor."""
+        if self.vm is not None:
+            return self.vm
+        if not voicemeeterlib:
+            raise RuntimeError('Biblioteca VoiceMeeter indisponível')
+        vm = voicemeeterlib.api('banana')
+        try:
+            if vm.call(vm.bind_login, ok=(0, 1)) != 0 or vm.type != 'banana':
+                raise RuntimeError('VoiceMeeter Banana precisa estar aberto')
+        except Exception:
+            try: vm.logout()
+            except Exception: pass
+            raise
+        self.vm = vm
+        return vm
+
     def set_vm_param(self, param, valor):
         self._garantir_vm()
         if self.vm:

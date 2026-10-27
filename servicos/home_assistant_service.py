@@ -52,6 +52,16 @@ class HomeAssistantService:
         except httpx.HTTPError:
             return {"conectado": False, "motivo": "inacessivel"}
 
+    async def feedback_audio(self, modo):
+        if modo not in {'VOLUME', 'SINCRONIZACAO'}:
+            raise ValueError('Modo de áudio inválido')
+        try:
+            return await asyncio.wait_for(self.chamar_servico('script', 'turn_on', 'script.ollie_feedback_visual',
+                {'variables': {'modo_controle': modo}}), timeout=2)
+        except TimeoutError:
+            logger.warning('[HASS] Feedback de áudio sem confirmação; comando não será repetido')
+            return False
+
     async def controlar_luz_confirmada(self, acao, entity_id):
         return await asyncio.wait_for(self._controlar_luz_confirmada(acao, entity_id), timeout=15)
 

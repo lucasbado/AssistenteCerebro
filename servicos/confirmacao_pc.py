@@ -24,6 +24,11 @@ class ConfirmacoesPC:
             registro["status"] = status
             if isinstance(resultado, dict) and isinstance(resultado.get('primeiro_plano'), bool):
                 registro['resultado'] = {'primeiro_plano': resultado['primeiro_plano']}
+            if registro['comando'] == 'audio_controle' and isinstance(resultado, dict):
+                # Resultado fechado, limitado e sem transportar dados arbitrários do desktop.
+                from servicos.resultado_audio import resultado_audio_valido
+                if resultado_audio_valido(resultado):
+                    registro['resultado'] = {'audio': resultado['audio']}
 
     async def aguardar(self, identificador, timeout=12):
         limite = self.relogio() + timeout

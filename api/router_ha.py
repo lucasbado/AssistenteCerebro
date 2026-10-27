@@ -6,9 +6,24 @@ from core.kernel import kernel
 from core.evento import EventoCanonico
 from core.tipos import CategoriaEvento, OrigemEvento
 from servicos.botoes import ToqueBotao, servico_botoes
+from servicos.entrada_audio import EntradaAudio, entrada_audio
 
 router = APIRouter(tags=["Home Assistant"])
 logger = logging.getLogger("HomeAssistantAPI")
+
+@router.post('/audio')
+async def controlar_audio(pedido: EntradaAudio, response: Response):
+    from api.websocket import central_alertas
+    try:
+        resultado = await entrada_audio.enviar(pedido, central_alertas)
+    except ValueError as erro:
+        raise HTTPException(409, detail=str(erro)) from erro
+    if not resultado or resultado.get('status') == 'pc_offline':
+        raise HTTPException(503, detail='Desktop desconectado; nenhum ajuste de áudio confirmado')
+    response.status_code = 202 if resultado['status'] == 'enviado' else 200
+    return {'status': 'enfileirado' if response.status_code == 202 else resultado['status'],
+            'id': resultado['id'], 'consulta': '/api/v1/pc/comando/' + resultado['id']}
+
 
 @router.post("/webhook")
 async def ha_webhook(toque: ToqueBotao, response: Response):

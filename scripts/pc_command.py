@@ -8,6 +8,9 @@ from urllib.parse import urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 def executar(comando, parametro, service=None):
+    if comando == 'audio_controle':
+        from servicos.controle_audio import executar_audio
+        return executar_audio(json.loads(parametro), service)
     if comando == "casa_acao":
         from servicos.home_assistant_service import home_assistant_service
         pedido = json.loads(parametro)

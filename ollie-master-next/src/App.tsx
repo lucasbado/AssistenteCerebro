@@ -8,6 +8,7 @@ import { decodeTaskActions } from './taskActions';
 import { decodeMessageActions } from './messageActions';
 import { DesktopVoice } from './desktopVoice';
 import { DesktopListening, type ListeningEvent, type ListeningPhase } from './desktopListening';
+import { createAudioQueue, type AudioResult } from './audioControl';
 
 async function authenticatedFetch(url: string, options: RequestInit = {}) {
   const token = await invoke<string>("get_auth_token");
@@ -150,6 +151,8 @@ export default function App() {
   const lastCommandRef = useRef<{ id: string; comando: string; status: string } | null>(null);
   const houseResultsRef = useRef(new Map<string, { entity_id: string; state: string }>());
   const openingResultsRef = useRef(new Map<string, { primeiro_plano: boolean }>());
+  const audioResultsRef = useRef(new Map<string, { audio: AudioResult }>());
+  const audioQueueRef = useRef(createAudioQueue(parametro => invoke<string>('execute_pc_command', { comando: 'audio_controle', parametro })));
 
   const [policyLoading, setPolicyLoading] = useState(true);
   const [policyError, setPolicyError] = useState('');
@@ -268,7 +271,7 @@ export default function App() {
         }
         if (socket?.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({ tipo_ws: 'COMANDO_RESULTADO', id_comando: id, status,
-            resultado: houseResultsRef.current.get(id) ?? openingResultsRef.current.get(id) }));
+            resultado: audioResultsRef.current.get(id) ?? houseResultsRef.current.get(id) ?? openingResultsRef.current.get(id) }));
         }
       }
     };
@@ -293,7 +296,17 @@ export default function App() {
 
       addLog(`⚡ Executing local PC command: ${cmd} (${param})`, "text-neon-cyan");
 
-      if (cmd === 'wake_ollie') {
+      if (cmd === 'audio_controle') {
+        const audio = await audioQueueRef.current(param);
+        audioResultsRef.current.set(id, { audio });
+        if (audioResultsRef.current.size > 200) {
+          audioResultsRef.current.delete(audioResultsRef.current.keys().next().value!);
+        }
+        const failed = ['erro', 'parcial', 'indeterminado', 'ocupado'].includes(audio.status);
+        addLog(`Áudio: ${audio.codigo}`, failed ? 'text-red-400' : 'text-neon-cyan');
+        finish(failed ? 'erro' : 'concluido');
+        return;
+      } else if (cmd === 'wake_ollie') {
         setPage('chat');
         await invoke('activate_window');
         if (listening.current!.enabled) await listening.current!.listenNow();
