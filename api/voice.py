@@ -8,17 +8,27 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from servicos.texto_falado import preparar_fala
+from servicos.gemini_tts import (
+    gemini_tts_service,
+    LISTA_VOZES_GEMINI,
+    LISTA_VOZES_EDGE,
+    obter_voz_edge_fallback,
+    obter_voz_gemini,
+    DEFAULT_GEMINI_VOICE,
+    DEFAULT_EDGE_VOICE,
+)
 
 logger = logging.getLogger("VoiceAPI")
 router = APIRouter()
 
-DEFAULT_VOICE = "pt-BR-ThalitaMultilingualNeural"
+DEFAULT_VOICE = DEFAULT_GEMINI_VOICE
 HEADERS = {"Content-Disposition": "attachment; filename=voice.mp3", "Cache-Control": "no-store"}
 
 
 class PedidoDeVoz(BaseModel):
     text: str
     voice: str = DEFAULT_VOICE
+    provider: str = "auto"  # 'auto', 'gemini' ou 'edge'
     rate: float = 1.0
     pitch: float = 1.0
     stream: bool = False
@@ -35,11 +45,9 @@ async def blocos_de_audio(communicate):
                 yield bloco["data"]
 
 
-async def sintetizar(pedido: PedidoDeVoz):
-    texto = preparar_fala(pedido.text)
-    if not texto:
-        raise HTTPException(status_code=400, detail="Texto não fornecido.")
-    voice = DEFAULT_VOICE if pedido.voice == "pt-BR-ThalitaNeural" else pedido.voice
+async def sintetizar_edge(pedido: PedidoDeVoz, texto: str):
+    """Sintetiza voz utilizando o provedor Edge TTS."""
+    voice = obter_voz_edge_fallback(pedido.voice)
     blocos = None
     transferido = False
     try:
@@ -62,16 +70,58 @@ async def sintetizar(pedido: PedidoDeVoz):
             dados.extend(bloco)
         return Response(bytes(dados), media_type="audio/mpeg", headers=HEADERS)
     except Exception as erro:
-        logger.warning("Síntese de voz indisponível (%s).", type(erro).__name__)
+        logger.warning("Edge TTS indisponível (%s).", type(erro).__name__)
         raise HTTPException(status_code=500, detail="Não consegui gerar o áudio.") from erro
     finally:
         if blocos is not None and not transferido:
             await blocos.aclose()
 
 
+async def sintetizar(pedido: PedidoDeVoz):
+    texto = preparar_fala(pedido.text)
+    if not texto:
+        raise HTTPException(status_code=400, detail="Texto não fornecido.")
+
+    # Tentativa com Gemini se provider for 'auto' ou 'gemini'
+    if pedido.provider in ("auto", "gemini") and gemini_tts_service.disponivel():
+        try:
+            logger.info("🎙️ [VoiceAPI] Sintetizando áudio via Gemini TTS...")
+            audio_bytes = await gemini_tts_service.sintetizar(texto, voice=pedido.voice)
+            return Response(audio_bytes, media_type="audio/mpeg", headers=HEADERS)
+        except Exception as erro:
+            logger.warning("⚠️ [VoiceAPI] Falha no Gemini TTS (%s). Ativando fallback para Edge TTS.", type(erro).__name__)
+            if pedido.provider == "gemini":
+                # Se o usuário exigiu estritamente o Gemini e este falhou
+                raise HTTPException(status_code=500, detail=f"Falha ao sintetizar voz via Gemini: {erro}") from erro
+
+    # Fallback / Provedor padrão: Edge TTS
+    logger.info("🎙️ [VoiceAPI] Sintetizando áudio via Edge TTS...")
+    return await sintetizar_edge(pedido, texto)
+
+
+@router.get("/voices")
+async def listar_vozes():
+    """Retorna o catálogo completo de vozes do Gemini e do Edge TTS, com mapeamento de fallback."""
+    provedor_ativo = "gemini" if gemini_tts_service.disponivel() else "edge"
+    return {
+        "active_provider": provedor_ativo,
+        "gemini_available": gemini_tts_service.disponivel(),
+        "default_voice": DEFAULT_VOICE,
+        "default_edge_voice": DEFAULT_EDGE_VOICE,
+        "gemini_voices": LISTA_VOZES_GEMINI,
+        "edge_voices": LISTA_VOZES_EDGE
+    }
+
+
 @router.get("/speak")
-async def speak(text: str, voice: str = DEFAULT_VOICE, rate: float = 1.0, pitch: float = 1.0):
-    return await sintetizar(PedidoDeVoz(text=text, voice=voice, rate=rate, pitch=pitch))
+async def speak(
+    text: str,
+    voice: str = DEFAULT_VOICE,
+    provider: str = "auto",
+    rate: float = 1.0,
+    pitch: float = 1.0
+):
+    return await sintetizar(PedidoDeVoz(text=text, voice=voice, provider=provider, rate=rate, pitch=pitch))
 
 
 @router.post("/speak")

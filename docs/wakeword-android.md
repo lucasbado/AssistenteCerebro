@@ -64,7 +64,7 @@ modelos pessoais nem outras alterações pré-existentes do projeto Android.
 No Galaxy S23, foram comparados oito áudios locais com a execução Python:
 três chamadas tiveram uma ativação cada e cinco frases negativas tiveram zero.
 A maior diferença numérica de score foi aproximadamente `1,01e-6`; as medianas
-de inferência ficaram entre 3,29 e 3,44 ms por bloco de 80 ms na execução final.
+de inferência ficaram entre 4,45 e 4,66 ms por bloco de 80 ms.
 
 O usuário confirmou que a chamada abriu a assistente e recebeu resposta tanto
 dentro quanto fora da tela do app. A escuta do PC, pausada temporariamente para
