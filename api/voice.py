@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from servicos.texto_falado import preparar_fala
+from servicos.corretor_fala import corrigir_fala
 from servicos.gemini_tts import (
     gemini_tts_service,
     LISTA_VOZES_GEMINI,
@@ -142,15 +143,19 @@ async def sintetizar(pedido: PedidoDeVoz):
     if not texto:
         raise HTTPException(status_code=400, detail="Texto não fornecido.")
 
+    # Aplica correção fonética de fala
+    texto = corrigir_fala(texto)
+
     config_pc = carregar_config_voz_pc()
     provider_ativo = pedido.provider or config_pc["provider"]
     voice_ativa = pedido.voice or config_pc["voice"]
+    rate_val = pedido.rate if pedido.rate is not None else config_pc["rate"]
 
     # Tentativa com Gemini se provider for 'auto' ou 'gemini'
     if provider_ativo in ("auto", "gemini") and gemini_tts_service.disponivel():
         try:
             logger.info("🎙️ [VoiceAPI] Sintetizando áudio via Gemini TTS (%s)...", voice_ativa)
-            audio_bytes = await gemini_tts_service.sintetizar(texto, voice=voice_ativa)
+            audio_bytes = await gemini_tts_service.sintetizar(texto, voice=voice_ativa, rate=rate_val)
             return Response(audio_bytes, media_type="audio/mpeg", headers=HEADERS)
         except Exception as erro:
             logger.warning("⚠️ [VoiceAPI] Falha no Gemini TTS (%s). Ativando fallback para Edge TTS.", type(erro).__name__)

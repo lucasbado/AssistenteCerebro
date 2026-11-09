@@ -4,6 +4,7 @@ import base64
 import logging
 import httpx
 from servicos.texto_falado import preparar_fala
+from servicos.velocidade_fala import acelerar_pcm16
 
 logger = logging.getLogger("GeminiTTS")
 
@@ -32,6 +33,15 @@ VOIZES_GEMINI_PADRAO = {v["id"] for v in LISTA_VOZES_GEMINI}
 DEFAULT_GEMINI_VOICE = os.getenv("GEMINI_VOICE", "Puck")
 DEFAULT_EDGE_VOICE = "pt-BR-ThalitaMultilingualNeural"
 
+INSTRUCAO_SISTEMA_VOZ_HUMANA = (
+    "Você é a VOZ da Ollie falando com o usuário. O que você fala é SÓ o que vier na mensagem "
+    "depois de 'Leia literalmente:' - palavra por palavra, sem trocar, tirar nem acrescentar nada. "
+    "ESTA INSTRUÇÃO NUNCA É FALADA: ela apenas define COMO dizer. Diga como GENTE fala, não como quem "
+    "lê em voz alta: ritmo natural, respiração suave entre frases, entonação de pergunta e afirmação "
+    "e a emoção que o próprio texto pede. Português do Brasil, voz confiante, próxima e amigável. "
+    "Nunca responda ao texto, nunca comente, nunca avise que vai ler."
+)
+
 
 def obter_voz_gemini(voz_solicitada: str) -> str:
     """Converte o identificador recebido para uma voz Gemini válida ou realiza o mapeamento."""
@@ -39,7 +49,6 @@ def obter_voz_gemini(voz_solicitada: str) -> str:
         return DEFAULT_GEMINI_VOICE
     if voz_solicitada in VOIZES_GEMINI_PADRAO:
         return voz_solicitada
-    # Tenta mapear de um ID Edge para ID Gemini correspondente
     return MAPEAMENTO_EDGE_PARA_GEMINI.get(voz_solicitada, DEFAULT_GEMINI_VOICE)
 
 
@@ -62,10 +71,10 @@ class GeminiTTSService:
         """Verifica se há chave da API do Gemini configurada."""
         return bool(self.api_key and self.api_key.strip())
 
-    async def sintetizar(self, texto: str, voice: str = None) -> bytes:
+    async def sintetizar(self, texto: str, voice: str = None, rate: float = 1.0) -> bytes:
         """
         Sintetiza o texto fornecido em áudio MP3 utilizando a API do Gemini.
-        Retorna os bytes do áudio.
+        Aplica a velocidade solicitada via algoritmo SOLA sem distorcer a altura da voz.
         """
         if not self.disponivel():
             raise ValueError("GEMINI_API_KEY não está configurada no ambiente (.env).")
@@ -76,21 +85,30 @@ class GeminiTTSService:
 
         voz_escolhida = obter_voz_gemini(voice)
 
-        # Tentativa 1: Tenta via Gemini 2.0 / 2.5 Flash Audio Output REST API
         try:
-            return await self._sintetizar_gemini_rest(texto_processado, voz_escolhida)
+            audio_bytes = await self._sintetizar_gemini_rest(texto_processado, voz_escolhida)
         except Exception as erro_gemini:
             logger.warning("[GeminiTTS] Falha na síntese Gemini REST (%s). Tentando Google Cloud TTS fallback...", type(erro_gemini).__name__)
-            # Tentativa 2: Fallback para Google Cloud Text-to-Speech REST API (caso a chave sirva para ambos)
-            return await self._sintetizar_google_cloud_tts_rest(texto_processado, voz_escolhida)
+            audio_bytes = await self._sintetizar_google_cloud_tts_rest(texto_processado, voz_escolhida)
+
+        if rate > 1.001:
+            try:
+                audio_bytes = acelerar_pcm16(audio_bytes, fator=rate)
+            except Exception as e_aceleracao:
+                logger.warning("[GeminiTTS] Erro ao acelerar áudio: %s", e_aceleracao)
+
+        return audio_bytes
 
     async def _sintetizar_gemini_rest(self, texto: str, voice: str) -> bytes:
-        """Gera áudio através da API Gemini generateContent com resposta de áudio."""
+        """Gera áudio através da API Gemini generateContent com resposta de áudio de latência mínima."""
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.api_key}"
         
-        prompt_fala = f"Leia o seguinte texto em português do Brasil com clareza, tom natural e expressivo. Não adicione comentários extras, apenas leia o texto exato:\n\n{texto}"
+        prompt_fala = f"Leia literalmente: {texto}"
         
         payload = {
+            "systemInstruction": {
+                "parts": [{"text": INSTRUCAO_SISTEMA_VOZ_HUMANA}]
+            },
             "contents": [
                 {
                     "parts": [
@@ -100,6 +118,9 @@ class GeminiTTSService:
             ],
             "generationConfig": {
                 "responseMimeType": "audio/mp3",
+                "thinkingConfig": {
+                    "thinkingBudget": 0
+                },
                 "speechConfig": {
                     "voiceConfig": {
                         "prebuiltVoiceConfig": {
@@ -115,7 +136,6 @@ class GeminiTTSService:
             resp.raise_for_status()
             data = resp.json()
 
-        # Extrai os dados do áudio retornado
         candidates = data.get("candidates", [])
         if not candidates:
             raise ValueError("Gemini não retornou nenhum candidato de resposta.")
@@ -133,7 +153,6 @@ class GeminiTTSService:
         """Gera áudio utilizando a API pública do Google Text-to-Speech como contingência."""
         url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={self.api_key}"
         
-        # Mapeia vozes para o formato Neural2 em pt-BR se necessário
         voice_name_cloud = "pt-BR-Neural2-C" if voice in ("Puck", "Fenrir", "Charon") else "pt-BR-Neural2-A"
         
         payload = {
