@@ -476,6 +476,9 @@ class PcControlService:
     def controlar_janela(self, comando, termo=''):
         self.foco.controlar(comando, termo, lambda: self._entrada().press('f11'))
 
+    def observar_janelas(self, comando, termo=''):
+        return self.foco.observar(comando, termo)
+
     @staticmethod
     def _entrada():
         if pyautogui is None:

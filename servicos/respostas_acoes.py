@@ -4,6 +4,7 @@ import re
 from urllib.parse import parse_qs, urlsplit
 from servicos.arquivos_pc import COMANDOS_ARQUIVOS, validar_resultado_arquivo
 from servicos.comandos_pc import validar_status_pc
+from servicos.foco_janelas import COMANDOS_OBSERVACAO_JANELAS, validar_observacao_janelas
 from servicos.sites_pc import CONFIG
 
 APPS = {
@@ -28,6 +29,7 @@ ACOES_PC = {
     'janela_maximizar': 'maximizar a janela', 'janela_minimizar': 'minimizar a janela',
     'janela_fechar': 'fechar a janela', 'janela_fullscreen': 'alternar a tela cheia',
     'capturar_tela': 'capturar a tela', 'system_status': 'consultar o uso de CPU, memória e disco',
+    'janela_ativa': 'identificar a janela ativa', 'listar_janelas': 'consultar as janelas abertas',
     'criar_pasta': 'criar a pasta', 'copiar_arquivo': 'copiar o arquivo', 'mover_arquivo': 'mover o arquivo',
     'renomear_arquivo': 'renomear o arquivo', 'compactar_arquivo': 'compactar o arquivo',
     'criar_arquivo': 'criar o arquivo', 'ler_arquivo': 'ler o arquivo', 'acrescentar_texto': 'acrescentar o texto',
@@ -147,6 +149,24 @@ def _resposta_arquivo(comando, resultado):
     return f'Encontrei {nomes} no PC.'
 
 
+def _resposta_janelas(comando, resultado, filtro):
+    if not validar_observacao_janelas(comando, resultado):
+        return 'O PC não devolveu uma observação de janelas válida.'
+    janelas, total = resultado['janelas'], resultado['total']
+    if comando == 'janela_ativa':
+        if not janelas:
+            return 'Não identifiquei uma janela de aplicativo em primeiro plano no PC.'
+        janela = janelas[0]
+        return f'A janela ativa no PC é “{janela["titulo"]}” ({janela["processo"]}).'
+    if not janelas:
+        return (f'Não encontrei uma janela aberta para “{_curto(filtro)}” no PC.' if filtro
+                else 'Não encontrei janelas de aplicativos abertas no PC.')
+    nomes = _juntar([f'“{item["titulo"]}” ({item["processo"]})' for item in janelas])
+    if total > len(janelas):
+        return f'Encontrei {total} janelas no PC. As primeiras {len(janelas)} são {nomes}.'
+    return f'Janelas abertas no PC\n\n{nomes}.'
+
+
 def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
     frases, grupo = [], []
 
@@ -178,6 +198,8 @@ def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
             frases.append(f'Mandei {acao} no celular.' if alvo == 'MOBILE' else f'Pedi pro PC {acao}.')
         elif comando in COMANDOS_ARQUIVOS:
             frases.append(_resposta_arquivo(comando, registro.get('resultado')))
+        elif comando in COMANDOS_OBSERVACAO_JANELAS:
+            frases.append(_resposta_janelas(comando, registro.get('resultado'), etapa.get('parametro')))
         elif comando == 'system_status':
             dados = registro.get('resultado')
             if validar_status_pc(dados):
@@ -205,7 +227,7 @@ def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
         frases.append(interrupcao)
     texto = ' '.join(frases)
     if resultados and not interrupcao and all(r['status'] == 'concluido' and r.get('foco') is not False
-            and r['etapa'].get('comando') not in COMANDOS_ARQUIVOS | {'system_status'} for r in resultados):
+            and r['etapa'].get('comando') not in COMANDOS_ARQUIVOS | COMANDOS_OBSERVACAO_JANELAS | {'system_status'} for r in resultados):
         prefixo = 'Fechou' if re.search(r'\b(cara|mano|bora|valeu|porra|caralho|merda)\b', str(texto_usuario), re.I) else 'Pronto'
         texto = f'{prefixo}, ' + texto[:1].lower() + texto[1:]
     return texto or 'Não consegui confirmar o que aconteceu.'

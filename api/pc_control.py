@@ -55,6 +55,9 @@ async def receber_comando(request: Request):
     
     if not comando:
         return {"status": "erro", "motivo": "Comando ausente"}
+    from servicos.foco_janelas import COMANDOS_OBSERVACAO_JANELAS
+    if comando in COMANDOS_OBSERVACAO_JANELAS:
+        return {"status": "erro", "motivo": "Peça a consulta de janelas pelo chat ou por voz."}
 
     print(f"📡 [API] Recebido comando via HTTP: {comando}")
 

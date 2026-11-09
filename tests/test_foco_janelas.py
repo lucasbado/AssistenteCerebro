@@ -52,3 +52,35 @@ def test_ponte_de_busca_chega_ao_navegador_com_consulta_codificada():
     service = SimpleNamespace(abrir_url=Mock(return_value={'status': 'ok', 'primeiro_plano': True}))
     assert executar('pesquisa_google', 'C++ e ESP32', service)['primeiro_plano'] is True
     service.abrir_url.assert_called_once_with('https://www.google.com/search?q=C%2B%2B+e+ESP32')
+
+
+def test_observacao_filtra_por_aplicativo_ou_titulo_e_limita_a_lista():
+    from servicos.foco_janelas import validar_observacao_janelas
+
+    janelas = [Janela(i, 'code.exe', f'Edição {i}\n– VS Code') for i in range(10)]
+    sistema = SimpleNamespace(observar=Mock(return_value=[*janelas, Janela(11, 'explorer.exe', 'Downloads')]))
+    foco = FocoJanelas(sistema)
+    resultado = foco.observar('listar_janelas', 'VS Code')
+    assert resultado['total'] == 10
+    assert len(resultado['janelas']) == 8
+    assert resultado['janelas'][0] == {'titulo': 'Edição 0 – VS Code', 'processo': 'code.exe'}
+    assert validar_observacao_janelas('listar_janelas', resultado)
+    assert not validar_observacao_janelas('janela_ativa', resultado)
+    assert foco.observar('listar_janelas', 'edicao 2')['total'] == 1
+    assert foco.observar('listar_janelas', 'discord') == {'janelas': [], 'total': 0}
+
+
+@pytest.mark.parametrize(('frase', 'ordem'), [
+    ('Qual é a janela ativa no PC?', ('janela_ativa', '')),
+    ('Qual janela está em primeiro plano?', ('janela_ativa', '')),
+    ('Quais janelas estão abertas no PC?', ('listar_janelas', '')),
+    ('Quais janelas do VS Code estão abertas no PC?', ('listar_janelas', 'vs code')),
+    ('O aplicativo Chrome está aberto no PC?', ('listar_janelas', 'chrome')),
+    ('O Chrome está aberto no PC?', ('listar_janelas', 'chrome')),
+    ('O Chrome está aberto?', None),
+    ('Mostre a lista de compras', None),
+])
+def test_pedidos_de_observacao_de_janelas(frase, ordem):
+    from servicos.ordens_pc import interpretar_ordem_pc
+
+    assert interpretar_ordem_pc(frase) == ordem

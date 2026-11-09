@@ -2,6 +2,7 @@
 import time
 import asyncio
 from collections import OrderedDict
+from servicos.foco_janelas import COMANDOS_OBSERVACAO_JANELAS, validar_observacao_janelas
 
 
 class ConfirmacoesPC:
@@ -22,14 +23,19 @@ class ConfirmacoesPC:
         registro = self._comandos.get(identificador)
         if registro is not None and status in {"concluido", "erro", "pc_offline"}:
             from servicos.arquivos_pc import COMANDOS_ARQUIVOS, validar_resultado_arquivo
-            if registro['comando'] in COMANDOS_ARQUIVOS or registro['comando'] == 'system_status':
+            comando = registro['comando']
+            if comando in COMANDOS_ARQUIVOS | COMANDOS_OBSERVACAO_JANELAS | {'system_status'}:
                 if registro['status'] != 'enviado':
                     return
                 registro['status'] = status
                 if status == 'concluido':
                     from servicos.comandos_pc import validar_status_pc
-                    valido = (validar_status_pc(resultado) if registro['comando'] == 'system_status'
-                              else validar_resultado_arquivo(registro['comando'], resultado))
+                    if comando in COMANDOS_OBSERVACAO_JANELAS:
+                        valido = validar_observacao_janelas(comando, resultado)
+                    elif comando == 'system_status':
+                        valido = validar_status_pc(resultado)
+                    else:
+                        valido = validar_resultado_arquivo(comando, resultado)
                     if valido:
                         registro['resultado'] = resultado
                     else:
@@ -47,14 +53,14 @@ class ConfirmacoesPC:
     async def aguardar(self, identificador, timeout=12):
         limite = self.relogio() + timeout
         while True:
-            registro = self.consultar(identificador)
+            registro = self.consultar(identificador, incluir_observacao=True)
             if registro is None or registro['status'] != 'enviado':
                 return registro or {'status': 'sem_confirmacao'}
             if self.relogio() >= limite:
                 return {**registro, 'status': 'sem_confirmacao'}
             await asyncio.sleep(.05)
 
-    def consultar(self, identificador):
+    def consultar(self, identificador, *, incluir_observacao=False):
         registro = self._comandos.get(identificador)
         if registro is None:
             return None
@@ -62,6 +68,7 @@ class ConfirmacoesPC:
         status = registro["status"]
         if status == "enviado" and segundos > 360:
             status = "sem_confirmacao"
+        visivel = incluir_observacao or registro['comando'] not in COMANDOS_OBSERVACAO_JANELAS
         return {"id": identificador, "comando": registro["comando"],
                 "status": status, "segundos_desde_envio": segundos,
-                **({'resultado': registro['resultado']} if 'resultado' in registro else {})}
+                **({'resultado': registro['resultado']} if visivel and 'resultado' in registro else {})}

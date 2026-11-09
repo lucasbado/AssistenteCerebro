@@ -7,7 +7,8 @@ import { createLocalAiBridge, type LocalAiResult } from './localAiBridge';
 import { decodeTaskActions } from './taskActions';
 import { decodeMessageActions } from './messageActions';
 import { DesktopVoice } from './desktopVoice';
-import { fileCommands, pcCommandParam, readFileResult, readSystemResult, type FileResult, type SystemResult } from './pcCommands';
+import { fileCommands, pcCommandParam, readFileResult, readSystemResult, readWindowResult, windowQueries,
+  type FileResult, type SystemResult, type WindowResult } from './pcCommands';
 import { DesktopListening, type ListeningEvent, type ListeningPhase } from './desktopListening';
 import { createAudioQueue, type AudioResult } from './audioControl';
 
@@ -151,7 +152,7 @@ export default function App() {
   const scenarioBusyRef = useRef(false);
   const lastCommandRef = useRef<{ id: string; comando: string; status: string } | null>(null);
   const houseResultsRef = useRef(new Map<string, { entity_id: string; state: string }>());
-  const desktopResultsRef = useRef(new Map<string, { primeiro_plano: boolean } | FileResult | SystemResult>());
+  const desktopResultsRef = useRef(new Map<string, { primeiro_plano: boolean } | FileResult | SystemResult | WindowResult>());
   const audioResultsRef = useRef(new Map<string, { audio: AudioResult }>());
   const audioQueueRef = useRef(createAudioQueue(parametro => invoke<string>('execute_pc_command', { comando: 'audio_controle', parametro })));
 
@@ -329,6 +330,10 @@ export default function App() {
         }
         if (cmd === 'system_status') {
           const result = readSystemResult(raw);
+          if (id) desktopResultsRef.current.set(id, result);
+        }
+        if (windowQueries.has(cmd)) {
+          const result = readWindowResult(raw, cmd);
           if (id) desktopResultsRef.current.set(id, result);
         }
         if (['abrir_app', 'abrir_programa', 'abrir_url', 'open_url', 'pesquisa_google', 'web_search', 'pesquisar'].includes(cmd)) {

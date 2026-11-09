@@ -1,10 +1,21 @@
-"""Foco local independente dos motores de áudio; não envia teclas nem fixa janelas."""
+"""Observação e foco de janelas locais do Windows."""
 import os
 import re
 import time
 from dataclasses import dataclass
+from servicos.controle_casa import normalizar
 
 BROWSERS = {'chrome.exe', 'msedge.exe', 'firefox.exe', 'opera.exe', 'brave.exe', 'vivaldi.exe', 'zen.exe'}
+COMANDOS_OBSERVACAO_JANELAS = frozenset({'janela_ativa', 'listar_janelas'})
+MAX_JANELAS = 8
+MAX_TITULO = 140
+MAX_PROCESSO = 80
+CLASSES_SHELL = {'Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd'}
+PROCESSOS_APLICATIVOS = {
+    'bloco de notas': 'notepad.exe', 'explorador de arquivos': 'explorer.exe',
+    'vs code': 'code.exe', 'visual studio code': 'code.exe', 'vscode': 'code.exe',
+    'android studio': 'studio64.exe', 'android_studio': 'studio64.exe',
+}
 
 
 @dataclass(frozen=True)
@@ -34,6 +45,33 @@ def navegador_padrao():
     return set()
 
 
+def _combina(janela, termo):
+    processo = janela.processo.casefold()
+    return (processo == PROCESSOS_APLICATIVOS.get(termo)
+            or termo in {processo, processo.removesuffix('.exe')}
+            or re.search(r'\b' + re.escape(termo) + r'\b', normalizar(janela.titulo)))
+
+
+def _rotulo(texto, limite):
+    texto = ' '.join(''.join(c if c.isprintable() else ' ' for c in texto).split())
+    return texto if len(texto) <= limite else texto[:limite - 1] + '…'
+
+
+def validar_observacao_janelas(comando, resultado):
+    if not isinstance(resultado, dict) or set(resultado) != {'janelas', 'total'}:
+        return False
+    janelas, total = resultado['janelas'], resultado['total']
+    limite = 1 if comando == 'janela_ativa' else MAX_JANELAS
+    if (not isinstance(janelas, list) or type(total) is not int or not 0 <= total <= 65535
+            or len(janelas) != min(total, limite) or comando == 'janela_ativa' and total > 1):
+        return False
+    return all(isinstance(item, dict) and set(item) == {'titulo', 'processo'}
+               and all(isinstance(item[chave], str) and 0 < len(item[chave]) <= tamanho
+                       and _rotulo(item[chave], tamanho) == item[chave]
+                       for chave, tamanho in (('titulo', MAX_TITULO), ('processo', MAX_PROCESSO)))
+               for item in janelas)
+
+
 class WindowsJanelas:
     def __init__(self):
         import win32gui
@@ -48,6 +86,15 @@ class WindowsJanelas:
         self.show_async = ctypes.WinDLL('user32', use_last_error=True).ShowWindowAsync
         self.show_async.argtypes = [wintypes.HWND, ctypes.c_int]
         self.show_async.restype = wintypes.BOOL
+        self._cloaked = ctypes.WinDLL('dwmapi').DwmGetWindowAttribute
+        self._cloaked.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+        self._cloaked.restype = ctypes.c_long
+
+    def _descrever(self, hwnd):
+        titulo = self.gui.GetWindowText(hwnd)
+        if titulo.strip():
+            _, pid = self.process.GetWindowThreadProcessId(hwnd)
+            return Janela(hwnd, self.psutil.Process(pid).name().lower(), titulo)
 
     def listar(self):
         janelas = []
@@ -55,14 +102,37 @@ class WindowsJanelas:
             try:
                 if not self.gui.IsWindowVisible(hwnd) or self.gui.GetWindow(hwnd, self.con.GW_OWNER):
                     return
-                titulo = self.gui.GetWindowText(hwnd)
-                _, pid = self.process.GetWindowThreadProcessId(hwnd)
-                if titulo:
-                    janelas.append(Janela(hwnd, self.psutil.Process(pid).name().lower(), titulo))
+                janela = self._descrever(hwnd)
+                if janela:
+                    janelas.append(janela)
             except Exception:
                 pass
         self.gui.EnumWindows(visitar, None)
         return janelas
+
+    def _observavel(self, hwnd):
+        import ctypes
+        ocultada = ctypes.c_uint()
+        try:
+            if not hwnd or self.gui.GetClassName(hwnd) in CLASSES_SHELL:
+                return False
+            # DWMWA_CLOAKED inclui janelas de outras áreas de trabalho virtuais.
+            return self._cloaked(hwnd, 14, ctypes.byref(ocultada), ctypes.sizeof(ocultada)) != 0 or not ocultada.value
+        except self.gui.error:
+            return False  # A janela pode ter sido fechada desde a enumeração.
+
+    def observar(self, so_ativa):
+        ativa = self.primeiro_plano()
+        if so_ativa:
+            if self._observavel(ativa):
+                try:
+                    janela = self._descrever(ativa)
+                except (self.gui.error, self.psutil.NoSuchProcess):
+                    return []
+                return [janela] if janela else []
+            return []
+        janelas = [janela for janela in self.listar() if self._observavel(janela.id)]
+        return sorted(janelas, key=lambda janela: janela.id != ativa)
 
     def ativar(self, hwnd):
         # Async restore preserves the user's maximized layout and avoids a hung target.
@@ -118,6 +188,18 @@ class FocoJanelas:
             return sistema.listar() if sistema else []
         except Exception:
             return []
+
+    def observar(self, comando, termo=''):
+        sistema = self._sistema()
+        if sistema is None:
+            raise RuntimeError('Observação de janelas indisponível.')
+        termo = normalizar(termo or '')
+        janelas = sistema.observar(so_ativa=comando == 'janela_ativa')
+        if termo:
+            janelas = [janela for janela in janelas if _combina(janela, termo)]
+        rotulos = [(_rotulo(janela.titulo, MAX_TITULO), _rotulo(janela.processo, MAX_PROCESSO)) for janela in janelas]
+        itens = [{'titulo': titulo, 'processo': processo} for titulo, processo in rotulos if titulo and processo]
+        return {'janelas': itens[:MAX_JANELAS], 'total': len(itens)}
 
     def trazer(self, *, processos=(), termo=None, antes=(), tentativas=24, somente_alteradas=False):
         anteriores = {j.id: j.titulo for j in antes}

@@ -5,13 +5,14 @@ import uuid
 
 from servicos.arquivos_pc import COMANDOS_ARQUIVOS, COMANDOS_TEXTO, EXTENSOES, parametros_arquivo, parametros_operacao
 from servicos.controle_casa import normalizar
+from servicos.foco_janelas import COMANDOS_OBSERVACAO_JANELAS, MAX_TITULO
 from servicos.roteamento_pedidos import contexto_pedido, destino_explicito, dispositivo_origem, responder_pedido
 
 
 JANELAS = {'maximize': 'janela_maximizar', 'minimize': 'janela_minimizar',
            'feche': 'janela_fechar', 'foque': 'janela_focar'}
 COMANDOS_JANELAS = frozenset({*JANELAS.values(), 'janela_fullscreen'})
-COMANDOS_DIRETOS = COMANDOS_ARQUIVOS | COMANDOS_JANELAS | {'system_status'}
+COMANDOS_DIRETOS = COMANDOS_ARQUIVOS | COMANDOS_JANELAS | COMANDOS_OBSERVACAO_JANELAS | {'system_status'}
 DESTINO = r'(?:no|pelo|pro|para o)\s+(?:(?:meu|seu|este|esse)\s+)?(?:pc|computador|desktop|notebook|celular|telefone|smartphone|android)'
 PASTA = r'downloads?|documentos|documents|[áa]rea de trabalho|desktop'
 ABRIR = r'(?:abra|abre|abrir)'
@@ -92,6 +93,7 @@ def interpretar_ordem_pc(texto):
                              rf'{ABRIR}(?:-o|-a|\s+(?:o arquivo|ele|ela))?'
                              rf'(?:\s+{DESTINO})?(?:\s+e\s+(?:me\s+)?(?:diga|avise)\s+se\s+abriu)?$', texto, re.I)
     texto = texto[:abrir_depois.start()].strip() if abrir_depois else texto
+    sufixo_destino = re.search(rf'\s+{DESTINO}$', texto, re.I)
     texto = re.sub(rf'\s+{DESTINO}$', '', texto, flags=re.I)
     if not abrir_depois and (operacao := _interpretar_operacao_arquivo(texto)):
         return operacao
@@ -101,6 +103,23 @@ def interpretar_ordem_pc(texto):
                            rf'(?:\s+(?:em|na)\s+({PASTA}))?', texto, re.I)
     if captura and not abrir_depois:
         return 'capturar_tela', json.dumps({'pasta': captura[1] or 'Downloads'}, ensure_ascii=False)
+    if not abrir_depois:
+        consulta = normalizar(texto)
+        if re.fullmatch(r'(?:qual (?:e a )?janela (?:esta )?|(?:mostre|identifique) a janela )'
+                        r'(?:ativa|em primeiro plano)|o que esta em primeiro plano', consulta):
+            return 'janela_ativa', ''
+        lista = re.fullmatch(r'(?:liste|mostre) (?:as )?janelas(?: abertas)?(?: d[oa] (.+))?', consulta)
+        pergunta = re.fullmatch(r'quais janelas(?: d[oa] (.+?))? (?:estao )?abertas', consulta)
+        if re.fullmatch(r'quais (?:aplicativos|programas|apps) (?:estao )?abertos|o que esta aberto', consulta):
+            return 'listar_janelas', ''
+        app = re.fullmatch(r'(?:(?:o|a) )?(?:aplicativo|programa|app) (.+?) esta abert[oa]', consulta)
+        if not app and sufixo_destino and destino_explicito(sufixo_destino[0]) == 'PC':
+            app = re.fullmatch(r'(?:o|a) (.+?) esta abert[oa]', consulta)
+        if lista or pergunta or app:
+            filtro = ((lista or pergunta or app)[1] or '').strip(' "“”')
+            if len(filtro) > MAX_TITULO or (app and not filtro):
+                raise ValueError('Informe um nome de aplicativo ou título de janela mais curto.')
+            return 'listar_janelas', filtro
     janela = re.fullmatch(r'(maximize|minimize|feche|foque)\s+(?:a\s+)?janela(?:\s+(?:do|da|de)\s+(.+)|\s+ativa)?', texto, re.I)
     if janela and not abrir_depois:
         return JANELAS[janela[1].lower()], (janela[2] or '').strip(' "“”')
@@ -150,7 +169,7 @@ async def encaminhar_ordem_pc(evento):
                 texto_destino = texto[:inicio] + texto[inicio + len(literal):]
         destino = destino_explicito(texto_destino)
         if destino == 'MOBILE' or (not destino and dispositivo_origem(evento) == 'MOBILE'
-                                  and comando in COMANDOS_JANELAS | {'capturar_tela'}):
+                                  and comando in COMANDOS_JANELAS | COMANDOS_OBSERVACAO_JANELAS | {'capturar_tela'}):
             await responder_pedido(evento, 'Esse controle é do PC. Diga “no PC” para executar lá.')
             return True
     except ValueError as erro:

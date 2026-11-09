@@ -154,6 +154,49 @@ def test_voz_do_celular_busca_abre_no_pc_e_responde_na_origem(aplicativo, monkey
     service.abrir_documento_verificado.assert_called_once_with(tmp_path / 'teste.pdf')
 
 
+def test_voz_consulta_janela_ativa_sem_expor_titulos_no_rele(aplicativo):
+    app, _, _, central = aplicativo
+
+    async def aguardar_mobile():
+        async with asyncio.timeout(2):
+            while central.mobile_client is None:
+                await asyncio.sleep(.001)
+
+    with TestClient(app) as client:
+        url = '/api/v1/ws/alertas?token=token-limitado'
+        with client.websocket_connect(url) as pc, client.websocket_connect(url) as mobile:
+            pc.receive_json()
+            mobile.receive_json()
+            pc.send_json({'tipo_ws': 'REGISTRO', 'id': 'PC_MASTER'})
+            assert pc.receive_json()['tipo_ws'] == 'REGISTRO_OK'
+            mobile.send_json({'tipo_ws': 'REGISTRO', 'id': 'MOBILE'})
+            client.portal.call(aguardar_mobile)
+
+            mobile.send_json({'tipo_ws': 'COMANDO_PC', 'comando': 'janela_ativa'})
+            assert mobile.receive_json()['status'] == 'erro'
+            mobile.send_json({'tipo_ws': 'CHAT_MESSAGE', 'canal': 'voz', 'correlacao_id': 'janela-teste',
+                              'texto': 'Qual é a janela ativa no PC?'})
+            comando = pc.receive_json()
+            assert (comando['tipo_ws'], comando['comando']) == ('COMANDO_PC', 'janela_ativa')
+            identificador = comando['id_comando']
+            pc.send_json({'tipo_ws': 'COMANDO_RESULTADO', 'id_comando': identificador, 'status': 'concluido',
+                          'resultado': {'janelas': [{'titulo': 'Nota de teste', 'processo': 'notepad.exe'}], 'total': 1}})
+            resposta = mobile.receive_json()
+            assert resposta['tipo_ws'] == 'CHAT_RESPONSE'
+            assert resposta['dispositivo_destino'] == 'MOBILE'
+            assert resposta['correlacao_id'] == 'janela-teste'
+            assert resposta['canal_origem'] == 'voz'
+            assert '“Nota de teste”' in resposta['texto']
+
+            mobile.send_json({'tipo_ws': 'COMANDO_PC', 'comando': 'system_status', 'id_comando': identificador})
+            assert 'resultado' not in mobile.receive_json()
+            headers = {'Authorization': 'Bearer token-limitado'}
+            consulta = client.get(f'/api/v1/pc/comando/{identificador}', headers=headers)
+            assert consulta.status_code == 200
+            assert consulta.json()['status'] == 'concluido'
+            assert 'resultado' not in consulta.json()
+
+
 def test_controles_conversa_e_feedback_funcionam_sem_sessao_sql(aplicativo, monkeypatch):
     from servicos.cognicao_controles import cognicao_controles
     monkeypatch.setattr(cognicao_controles, 'gerar', AsyncMock(return_value={'resposta': 'Pareidolia é perceber formas familiares em estímulos vagos.', 'acoes': []}))

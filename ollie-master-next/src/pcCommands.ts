@@ -4,6 +4,7 @@ export const fileCommands = new Set([
   'prever_organizacao', 'organizar_pasta', 'desfazer_organizacao', 'lixeira_arquivo', 'restaurar_lixeira',
   'criar_arquivo', 'ler_arquivo', 'acrescentar_texto',
 ]);
+export const windowQueries = new Set(['janela_ativa', 'listar_janelas']);
 
 export function pcCommandParam(command: string, data: Record<string, unknown>): string {
   const param = String(data.url ?? data.parametro ?? data.app ?? data.query ?? data.macro ?? data.valor ?? '');
@@ -22,6 +23,7 @@ export function pcCommandParam(command: string, data: Record<string, unknown>): 
 
 export type FileResult = { arquivo: { estado: string; itens: string[]; texto?: string; parcial?: boolean } };
 export type SystemResult = { sistema: { cpu: number; ram: number; disco: number } };
+export type WindowResult = { janelas: { titulo: string; processo: string }[]; total: number };
 
 export function readFileResult(raw: string): FileResult {
   const result = JSON.parse(raw);
@@ -46,4 +48,23 @@ export function readSystemResult(raw: string): SystemResult {
     throw new Error('O executor devolveu medições inválidas.');
   }
   return { sistema: { cpu: system.cpu, ram: system.ram, disco: system.disco } };
+}
+
+export function readWindowResult(raw: string, command: string): WindowResult {
+  const result = JSON.parse(raw);
+  const limit = command === 'janela_ativa' ? 1 : 8;
+  if (!result || !Number.isInteger(result.total) || result.total < 0 || result.total > 65535 ||
+      (command === 'janela_ativa' && result.total > 1) || !Array.isArray(result.janelas) ||
+      result.janelas.length !== Math.min(result.total, limit)) {
+    throw new Error('O executor devolveu uma observação de janelas inválida.');
+  }
+  const janelas = result.janelas.map((item: unknown) => {
+    const window = item as WindowResult['janelas'][number] | null;
+    if (!window || typeof window.titulo !== 'string' || !window.titulo ||
+        typeof window.processo !== 'string' || !window.processo) {
+      throw new Error('O executor devolveu uma janela inválida.');
+    }
+    return { titulo: window.titulo, processo: window.processo };
+  });
+  return { janelas, total: result.total };
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pcCommandParam, readFileResult, readSystemResult } from '../src/pcCommands.ts';
+import { pcCommandParam, readFileResult, readSystemResult, readWindowResult } from '../src/pcCommands.ts';
 
 test('preserves structured input from Wear and legacy PC clients', () => {
   assert.equal(pcCommandParam('mouse_move', { dx: 0, dy: -12, parametro: '' }), '0,-12');
@@ -19,4 +19,12 @@ test('forwards only valid CPU, memory and disk percentages', () => {
   assert.deepEqual(readSystemResult('{"sistema":{"cpu":0,"ram":55,"disco":75}}'),
     { sistema: { cpu: 0, ram: 55, disco: 75 } });
   assert.throws(() => readSystemResult('{"sistema":{"cpu":101,"ram":55,"disco":75}}'));
+});
+
+test('forwards only window labels and checks the count matches the request', () => {
+  const window = { titulo: 'Nota de teste', processo: 'notepad.exe' };
+  const raw = JSON.stringify({ janelas: [{ ...window, id: 42 }], total: 1 });
+  assert.deepEqual(readWindowResult(raw, 'janela_ativa'), { janelas: [window], total: 1 });
+  assert.throws(() => readWindowResult('{"janelas":[],"total":2}', 'listar_janelas'));
+  assert.throws(() => readWindowResult(JSON.stringify({ janelas: [window], total: 2 }), 'janela_ativa'));
 });
