@@ -87,8 +87,13 @@ class GerenciadorNotificacoes:
                          "pc_configurado": conectado(self.pc_master) and 'CASA' in self._capacidades.get(self.pc_master, set()),
                          "mobile_configurado": conectado(self.mobile_client) and 'CASA' in self._capacidades.get(self.mobile_client, set())}}
 
-    async def enviar_comando_pc(self, mensagem):
+    async def enviar_comando_pc(self, mensagem, *, operacao_arquivo_explicita=False):
+        from servicos.arquivos_pc import OPERACOES_ARQUIVOS
+
         msg = dict(mensagem)
+        comando = str(msg.get('comando') or msg.get('acao') or '')
+        if comando in OPERACOES_ARQUIVOS and not operacao_arquivo_explicita:
+            return {'status': 'erro', 'motivo': 'Peça a operação de arquivo pelo chat ou por voz.'}
         identificador = str(msg.get("id_comando") or uuid.uuid4())
         if len(identificador) > 128:
             raise ValueError("Identificador de comando inválido")
@@ -159,6 +164,9 @@ class GerenciadorNotificacoes:
         # 🌟 REGRA DE OURO DE ROTEAMENTO (REFORÇADA):
         tipo_ws = dados_para_envio.get("tipo_ws", "")
         comando_nome = str(dados_para_envio.get("comando", "")).lower()
+        from servicos.arquivos_pc import OPERACOES_ARQUIVOS
+        if (comando_nome or str(dados_para_envio.get('acao', '')).lower()) in OPERACOES_ARQUIVOS:
+            return
         
         # Identifica se é comando para o Celular
         is_mobile_cmd = "_mobile" in comando_nome or ("abrir_app" in comando_nome and "pacote" in dados_para_envio) or (tipo_ws == "COMANDO_SISTEMA")

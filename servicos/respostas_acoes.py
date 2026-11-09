@@ -28,6 +28,8 @@ ACOES_PC = {
     'janela_maximizar': 'maximizar a janela', 'janela_minimizar': 'minimizar a janela',
     'janela_fechar': 'fechar a janela', 'janela_fullscreen': 'alternar a tela cheia',
     'capturar_tela': 'capturar a tela', 'system_status': 'consultar o uso de CPU, memória e disco',
+    'criar_pasta': 'criar a pasta', 'copiar_arquivo': 'copiar o arquivo', 'mover_arquivo': 'mover o arquivo',
+    'renomear_arquivo': 'renomear o arquivo', 'compactar_arquivo': 'compactar o arquivo',
 }
 
 
@@ -83,6 +85,14 @@ def _resposta_arquivo(comando, resultado):
         return 'O PC não devolveu um resultado de arquivo válido.'
     estado, itens = resultado['arquivo']['estado'], resultado['arquivo']['itens']
     nomes = _juntar([f'“{item}”' for item in itens])
+    operacao = {'pasta_criada': 'Criei a pasta', 'copiado': 'Copiei para', 'movido': 'Movi para',
+                'renomeado': 'Renomeei para', 'compactado': 'Salvei o ZIP em'}.get(estado)
+    if operacao:
+        return f'{operacao} {nomes} no PC.'
+    if estado == 'destino_existe':
+        return f'{nomes} já existe. Escolha outro nome ou destino.'
+    if estado == 'origem_ausente':
+        return 'O arquivo não está nesse caminho. Confira a pasta e o nome completo.'
     if estado == 'janela_confirmada':
         return f'Abri {nomes} no PC e conferi a janela do documento.'
     if estado == 'capturado':

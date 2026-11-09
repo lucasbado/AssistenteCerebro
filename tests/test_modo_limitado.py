@@ -127,6 +127,19 @@ def test_voz_do_celular_busca_abre_no_pc_e_responde_na_origem(aplicativo, monkey
             assert resposta['correlacao_id'] == 'arquivo-teste'
             assert resposta['canal_origem'] == 'voz'
             assert 'conferi a janela' in resposta['texto']
+            mobile.send_json({'tipo_ws': 'COMANDO_PC', 'comando': 'criar_pasta', 'parametro': '{}'})
+            assert mobile.receive_json()['status'] == 'erro'
+            mobile.send_json({'tipo_ws': 'CHAT_MESSAGE', 'canal': 'voz', 'correlacao_id': 'criar-pasta-teste',
+                              'texto': 'Crie a pasta Projeto Arduino em Downloads'})
+            comando = pc.receive_json()
+            assert comando['comando'] == 'criar_pasta'
+            resultado = executar(comando['comando'], comando['parametro'], service)
+            pc.send_json({'tipo_ws': 'COMANDO_RESULTADO', 'id_comando': comando['id_comando'],
+                          'status': 'concluido', 'resultado': resultado})
+            resposta = mobile.receive_json()
+            assert resposta['correlacao_id'] == 'criar-pasta-teste'
+            assert 'Criei a pasta “Downloads/Projeto Arduino”' in resposta['texto']
+            assert (tmp_path / 'Projeto Arduino').is_dir()
     service.abrir_documento_verificado.assert_called_once_with(tmp_path / 'teste.pdf')
 
 

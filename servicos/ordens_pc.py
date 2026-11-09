@@ -3,7 +3,7 @@ import json
 import re
 import uuid
 
-from servicos.arquivos_pc import COMANDOS_ARQUIVOS, EXTENSOES, parametros_arquivo
+from servicos.arquivos_pc import COMANDOS_ARQUIVOS, EXTENSOES, parametros_arquivo, parametros_operacao
 from servicos.controle_casa import normalizar
 from servicos.roteamento_pedidos import contexto_pedido, destino_explicito, dispositivo_origem, responder_pedido
 
@@ -18,6 +18,30 @@ ABRIR = r'(?:abra|abre|abrir)'
 BUSCAR = r'(?:ache|acha|encontre|encontra|procure|procura|busque|busca|localize|pesquise|pesquisa|procurar|buscar|encontrar)'
 TIPOS = {'pdf': '.pdf', 'planilha': '.xlsx', 'apresentacao': '.pptx'}
 
+_LOCAL = rf'\s+(?:em|na|no|de|da|do|dos)\s+({PASTA})'
+_NOME = r'(?:["“][^"”]+["”]|[^"“”]+?)'
+_OPERACOES = (
+    ('criar_pasta', rf'(?:crie|criar|cria)\s+(?:(?:uma|a)\s+)?pasta\s+(?:chamada\s+)?({_NOME}){_LOCAL}', None),
+    ('copiar_arquivo', rf'(?:copie|copiar|copia)\s+(?:o\s+)?(?:arquivo\s+)?({_NOME}){_LOCAL}\s+(?:para|pra)\s+(?:a\s+)?({PASTA})', 'pasta_destino'),
+    ('mover_arquivo', rf'(?:mova|mover|move)\s+(?:o\s+)?(?:arquivo\s+)?({_NOME}){_LOCAL}\s+(?:para|pra)\s+(?:a\s+)?({PASTA})', 'pasta_destino'),
+    ('renomear_arquivo', rf'(?:renomeie|renomear|renomeia)\s+(?:o\s+)?(?:arquivo\s+)?({_NOME}){_LOCAL}\s+para\s+({_NOME})', 'novo_nome'),
+    ('compactar_arquivo', rf'(?:compacte|compactar|zipe|zipar)\s+(?:o\s+)?(?:arquivo\s+)?({_NOME}){_LOCAL}(?:\s+em\s+zip)?', None),
+)
+
+
+def _interpretar_operacao_arquivo(texto):
+    for comando, padrao, argumento in _OPERACOES:
+        pedido = re.fullmatch(padrao, texto, re.I)
+        if pedido:
+            parametro = {'nome': pedido[1].strip(' "“”'), 'pasta': pedido[2]}
+            if argumento:
+                parametro[argumento] = pedido[3].strip(' "“”')
+            parametros_operacao(comando, parametro)
+            return comando, json.dumps(parametro, ensure_ascii=False)
+    if re.match(r'^(?:crie|criar|cria)\s+(?:(?:uma|a)\s+)?pasta\b|^(?:copie|copiar|copia|mova|mover|move|renomeie|renomear|renomeia|compacte|compactar|zipe|zipar)\s+(?:o\s+)?arquivo\b', texto, re.I):
+        raise ValueError('Indique o nome exato e as pastas. Exemplo: “copie notas.txt de Downloads para Documentos”.')
+    return None
+
 
 def interpretar_ordem_pc(texto):
     texto = re.sub(r'^(?:ei\s+)?ollie\b[,\s]*|^por favor\b[,\s]*', '', str(texto).strip(), flags=re.I)
@@ -27,6 +51,8 @@ def interpretar_ordem_pc(texto):
                              rf'(?:\s+{DESTINO})?(?:\s+e\s+(?:me\s+)?(?:diga|avise)\s+se\s+abriu)?$', texto, re.I)
     texto = texto[:abrir_depois.start()].strip() if abrir_depois else texto
     texto = re.sub(rf'\s+{DESTINO}$', '', texto, flags=re.I)
+    if not abrir_depois and (operacao := _interpretar_operacao_arquivo(texto)):
+        return operacao
     if re.fullmatch(r'(?:(?:mostre|consulte)\s+o\s+)?status\s+(?:do\s+)?(?:pc|computador)|como\s+est[aá]\s+o\s+(?:pc|computador)', texto, re.I):
         return 'system_status', ''
     captura = re.fullmatch(rf'(?:tire|fa[çc]a|salve)\s+(?:um |uma )?(?:print|captura)(?:\s+da\s+tela)?'

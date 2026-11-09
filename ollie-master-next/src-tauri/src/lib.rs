@@ -194,8 +194,43 @@ fn get_auth_token() -> Result<String, String> {
 
 #[tauri::command]
 async fn execute_pc_command(comando: String, parametro: Option<String>) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || run_python(&comando, &parametro.unwrap_or_default()))
+    let parametro = parametro.unwrap_or_default();
+    #[cfg(windows)]
+    if comando == "mouse_move" {
+        return move_cursor(&parametro);
+    }
+    tauri::async_runtime::spawn_blocking(move || run_python(&comando, &parametro))
         .await.map_err(|e| e.to_string())?
+}
+
+#[cfg(windows)]
+fn move_cursor(parametro: &str) -> Result<String, String> {
+    use std::sync::Mutex;
+
+    #[repr(C)]
+    struct Point { x: i32, y: i32 }
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetCursorPos(point: *mut Point) -> i32;
+        fn SetCursorPos(x: i32, y: i32) -> i32;
+    }
+
+    fn delta(value: &str) -> Result<i32, String> {
+        value.trim().parse::<i32>().ok().filter(|n| (-3000..=3000).contains(n))
+            .ok_or_else(|| "Movimento do mouse inválido".to_string())
+    }
+
+    // The watch can send several deltas per second. Handle them without spawning a helper per frame.
+    static CURSOR: Mutex<()> = Mutex::new(());
+    let (dx, dy) = parametro.split_once(',').ok_or("Movimento do mouse inválido")?;
+    let (dx, dy) = (delta(dx)?, delta(dy)?);
+    let _guard = CURSOR.lock().map_err(|_| "Controle do cursor indisponível")?;
+    let mut point = Point { x: 0, y: 0 };
+    if unsafe { GetCursorPos(&mut point) } == 0 ||
+        unsafe { SetCursorPos(point.x.saturating_add(dx), point.y.saturating_add(dy)) } == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    Ok(r#"{"status":"ok"}"#.into())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -16,6 +16,9 @@ class AgentePcExecutor:
     
     async def processar(self, evento: EventoCanonico):
         comando = evento.payload.get("comando")
+        from servicos.arquivos_pc import OPERACOES_ARQUIVOS
+        if comando in OPERACOES_ARQUIVOS:
+            return  # Operações de arquivo chegam ao PC pelo AgentePlano.
         from servicos.intervention_governor import e_abertura, intervention_governor
         from servicos.abertura_apps import metadados_abertura, sugerir_abertura
         if (e_abertura(comando) or evento.acao == TipoAcao.EXECUTAR_PROGRAMA) and not evento.metadados.get("abertura_autorizada"):

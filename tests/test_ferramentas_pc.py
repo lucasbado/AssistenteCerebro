@@ -1,5 +1,7 @@
 import json
+import os
 import subprocess
+import zipfile
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -34,6 +36,52 @@ from servicos.confirmacao_pc import ConfirmacoesPC
 from servicos.foco_janelas import FocoJanelas, Janela
 from servicos.ordens_pc import interpretar_ordem_pc
 from servicos.pc_control_service import PcControlService
+
+
+def test_operacoes_arquivo_preservam_conteudo_e_nao_sobrescrevem(tmp_path):
+    downloads, documentos = tmp_path / 'downloads', tmp_path / 'docs'
+    downloads.mkdir()
+    documentos.mkdir()
+    (downloads / 'notas.txt').write_text('conteúdo de teste', encoding='utf-8')
+    pastas = {'Downloads': downloads, 'Documentos': documentos}
+
+    def pedir(texto):
+        ordem = interpretar_ordem_pc(texto)
+        resultado = executar_arquivo(*ordem, service=None, pastas=pastas)
+        assert validar_resultado_arquivo(ordem[0], resultado)
+        return resultado['arquivo']['estado']
+
+    assert pedir('Crie a pasta teste em Documentos') == 'pasta_criada'
+    assert (documentos / 'teste').is_dir()
+    assert pedir('Copie notas.txt de Downloads para Documentos') == 'copiado'
+    assert (documentos / 'notas.txt').read_bytes() == (downloads / 'notas.txt').read_bytes()
+    (documentos / 'notas.txt').write_text('preexistente', encoding='utf-8')
+    assert pedir('Copie notas.txt de Downloads para Documentos') == 'destino_existe'
+    assert (documentos / 'notas.txt').read_text(encoding='utf-8') == 'preexistente'
+    assert pedir('Compacte notas.txt em Downloads') == 'compactado'
+    with zipfile.ZipFile(downloads / 'notas.txt.zip') as arquivo:
+        assert arquivo.namelist() == ['notas.txt']
+        assert arquivo.read('notas.txt') == (downloads / 'notas.txt').read_bytes()
+    assert not list(downloads.glob('.ollie-*'))
+    assert not list(documentos.glob('.ollie-*'))
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Executor de mudança de caminho do Windows')
+def test_mover_e_renomear_no_windows_sem_sobrescrever(tmp_path):
+    downloads, documentos = tmp_path / 'downloads', tmp_path / 'docs'
+    downloads.mkdir()
+    documentos.mkdir()
+    (downloads / 'notas.txt').write_text('teste', encoding='utf-8')
+    pastas = {'Downloads': downloads, 'Documentos': documentos}
+    for texto, estado in [('Mova notas.txt de Downloads para Documentos', 'movido'),
+                          ('Renomeie notas.txt em Documentos para arquivo final.txt', 'renomeado')]:
+        ordem = interpretar_ordem_pc(texto)
+        assert executar_arquivo(*ordem, service=None, pastas=pastas)['arquivo']['estado'] == estado
+    assert not (downloads / 'notas.txt').exists()
+    assert not (documentos / 'notas.txt').exists()
+    assert (documentos / 'arquivo final.txt').read_text(encoding='utf-8') == 'teste'
+    with pytest.raises(ValueError):
+        interpretar_ordem_pc('Renomeie arquivo final.txt em Documentos para ../fora.txt')
 
 
 def test_ordem_composta_de_arquivo_com_destino_explicito():

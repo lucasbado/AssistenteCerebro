@@ -7,6 +7,7 @@ import { createLocalAiBridge, type LocalAiResult } from './localAiBridge';
 import { decodeTaskActions } from './taskActions';
 import { decodeMessageActions } from './messageActions';
 import { DesktopVoice } from './desktopVoice';
+import { fileCommands, pcCommandParam, readFileResult, readSystemResult, type FileResult, type SystemResult } from './pcCommands';
 import { DesktopListening, type ListeningEvent, type ListeningPhase } from './desktopListening';
 import { createAudioQueue, type AudioResult } from './audioControl';
 
@@ -150,7 +151,7 @@ export default function App() {
   const scenarioBusyRef = useRef(false);
   const lastCommandRef = useRef<{ id: string; comando: string; status: string } | null>(null);
   const houseResultsRef = useRef(new Map<string, { entity_id: string; state: string }>());
-  const openingResultsRef = useRef(new Map<string, { primeiro_plano: boolean }>());
+  const desktopResultsRef = useRef(new Map<string, { primeiro_plano: boolean } | FileResult | SystemResult>());
   const audioResultsRef = useRef(new Map<string, { audio: AudioResult }>());
   const audioQueueRef = useRef(createAudioQueue(parametro => invoke<string>('execute_pc_command', { comando: 'audio_controle', parametro })));
 
@@ -267,11 +268,13 @@ export default function App() {
         lastCommandRef.current = { id, comando: String(data.comando || data.acao || ''), status };
         commandResultsRef.current.set(id, status);
         if (commandResultsRef.current.size > 200) {
-          commandResultsRef.current.delete(commandResultsRef.current.keys().next().value!);
+          const oldest = commandResultsRef.current.keys().next().value!;
+          commandResultsRef.current.delete(oldest);
+          desktopResultsRef.current.delete(oldest);
         }
         if (socket?.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({ tipo_ws: 'COMANDO_RESULTADO', id_comando: id, status,
-            resultado: audioResultsRef.current.get(id) ?? houseResultsRef.current.get(id) ?? openingResultsRef.current.get(id) }));
+            resultado: audioResultsRef.current.get(id) ?? houseResultsRef.current.get(id) ?? desktopResultsRef.current.get(id) }));
         }
       }
     };
@@ -282,10 +285,7 @@ export default function App() {
     if (id) commandResultsRef.current.set(id, 'executando');
     try {
       const cmd = data.comando || data.acao || 'CUSTOM';
-      let param = String(data.url ?? data.parametro ?? data.app ?? data.query ?? data.macro ?? data.valor ?? "");
-      if (cmd === 'volume_canal' && data.canal != null) {
-        param = `${data.canal},${data.valor ?? data.parametro ?? ''}`;
-      }
+      const param = pcCommandParam(cmd, data);
 
       // 🛡️ CHECK INTERVENTION POLICY (Super Poderes / Auto-Open)
       if (data.origem === "IA" && !(data.abertura_modo === "pedido" && data.abertura_autorizada === true) && !policyRef.current.auto_open_enabled && (cmd === "open_url" || cmd === "abrir_url" || cmd === "abrir_app" || cmd === "abrir_programa")) {
@@ -294,7 +294,7 @@ export default function App() {
         return;
       }
 
-      addLog(`⚡ Executing local PC command: ${cmd} (${param})`, "text-neon-cyan");
+      addLog(`⚡ Executing local PC command: ${cmd}`, "text-neon-cyan");
 
       if (cmd === 'audio_controle') {
         const audio = await audioQueueRef.current(param);
@@ -323,12 +323,19 @@ export default function App() {
         }
       } else {
         const raw = await invoke<string>("execute_pc_command", { comando: cmd, parametro: param });
+        if (fileCommands.has(cmd)) {
+          const result = readFileResult(raw);
+          if (id) desktopResultsRef.current.set(id, result);
+        }
+        if (cmd === 'system_status') {
+          const result = readSystemResult(raw);
+          if (id) desktopResultsRef.current.set(id, result);
+        }
         if (['abrir_app', 'abrir_programa', 'abrir_url', 'open_url', 'pesquisa_google', 'web_search', 'pesquisar'].includes(cmd)) {
           try {
             const result = JSON.parse(raw);
             if (typeof result.primeiro_plano === 'boolean') {
-              if (openingResultsRef.current.size >= 200) openingResultsRef.current.clear();
-              openingResultsRef.current.set(id, { primeiro_plano: result.primeiro_plano });
+              if (id) desktopResultsRef.current.set(id, { primeiro_plano: result.primeiro_plano });
               if (!result.primeiro_plano) setNotice({ text: 'A abertura foi encaminhada, mas o Windows não confirmou a janela em primeiro plano.', kind: 'error' });
             }
           } catch { /* Older helpers return only a success status. */ }
