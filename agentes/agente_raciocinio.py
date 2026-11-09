@@ -85,7 +85,8 @@ class AgenteRaciocinio:
                     historico=historico,
                     timestamp_dispositivo=evento.timestamp,
                     knowledge=conhecimento_atual,
-                    habits=habitos_str
+                    habits=habitos_str,
+                    canal=evento.metadados.get('canal_origem', 'texto'),
                 )
 
             if evento.metadados.get('analises_notificacoes'):

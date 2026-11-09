@@ -13,7 +13,7 @@ from servicos.semantic_cache import semantic_cache_service
 from servicos.context_builder import context_builder
 from servicos.obsidian_service import obsidian_service
 from servicos.consciencia import consciencia
-from servicos.personalidade_ollie import PERSONALIDADE_OLLIE
+from servicos.personalidade_ollie import PERSONALIDADE_OLLIE, ESTILO_RESPOSTA_FALADA
 from servicos.conversa import pedido_de_explicacao, resposta_pendente, ler_resposta_conversa, falha_conversa
 from modelos.catalogo import EntidadeSemantica
 
@@ -86,10 +86,11 @@ compromisso. Não inclua comandos de dispositivo ou ferramentas no resultado.'''
         prompt = json.dumps({'mensagem_atual': texto, 'recebidas_na_mesma_conversa': contexto}, ensure_ascii=False)
         return json.loads(await self._gerar(prompt, SYSTEM_SELECAO, max_tokens=600, funcao='selecao_mensagens'))
 
-    async def classificar_evento(self, categoria: str, pacote: str, payload: dict, historico: list[str] | None = None, timestamp_dispositivo: datetime | None = None, knowledge: str = "", habits: str = "") -> dict:
+    async def classificar_evento(self, categoria: str, pacote: str, payload: dict, historico: list[str] | None = None, timestamp_dispositivo: datetime | None = None, knowledge: str = "", habits: str = "", *, canal: str = 'texto') -> dict:
         usuario = categoria in {'SISTEMA_COMANDO_USUARIO', 'CHAT'}
+        falada = usuario and canal == 'voz'
         if usuario and pedido_de_explicacao(payload.get('texto')):
-            return await self.responder_conversa(str(payload['texto']), historico, knowledge)
+            return await self.responder_conversa(str(payload['texto']), historico, knowledge, falada=falada)
         texto_msg = str(payload.get('texto', '')).lower()
 
         contexto = await context_builder.construir_contexto(texto_msg, session_id=pacote)
@@ -193,6 +194,9 @@ Retorne JSON com tipo_interacao (NOTIFICAR ou IGNORAR), mensagem_dinamica
 (curta, em português), aguarda_resposta=false e execucao_direta=[].
 ''' + '\nContexto pessoal: ' + str(contexto.get('fatos_relevantes', ''))[:800]
 
+        if falada:
+            system += ESTILO_RESPOSTA_FALADA
+
         # Turn history is context, not a new instruction or permission to execute.
         contexto_conversa = [str(turno)[:800] for turno in (historico or [])[-8:]]
         prompt = (f"EVENTO: {categoria} | {pacote} | {json.dumps(payload, ensure_ascii=False)}"
@@ -223,7 +227,7 @@ Retorne JSON com tipo_interacao (NOTIFICAR ou IGNORAR), mensagem_dinamica
             if usuario and not data.get('execucao_direta') and (
                 data.get('tipo_interacao', 'NOTIFICAR') not in {'NOTIFICAR', 'SUGERIR'}
                 or resposta_pendente(data.get('mensagem_dinamica'))):
-                return await self.responder_conversa(str(payload.get('texto', '')), historico, knowledge)
+                return await self.responder_conversa(str(payload.get('texto', '')), historico, knowledge, falada=falada)
             if texto_msg.strip() and not data.get("execucao_direta") and not data.get("memoria_obsidian"):
                 try:
                     await semantic_cache_service.inserir(cache_key, resposta_str)
@@ -234,7 +238,7 @@ Retorne JSON com tipo_interacao (NOTIFICAR ou IGNORAR), mensagem_dinamica
             logger.error(f"❌ [LLM] Erro com provider: {e}")
             return falha_conversa(e) if usuario else {'tipo_interacao': 'IGNORAR', 'mensagem_dinamica': '', 'execucao_direta': [], '_ia_indisponivel': True}
 
-    async def responder_conversa(self, texto, historico=None, knowledge=''):
+    async def responder_conversa(self, texto, historico=None, knowledge='', *, falada=False):
         """Resposta direta com contexto curto, sem catálogo de ferramentas ou efeitos."""
         system = PERSONALIDADE_OLLIE + '''
 CONVERSA:
@@ -248,6 +252,8 @@ que não consegue verificar isso neste fluxo.
 Retorne JSON com "resposta" (a resposta completa) e "aguarda_resposta" (true
 somente se fez uma pergunta ao usuário e precisa da resposta para continuar).
 Um recibo como "comando recebido" não responde à pergunta.'''
+        if falada:
+            system += ESTILO_RESPOSTA_FALADA
         prompt = json.dumps({'pergunta': texto,
             'historico': [str(t)[:400] for t in (historico or [])[-4:]],
             'conhecimento': str(knowledge)[:1200]}, ensure_ascii=False)

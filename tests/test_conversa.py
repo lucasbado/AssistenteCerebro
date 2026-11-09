@@ -80,6 +80,15 @@ async def test_curiosidade_usa_prompt_curto_com_historico_e_resposta_completa(mo
     modulo.context_builder.construir_contexto.assert_not_awaited()
 
 
+async def test_conversa_usa_direcao_de_fala_so_no_canal_de_voz(modelo):
+    llm, provider, _ = modelo
+    for canal in ('texto', 'voz'):
+        resposta = await llm.classificar_evento(
+            'SISTEMA_COMANDO_USUARIO', 'pc.chat', {'texto': 'O que é pareidolia?'}, canal=canal)
+        assert ('RESPOSTA PARA ESCUTAR' in provider.gerar.call_args.args[1]) == (canal == 'voz')
+        assert resposta['execucao_direta'] == []
+
+
 @pytest.mark.parametrize('incompleta', [{'tipo_interacao': 'IGNORAR'}, {'mensagem_dinamica': 'Comando recebido.'},
     {'mensagem_dinamica': ''}])
 async def test_outras_perguntas_tambem_recuperam_classificacao_sem_resposta(modelo, incompleta):

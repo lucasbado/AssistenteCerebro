@@ -66,19 +66,21 @@ export default function App() {
   const desktopReplies = useRef(new DesktopReplies());
   const desktopVoice = useRef<DesktopVoice | null>(null);
   if (!desktopVoice.current) desktopVoice.current = new DesktopVoice({
-    fetchAudio: async (text, signal) => {
+    fetchAudio: async (text, signal, streaming) => {
       const api = await invoke<string>('get_api_url');
-      const url = new URL(`${api}/api/v1/voice/speak`);
-      url.searchParams.set('text', text);
-      url.searchParams.set('voice', 'pt-BR-ThalitaNeural');
-      const response = await authenticatedFetch(url.toString(), { signal });
-      return response.blob();
+      return authenticatedFetch(`${api}/api/v1/voice/speak`, {
+        method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, stream: streaming }),
+      });
     },
+    createMediaSource: typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('audio/mpeg')
+      ? () => new MediaSource() : undefined,
     createAudio: url => new Audio(url),
     createUrl: blob => URL.createObjectURL(blob),
     revokeUrl: url => URL.revokeObjectURL(url),
     speakLocal: text => invoke('speak_response', { text }),
     stopLocal: () => invoke('stop_speech'),
+    onStarted: streaming => addLog(streaming ? 'Voz neural tocando em fluxo.' : 'Voz neural tocando.', 'text-neon-cyan'),
   });
   const socketRef = useRef<WebSocket | null>(null);
   const [listeningPhase, setListeningPhase] = useState<ListeningPhase>('off');

@@ -6,6 +6,7 @@ from servicos.catalogo_apps_mobile import catalogo_apps_mobile
 from servicos.controle_casa import normalizar
 from servicos.controle_celular import validar_acao
 from servicos.cognicao_controles import cognicao_controles
+from servicos.personalidade_ollie import ESTILO_RESPOSTA_FALADA
 from servicos.tempo import horario_local
 
 SYSTEM = '''Você é Ollie, assistente pessoal em português brasileiro, natural e concisa.
@@ -137,7 +138,7 @@ async def interpretar_intencao(evento, texto):
         'pedido_usuario': texto, 'agora': local.isoformat(), 'fuso': str(local.tzinfo),
         'origem': dispositivo_origem(evento), 'destino_explicito': destino,
         'apps_instalados': catalogo_apps_mobile.candidatos(texto),
-    }, SYSTEM)
+    }, SYSTEM + (ESTILO_RESPOSTA_FALADA if evento.metadados.get('canal_origem') == 'voz' else ''))
     plano = validar_plano(obj, texto, evento.timestamp)
     exclusivas = {'alarm.create', 'timer.create', 'clock.open', 'flashlight.set', 'message.prepare', 'controls.open'}
     if plano.get('acoes') and (destino == 'PC' or (dispositivo_origem(evento) == 'PC' and destino != 'MOBILE' and any(a['acao'] not in exclusivas for a in plano['acoes']))):
