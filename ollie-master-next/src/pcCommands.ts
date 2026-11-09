@@ -24,6 +24,11 @@ export function pcCommandParam(command: string, data: Record<string, unknown>): 
 export type FileResult = { arquivo: { estado: string; itens: string[]; texto?: string; parcial?: boolean } };
 export type SystemResult = { sistema: { cpu: number; ram: number; disco: number } };
 export type WindowResult = { janelas: { titulo: string; processo: string }[]; total: number };
+const interfaceFailures = ['sem_janela', 'ambigua', 'minimizada', 'mudou', 'indisponivel'] as const;
+const controlTypes = ['botão', 'link', 'aba', 'menu', 'caixa de seleção', 'opção'];
+type Control = { tipo: string; nome: string; habilitado: boolean };
+export type InterfaceResult = { estado: typeof interfaceFailures[number] } |
+  { estado: 'lida'; janela: string; itens: Control[]; parcial: boolean };
 
 export function readFileResult(raw: string): FileResult {
   const result = JSON.parse(raw);
@@ -67,4 +72,22 @@ export function readWindowResult(raw: string, command: string): WindowResult {
     return { titulo: window.titulo, processo: window.processo };
   });
   return { janelas, total: result.total };
+}
+
+export function readInterfaceResult(raw: string): InterfaceResult {
+  const result = JSON.parse(raw);
+  if (interfaceFailures.includes(result?.estado)) return { estado: result.estado };
+  if (result?.estado !== 'lida' || typeof result.janela !== 'string' || !result.janela ||
+      typeof result.parcial !== 'boolean' || !Array.isArray(result.itens) || result.itens.length > 10) {
+    throw new Error('O executor devolveu uma leitura de interface inválida.');
+  }
+  const itens = result.itens.map((item: unknown) => {
+    const control = item as Control | null;
+    if (!control || !controlTypes.includes(control.tipo) || typeof control.nome !== 'string' ||
+        !control.nome || typeof control.habilitado !== 'boolean') {
+      throw new Error('O executor devolveu um controle inválido.');
+    }
+    return { tipo: control.tipo, nome: control.nome, habilitado: control.habilitado };
+  });
+  return { estado: 'lida', janela: result.janela, itens, parcial: result.parcial };
 }

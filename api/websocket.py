@@ -87,15 +87,15 @@ class GerenciadorNotificacoes:
                          "pc_configurado": conectado(self.pc_master) and 'CASA' in self._capacidades.get(self.pc_master, set()),
                          "mobile_configurado": conectado(self.mobile_client) and 'CASA' in self._capacidades.get(self.mobile_client, set())}}
 
-    async def enviar_comando_pc(self, mensagem, *, operacao_arquivo_explicita=False, observacao_janelas_explicita=False):
+    async def enviar_comando_pc(self, mensagem, *, operacao_arquivo_explicita=False, observacao_pc_explicita=False):
         from servicos.arquivos_pc import OPERACOES_ARQUIVOS
-        from servicos.foco_janelas import COMANDOS_OBSERVACAO_JANELAS
+        from servicos.interface_pc import COMANDOS_OBSERVACAO_PC
 
         msg = dict(mensagem)
         comando = str(msg.get('comando') or msg.get('acao') or '')
         if comando in OPERACOES_ARQUIVOS and not operacao_arquivo_explicita:
             return {'status': 'erro', 'motivo': 'Peça a operação de arquivo pelo chat ou por voz.'}
-        if comando in COMANDOS_OBSERVACAO_JANELAS and not observacao_janelas_explicita:
+        if comando in COMANDOS_OBSERVACAO_PC and not observacao_pc_explicita:
             return {'status': 'erro', 'motivo': 'Peça a consulta de janelas pelo chat ou por voz.'}
         identificador = str(msg.get("id_comando") or uuid.uuid4())
         if len(identificador) > 128:

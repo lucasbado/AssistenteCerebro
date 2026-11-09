@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pcCommandParam, readFileResult, readSystemResult, readWindowResult } from '../src/pcCommands.ts';
+import { pcCommandParam, readFileResult, readSystemResult, readWindowResult, readInterfaceResult } from '../src/pcCommands.ts';
 
 test('preserves structured input from Wear and legacy PC clients', () => {
   assert.equal(pcCommandParam('mouse_move', { dx: 0, dy: -12, parametro: '' }), '0,-12');
@@ -27,4 +27,12 @@ test('forwards only window labels and checks the count matches the request', () 
   assert.deepEqual(readWindowResult(raw, 'janela_ativa'), { janelas: [window], total: 1 });
   assert.throws(() => readWindowResult('{"janelas":[],"total":2}', 'listar_janelas'));
   assert.throws(() => readWindowResult(JSON.stringify({ janelas: [window], total: 2 }), 'janela_ativa'));
+});
+
+test('forwards control labels and states without values or coordinates', () => {
+  const control = { tipo: 'menu', nome: 'Arquivo', habilitado: true };
+  const result = { estado: 'lida', janela: 'Teste', itens: [control], parcial: false };
+  const raw = JSON.stringify({ ...result, itens: [{ ...control, x: 42, valor: 'privado' }] });
+  assert.deepEqual(readInterfaceResult(raw), result);
+  assert.throws(() => readInterfaceResult(JSON.stringify({ ...result, itens: [{ ...control, habilitado: 1 }] })));
 });

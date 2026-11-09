@@ -479,6 +479,11 @@ class PcControlService:
     def observar_janelas(self, comando, termo=''):
         return self.foco.observar(comando, termo)
 
+    def observar_interface(self, termo=''):
+        from servicos.interface_pc import observar_interface
+
+        return observar_interface(self.foco, termo)
+
     @staticmethod
     def _entrada():
         if pyautogui is None:

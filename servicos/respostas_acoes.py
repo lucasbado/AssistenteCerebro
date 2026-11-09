@@ -5,6 +5,7 @@ from urllib.parse import parse_qs, urlsplit
 from servicos.arquivos_pc import COMANDOS_ARQUIVOS, validar_resultado_arquivo
 from servicos.comandos_pc import validar_status_pc
 from servicos.foco_janelas import COMANDOS_OBSERVACAO_JANELAS, validar_observacao_janelas
+from servicos.interface_pc import COMANDO_INTERFACE, COMANDOS_OBSERVACAO_PC, validar_resultado_interface
 from servicos.sites_pc import CONFIG
 
 APPS = {
@@ -30,6 +31,7 @@ ACOES_PC = {
     'janela_fechar': 'fechar a janela', 'janela_fullscreen': 'alternar a tela cheia',
     'capturar_tela': 'capturar a tela', 'system_status': 'consultar o uso de CPU, memória e disco',
     'janela_ativa': 'identificar a janela ativa', 'listar_janelas': 'consultar as janelas abertas',
+    COMANDO_INTERFACE: 'consultar os controles da janela',
     'criar_pasta': 'criar a pasta', 'copiar_arquivo': 'copiar o arquivo', 'mover_arquivo': 'mover o arquivo',
     'renomear_arquivo': 'renomear o arquivo', 'compactar_arquivo': 'compactar o arquivo',
     'criar_arquivo': 'criar o arquivo', 'ler_arquivo': 'ler o arquivo', 'acrescentar_texto': 'acrescentar o texto',
@@ -167,6 +169,29 @@ def _resposta_janelas(comando, resultado, filtro):
     return f'Janelas abertas no PC\n\n{nomes}.'
 
 
+def _resposta_interface(resultado):
+    if not validar_resultado_interface(resultado):
+        return 'O PC não devolveu uma leitura válida da interface.'
+    estado = resultado['estado']
+    if estado != 'lida':
+        return {
+            'sem_janela': 'Não encontrei a janela. Peça a lista de janelas do PC para conferir o título.',
+            'ambigua': 'Encontrei mais de uma janela. Peça a lista de janelas do PC e indique o título exato.',
+            'minimizada': 'A janela está minimizada. Traga a janela para frente e tente de novo.',
+            'mudou': 'A janela mudou durante a consulta. Peça a leitura novamente.',
+            'indisponivel': 'Não consegui consultar os controles dessa janela pela acessibilidade do Windows.',
+        }[estado]
+    titulo, itens = resultado['janela'], resultado['itens']
+    if not itens:
+        if resultado['parcial']:
+            return f'Não encontrei controles com rótulo na parte que consegui ler em “{titulo}”.'
+        return f'Não encontrei controles com rótulo acessível em “{titulo}”.'
+    rotulos = _juntar([f'{item["tipo"]} “{item["nome"]}”' + ('' if item['habilitado'] else ' (desabilitado)')
+                      for item in itens])
+    prefixo = 'Parte dos controles em' if resultado['parcial'] else 'Controles em'
+    return f'{prefixo} “{titulo}”\n\n{rotulos}.'
+
+
 def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
     frases, grupo = [], []
 
@@ -200,6 +225,8 @@ def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
             frases.append(_resposta_arquivo(comando, registro.get('resultado')))
         elif comando in COMANDOS_OBSERVACAO_JANELAS:
             frases.append(_resposta_janelas(comando, registro.get('resultado'), etapa.get('parametro')))
+        elif comando == COMANDO_INTERFACE:
+            frases.append(_resposta_interface(registro.get('resultado')))
         elif comando == 'system_status':
             dados = registro.get('resultado')
             if validar_status_pc(dados):
@@ -227,7 +254,7 @@ def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
         frases.append(interrupcao)
     texto = ' '.join(frases)
     if resultados and not interrupcao and all(r['status'] == 'concluido' and r.get('foco') is not False
-            and r['etapa'].get('comando') not in COMANDOS_ARQUIVOS | COMANDOS_OBSERVACAO_JANELAS | {'system_status'} for r in resultados):
+            and r['etapa'].get('comando') not in COMANDOS_ARQUIVOS | COMANDOS_OBSERVACAO_PC | {'system_status'} for r in resultados):
         prefixo = 'Fechou' if re.search(r'\b(cara|mano|bora|valeu|porra|caralho|merda)\b', str(texto_usuario), re.I) else 'Pronto'
         texto = f'{prefixo}, ' + texto[:1].lower() + texto[1:]
     return texto or 'Não consegui confirmar o que aconteceu.'

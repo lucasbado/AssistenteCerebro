@@ -15,6 +15,7 @@ PROCESSOS_APLICATIVOS = {
     'bloco de notas': 'notepad.exe', 'explorador de arquivos': 'explorer.exe',
     'vs code': 'code.exe', 'visual studio code': 'code.exe', 'vscode': 'code.exe',
     'android studio': 'studio64.exe', 'android_studio': 'studio64.exe',
+    'ollie': 'ollie-master-next.exe',
 }
 
 
@@ -200,6 +201,26 @@ class FocoJanelas:
         rotulos = [(_rotulo(janela.titulo, MAX_TITULO), _rotulo(janela.processo, MAX_PROCESSO)) for janela in janelas]
         itens = [{'titulo': titulo, 'processo': processo} for titulo, processo in rotulos if titulo and processo]
         return {'janelas': itens[:MAX_JANELAS], 'total': len(itens)}
+
+    def alvo_interface(self, termo):
+        sistema = self._sistema()
+        if sistema is None:
+            return 'indisponivel', None
+        termo = normalizar(termo)
+        janelas = sistema.observar(so_ativa=not termo)
+        if termo:
+            exatas = [janela for janela in janelas if normalizar(janela.titulo) == termo]
+            por_app = [janela for janela in janelas if termo in {janela.processo, janela.processo.removesuffix('.exe')}
+                       or PROCESSOS_APLICATIVOS.get(termo) == janela.processo]
+            janelas = exatas or por_app or [janela for janela in janelas if _combina(janela, termo)]
+        if not janelas:
+            return 'sem_janela', None
+        if len(janelas) != 1:
+            return 'ambigua', None
+        janela = janelas[0]
+        if sistema.estado(janela.id, 'janela_minimizar'):
+            return 'minimizada', None
+        return 'lida', janela
 
     def trazer(self, *, processos=(), termo=None, antes=(), tentativas=24, somente_alteradas=False):
         anteriores = {j.id: j.titulo for j in antes}

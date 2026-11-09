@@ -154,7 +154,14 @@ def test_voz_do_celular_busca_abre_no_pc_e_responde_na_origem(aplicativo, monkey
     service.abrir_documento_verificado.assert_called_once_with(tmp_path / 'teste.pdf')
 
 
-def test_voz_consulta_janela_ativa_sem_expor_titulos_no_rele(aplicativo):
+@pytest.mark.parametrize(('frase', 'acao', 'resultado', 'trecho'), [
+    ('Qual é a janela ativa no PC?', 'janela_ativa',
+     {'janelas': [{'titulo': 'Nota de teste', 'processo': 'notepad.exe'}], 'total': 1}, '“Nota de teste”'),
+    ('Liste os controles da janela ativa no PC.', 'listar_controles',
+     {'estado': 'lida', 'janela': 'Nota de teste', 'parcial': False,
+      'itens': [{'tipo': 'menu', 'nome': 'Arquivo', 'habilitado': True}]}, 'menu “Arquivo”'),
+])
+def test_voz_consulta_janela_sem_expor_observacao_no_rele(aplicativo, frase, acao, resultado, trecho):
     app, _, _, central = aplicativo
 
     async def aguardar_mobile():
@@ -172,21 +179,21 @@ def test_voz_consulta_janela_ativa_sem_expor_titulos_no_rele(aplicativo):
             mobile.send_json({'tipo_ws': 'REGISTRO', 'id': 'MOBILE'})
             client.portal.call(aguardar_mobile)
 
-            mobile.send_json({'tipo_ws': 'COMANDO_PC', 'comando': 'janela_ativa'})
+            mobile.send_json({'tipo_ws': 'COMANDO_PC', 'comando': acao})
             assert mobile.receive_json()['status'] == 'erro'
             mobile.send_json({'tipo_ws': 'CHAT_MESSAGE', 'canal': 'voz', 'correlacao_id': 'janela-teste',
-                              'texto': 'Qual é a janela ativa no PC?'})
+                              'texto': frase})
             comando = pc.receive_json()
-            assert (comando['tipo_ws'], comando['comando']) == ('COMANDO_PC', 'janela_ativa')
+            assert (comando['tipo_ws'], comando['comando']) == ('COMANDO_PC', acao)
             identificador = comando['id_comando']
             pc.send_json({'tipo_ws': 'COMANDO_RESULTADO', 'id_comando': identificador, 'status': 'concluido',
-                          'resultado': {'janelas': [{'titulo': 'Nota de teste', 'processo': 'notepad.exe'}], 'total': 1}})
+                          'resultado': resultado})
             resposta = mobile.receive_json()
             assert resposta['tipo_ws'] == 'CHAT_RESPONSE'
             assert resposta['dispositivo_destino'] == 'MOBILE'
             assert resposta['correlacao_id'] == 'janela-teste'
             assert resposta['canal_origem'] == 'voz'
-            assert '“Nota de teste”' in resposta['texto']
+            assert trecho in resposta['texto']
 
             mobile.send_json({'tipo_ws': 'COMANDO_PC', 'comando': 'system_status', 'id_comando': identificador})
             assert 'resultado' not in mobile.receive_json()

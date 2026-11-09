@@ -84,3 +84,38 @@ def test_pedidos_de_observacao_de_janelas(frase, ordem):
     from servicos.ordens_pc import interpretar_ordem_pc
 
     assert interpretar_ordem_pc(frase) == ordem
+
+
+def test_interface_prefere_nome_do_app_e_recusa_observacao_se_a_janela_mudar():
+    from servicos.interface_pc import observar_interface
+
+    janela = Janela(12, 'ollie-master-next.exe', 'Ollie · Central do PC')
+    outra = Janela(13, 'opera.exe', 'Ollie — Render')
+    sistema = SimpleNamespace(observar=Mock(side_effect=[[outra, janela], [outra]]),
+                              estado=Mock(return_value=False))
+    leitor = Mock(return_value=([{'tipo': 'botão', 'nome': 'Conversa', 'habilitado': True}], False))
+    assert observar_interface(FocoJanelas(sistema), 'Ollie', leitor) == {'estado': 'mudou'}
+    leitor.assert_called_once_with(12)
+
+
+def test_interface_nao_le_janela_minimizada_ou_alvo_ambiguo():
+    from servicos.interface_pc import observar_interface
+
+    janelas = [Janela(1, 'code.exe', 'Projeto A'), Janela(2, 'code.exe', 'Projeto B')]
+    sistema = SimpleNamespace(observar=Mock(return_value=janelas), estado=Mock(return_value=True))
+    leitor = Mock()
+    assert observar_interface(FocoJanelas(sistema), 'VS Code', leitor) == {'estado': 'ambigua'}
+    assert observar_interface(FocoJanelas(sistema), 'Projeto A', leitor) == {'estado': 'minimizada'}
+    leitor.assert_not_called()
+
+
+@pytest.mark.parametrize(('frase', 'ordem'), [
+    ('Liste os controles da janela ativa no PC.', ('listar_controles', '')),
+    ('Mostre os elementos da interface do Explorador de Arquivos no PC.', ('listar_controles', 'Explorador de Arquivos')),
+    ('Liste os controles da janela do “Projeto A”.', ('listar_controles', 'Projeto A')),
+    ('Mostre os elementos químicos', None),
+])
+def test_pedido_explicito_de_interface(frase, ordem):
+    from servicos.ordens_pc import interpretar_ordem_pc
+
+    assert interpretar_ordem_pc(frase) == ordem
