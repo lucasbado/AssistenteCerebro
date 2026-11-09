@@ -79,9 +79,13 @@ class GeminiTTSService:
         """Verifica se há chave da API do Gemini configurada."""
         return bool(self.api_key)
 
-    def chave_valida_formato(self) -> bool:
-        """Verifica se o formato da chave corresponde ao padrão do Google AI Studio (começa com 'AIzaSy')."""
-        return self.api_key.startswith("AIzaSy")
+    def tipo_autenticacao(self) -> str:
+        """Determina se o token é uma chave de API (AIzaSy) ou Token OAuth (AQ/ya29)."""
+        if self.api_key.startswith("AIza"):
+            return "api_key"
+        if self.api_key.startswith("AQ") or self.api_key.startswith("ya29"):
+            return "oauth_token"
+        return "desconhecido"
 
     async def sintetizar(self, texto: str, voice: str = None, rate: float = 1.0) -> bytes:
         """
@@ -90,9 +94,6 @@ class GeminiTTSService:
         """
         if not self.disponivel():
             raise ValueError("GEMINI_API_KEY não está configurada no ambiente (.env).")
-
-        if not self.chave_valida_formato():
-            logger.warning("[GeminiTTS] A chave GEMINI_API_KEY ('%s...') não parece ser uma chave do Google AI Studio (chaves do Gemini começam com 'AIzaSy...'). Crie em https://aistudio.google.com/app/apikey", self.api_key[:8])
 
         texto_processado = preparar_fala(texto)
         if not texto_processado:
@@ -119,7 +120,7 @@ class GeminiTTSService:
         return audio_bytes
 
     async def _sintetizar_gemini_rest(self, texto: str, voice: str) -> bytes:
-        """Gera áudio através da API Gemini generateContent com resposta de áudio de latência mínima."""
+        """Gera áudio através da API Gemini generateContent com suporte a API Keys (AIza) e OAuth Tokens (AQ/ya29)."""
         modelos = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
         prompt_fala = f"Leia literalmente: {texto}"
         
@@ -146,31 +147,46 @@ class GeminiTTSService:
             }
         }
 
+        # Prepara opções de autenticação (Query Param para API Key, Bearer Header para OAuth Token)
+        opcoes_auth = []
+        tipo = self.tipo_autenticacao()
+        if tipo == "oauth_token" or not self.api_key.startswith("AIza"):
+            opcoes_auth.append(("header", {"Authorization": f"Bearer {self.api_key}"}, ""))
+            opcoes_auth.append(("query", {}, f"?key={self.api_key}"))
+        else:
+            opcoes_auth.append(("query", {}, f"?key={self.api_key}"))
+            opcoes_auth.append(("header", {"Authorization": f"Bearer {self.api_key}"}, ""))
+
         ultimo_erro = None
         async with httpx.AsyncClient(timeout=15.0) as client:
             for modelo in modelos:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={self.api_key}"
-                resp = await client.post(url, json=payload)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        for part in parts:
-                            inline_data = part.get("inlineData") or part.get("inline_data")
-                            if inline_data and inline_data.get("data"):
-                                b64_audio = inline_data["data"]
-                                return base64.b64decode(b64_audio)
-                
-                ultimo_erro = f"HTTP {resp.status_code}: {resp.text[:250]}"
-                logger.warning("[GeminiTTS] Modelo %s retornou %s", modelo, ultimo_erro)
+                for modo, headers, query_param in opcoes_auth:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent{query_param}"
+                    try:
+                        resp = await client.post(url, json=payload, headers=headers)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            candidates = data.get("candidates", [])
+                            if candidates:
+                                parts = candidates[0].get("content", {}).get("parts", [])
+                                for part in parts:
+                                    inline_data = part.get("inlineData") or part.get("inline_data")
+                                    if inline_data and inline_data.get("data"):
+                                        b64_audio = inline_data["data"]
+                                        logger.info("[GeminiTTS] Áudio gerado com sucesso via %s (modo %s)!", modelo, modo)
+                                        return base64.b64decode(b64_audio)
+                        
+                        ultimo_erro = f"HTTP {resp.status_code}: {resp.text[:250]}"
+                        logger.warning("[GeminiTTS] Modelo %s (%s) retornou %s", modelo, modo, ultimo_erro)
+                    except Exception as e_req:
+                        ultimo_erro = str(e_req)
+                        logger.warning("[GeminiTTS] Exceção em %s (%s): %s", modelo, modo, e_req)
 
         raise ValueError(f"Falha na API Gemini REST com todos os modelos: {ultimo_erro}")
 
     async def _sintetizar_google_cloud_tts_rest(self, texto: str, voice: str) -> bytes:
-        """Gera áudio utilizando a API pública do Google Text-to-Speech como contingência."""
-        url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={self.api_key}"
-        
+        """Gera áudio utilizando a API do Google Text-to-Speech com suporte a API Key e Bearer Token OAuth (AQ/ya29)."""
+        url = "https://texttospeech.googleapis.com/v1/text:synthesize"
         voice_name_cloud = "pt-BR-Neural2-C" if voice in ("Puck", "Fenrir", "Charon") else "pt-BR-Neural2-A"
         
         payload = {
@@ -184,18 +200,32 @@ class GeminiTTSService:
             }
         }
 
-        async with httpx.AsyncClient(timeout=12.0) as client:
-            resp = await client.post(url, json=payload)
-            if resp.status_code != 200:
-                logger.error("[GeminiTTS] Erro Cloud TTS API HTTP %s: %s", resp.status_code, resp.text[:300])
-                resp.raise_for_status()
-            data = resp.json()
+        # Tenta com Bearer Token se a chave começar com AQ ou ya29, ou query param
+        opcoes_auth = []
+        if self.tipo_autenticacao() == "oauth_token" or not self.api_key.startswith("AIza"):
+            opcoes_auth.append(({"Authorization": f"Bearer {self.api_key}"}, url))
+            opcoes_auth.append(({}, f"{url}?key={self.api_key}"))
+        else:
+            opcoes_auth.append(({}, f"{url}?key={self.api_key}"))
+            opcoes_auth.append(({"Authorization": f"Bearer {self.api_key}"}, url))
 
-        audio_b64 = data.get("audioContent")
-        if not audio_b64:
-            raise ValueError("Google Cloud TTS não retornou conteúdo de áudio.")
-            
-        return base64.b64decode(audio_b64)
+        ultimo_erro = None
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            for headers, target_url in opcoes_auth:
+                try:
+                    resp = await client.post(target_url, json=payload, headers=headers)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        audio_b64 = data.get("audioContent")
+                        if audio_b64:
+                            logger.info("[GeminiTTS] Google Cloud TTS sintetizou áudio com sucesso!")
+                            return base64.b64decode(audio_b64)
+                    ultimo_erro = f"HTTP {resp.status_code}: {resp.text[:250]}"
+                    logger.warning("[GeminiTTS] Cloud TTS retornou %s", ultimo_erro)
+                except Exception as e_cloud:
+                    ultimo_erro = str(e_cloud)
+
+        raise ValueError(f"Google Cloud TTS falhou: {ultimo_erro}")
 
 
 # Instância global do serviço Gemini TTS
