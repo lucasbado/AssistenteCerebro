@@ -28,50 +28,63 @@ CONFIG_TOML_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "con
 DEFAULT_VOICE = DEFAULT_GEMINI_VOICE
 HEADERS = {"Content-Disposition": "attachment; filename=voice.mp3", "Cache-Control": "no-store"}
 
+_CONFIG_VOZ_MEMORIA = {}
+
 
 def carregar_config_voz_pc() -> dict:
-    """Carrega as configurações de voz do PC a partir do config.toml."""
+    """Carrega as configurações de voz do PC a partir de memória ou config.toml."""
+    if _CONFIG_VOZ_MEMORIA:
+        return dict(_CONFIG_VOZ_MEMORIA)
+
     try:
         if os.path.exists(CONFIG_TOML_PATH):
             dados = toml.load(CONFIG_TOML_PATH)
             voz_cfg = dados.get("voz", {})
-            return {
+            cfg = {
                 "provider": voz_cfg.get("provider", "auto"),
                 "voice": voz_cfg.get("voice", DEFAULT_VOICE),
                 "edge_voice": voz_cfg.get("edge_voice", DEFAULT_EDGE_VOICE),
                 "rate": float(voz_cfg.get("rate", 1.0)),
                 "pitch": float(voz_cfg.get("pitch", 1.0))
             }
+            _CONFIG_VOZ_MEMORIA.update(cfg)
+            return cfg
     except Exception as e:
         logger.warning("[VoiceAPI] Não foi possível ler config.toml: %s", e)
 
-    return {
+    cfg_padrao = {
         "provider": "auto",
         "voice": DEFAULT_VOICE,
         "edge_voice": DEFAULT_EDGE_VOICE,
         "rate": 1.0,
         "pitch": 1.0
     }
+    _CONFIG_VOZ_MEMORIA.update(cfg_padrao)
+    return cfg_padrao
 
 
 def salvar_config_voz_pc(novos_dados: dict):
-    """Salva a seção [voz] no config.toml."""
+    """Salva a seção [voz] na memória e tenta persistir no config.toml."""
+    cfg = {
+        "provider": novos_dados.get("provider", "auto"),
+        "voice": novos_dados.get("voice", DEFAULT_VOICE),
+        "edge_voice": novos_dados.get("edge_voice", DEFAULT_EDGE_VOICE),
+        "rate": float(novos_dados.get("rate", 1.0)),
+        "pitch": float(novos_dados.get("pitch", 1.0))
+    }
+    _CONFIG_VOZ_MEMORIA.update(cfg)
+
     try:
         dados = {}
         if os.path.exists(CONFIG_TOML_PATH):
             dados = toml.load(CONFIG_TOML_PATH)
-        dados["voz"] = {
-            "provider": novos_dados.get("provider", "auto"),
-            "voice": novos_dados.get("voice", DEFAULT_VOICE),
-            "edge_voice": novos_dados.get("edge_voice", DEFAULT_EDGE_VOICE),
-            "rate": float(novos_dados.get("rate", 1.0)),
-            "pitch": float(novos_dados.get("pitch", 1.0))
-        }
+        dados["voz"] = cfg
         with open(CONFIG_TOML_PATH, "w", encoding="utf-8") as f:
             toml.dump(dados, f)
+        logger.info("[VoiceAPI] Configurações de voz salvas no config.toml.")
     except Exception as e:
-        logger.error("[VoiceAPI] Erro ao salvar config.toml: %s", e)
-        raise HTTPException(status_code=500, detail="Erro ao salvar a configuração de voz no arquivo config.toml.") from e
+        logger.warning("[VoiceAPI] Aviso ao salvar no config.toml (mantido em memória): %s", e)
+
 
 
 class PedidoDeVoz(BaseModel):
