@@ -93,6 +93,69 @@ def test_ordem_composta_de_arquivo_com_destino_explicito():
     assert interpretar_ordem_pc('Abra YouTube no PC') is None
 
 
+@pytest.mark.skipif(os.name != 'nt', reason='Executor Windows')
+def test_organizacao_exige_previa_e_desfaz_sem_sobrescrever(tmp_path):
+    from servicos.organizacao_pc import executar_organizacao
+
+    pasta = tmp_path / 'Downloads'
+    pasta.mkdir()
+    (pasta / 'notas.txt').write_text('notas', encoding='utf-8')
+    (pasta / 'foto.jpg').write_bytes(b'foto')
+    (pasta / 'livre.bin').touch()
+
+    def pedir(texto):
+        comando, _ = interpretar_ordem_pc(texto)
+        resultado = executar_organizacao(comando, pasta, 'Downloads', tmp_path / 'diario')
+        assert validar_resultado_arquivo(comando, resultado)
+        return resultado['arquivo']['estado']
+
+    assert pedir('Aplique a organização em Downloads') == 'organizacao_sem_previa'
+    assert pedir('Organize Downloads') == 'previa_organizacao'
+    assert (pasta / 'notas.txt').exists()
+    (pasta / 'notas.txt').write_text('notas alteradas', encoding='utf-8')
+    assert pedir('Aplique a organização em Downloads') == 'previa_desatualizada'
+    assert pedir('Organize Downloads') == 'previa_organizacao'
+    assert pedir('Aplique a organização em Downloads') == 'organizado'
+    assert (pasta / 'Textos' / 'notas.txt').read_text(encoding='utf-8') == 'notas alteradas'
+    assert (pasta / 'livre.bin').exists()
+    (pasta / 'foto.jpg').write_bytes(b'outra foto')
+    assert pedir('Desfaça a organização em Downloads') == 'desfeito_parcial'
+    assert (pasta / 'foto.jpg').read_bytes() == b'outra foto'
+    assert (pasta / 'Imagens' / 'foto.jpg').read_bytes() == b'foto'
+    assert (pasta / 'notas.txt').read_text(encoding='utf-8') == 'notas alteradas'
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Executor Windows')
+def test_lixeira_registra_identidade_e_recusa_restaurar_sobre_outro_arquivo(tmp_path, monkeypatch):
+    from servicos.lixeira_pc import executar_lixeira
+
+    arquivo = tmp_path / 'notas.txt'
+    reciclagem = tmp_path / 'reciclado.txt'
+    arquivo.write_text('original', encoding='utf-8')
+    identidade = arquivo.stat().st_ino
+    monkeypatch.setattr('servicos.lixeira_pc.enviar_para_lixeira', lambda caminho: caminho.rename(reciclagem))
+
+    def restaurar(caminho, esperado):
+        assert esperado[1] == identidade
+        reciclagem.rename(caminho)
+        return True
+
+    monkeypatch.setattr('servicos.lixeira_pc._restaurar', restaurar)
+
+    def pedir(texto):
+        comando, parametro = interpretar_ordem_pc(texto)
+        resultado = executar_lixeira(comando, tmp_path, 'Downloads', json.loads(parametro)['nome'], tmp_path / 'diario')
+        assert validar_resultado_arquivo(comando, resultado)
+        return resultado['arquivo']['estado']
+
+    assert pedir('Envie notas.txt de Downloads para a lixeira') == 'na_lixeira'
+    arquivo.write_text('outro', encoding='utf-8')
+    assert pedir('Restaure notas.txt da lixeira em Downloads') == 'destino_existe'
+    arquivo.rename(tmp_path / 'outro.txt')
+    assert pedir('Restaure notas.txt da lixeira em Downloads') == 'restaurado'
+    assert arquivo.read_text(encoding='utf-8') == 'original'
+
+
 @pytest.mark.parametrize('verificada,estado', [(True, 'janela_confirmada'), (False, 'abertura_enviada')])
 def test_abertura_distingue_arquivo_enviado_de_janela_verificada(tmp_path, verificada, estado):
     arquivo = tmp_path / 'teste.pdf'

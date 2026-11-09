@@ -21,7 +21,10 @@ EXTENSOES = frozenset({'.pdf', '.txt', '.md', '.csv', '.docx', '.xlsx', '.pptx',
 OPERACOES_ARQUIVOS = {
     'criar_pasta': 'pasta_criada', 'copiar_arquivo': 'copiado', 'mover_arquivo': 'movido',
     'renomear_arquivo': 'renomeado', 'compactar_arquivo': 'compactado',
+    'prever_organizacao': 'previa_organizacao', 'organizar_pasta': 'organizado',
+    'desfazer_organizacao': 'desfeito', 'lixeira_arquivo': 'na_lixeira', 'restaurar_lixeira': 'restaurado',
 }
+COMANDOS_ORGANIZACAO = {'prever_organizacao', 'organizar_pasta', 'desfazer_organizacao'}
 COMANDOS_ARQUIVOS = frozenset({'buscar_documentos', 'abrir_arquivo', 'listar_arquivos', 'capturar_tela'} | OPERACOES_ARQUIVOS.keys())
 LIMITE_ITENS = 6
 ESTADOS = {
@@ -30,6 +33,10 @@ ESTADOS = {
     'listar_arquivos': {'listado', 'incompleto'},
     'capturar_tela': {'capturado'},
     **{comando: {estado, 'destino_existe', 'origem_ausente'} for comando, estado in OPERACOES_ARQUIVOS.items()},
+    'prever_organizacao': {'previa_organizacao', 'organizacao_sem_itens'},
+    'organizar_pasta': {'organizado', 'organizacao_parcial', 'organizacao_sem_previa', 'previa_desatualizada'},
+    'desfazer_organizacao': {'desfeito', 'desfeito_parcial', 'sem_organizacao'},
+    'restaurar_lixeira': {'restaurado', 'destino_existe', 'sem_item_lixeira', 'restauro_nao_confirmado'},
 }
 
 
@@ -105,7 +112,8 @@ def validar_resultado_arquivo(comando, dados):
     if (not isinstance(estado, str) or estado not in ESTADOS[comando] or not isinstance(itens, list)
             or len(itens) > LIMITE_ITENS):
         return False
-    if estado in {'abertura_enviada', 'janela_confirmada', 'capturado', 'destino_existe', *OPERACOES_ARQUIVOS.values()} and len(itens) != 1:
+    estados_unicos = {estado for cmd, estado in OPERACOES_ARQUIVOS.items() if cmd not in COMANDOS_ORGANIZACAO}
+    if estado in {'abertura_enviada', 'janela_confirmada', 'capturado', 'destino_existe', *estados_unicos} and len(itens) != 1:
         return False
     if estado == 'origem_ausente' and itens:
         return False
@@ -122,6 +130,10 @@ def _seguro(info):
 
 def parametros_operacao(comando, parametro):
     dados = json.loads(parametro) if isinstance(parametro, str) else parametro
+    if comando in COMANDOS_ORGANIZACAO:
+        if not isinstance(dados, dict) or set(dados) != {'pasta'}:
+            raise ValueError('Indique a pasta da organização.')
+        return parametros_arquivo('listar_arquivos', dados)
     chaves = {'nome', 'pasta'}
     if comando in {'copiar_arquivo', 'mover_arquivo'}:
         chaves.add('pasta_destino')
@@ -139,7 +151,7 @@ def parametros_operacao(comando, parametro):
         novo_nome, _, _ = parametros_arquivo('abrir_arquivo', {'nome': dados['novo_nome']})
         if '/' in novo_nome:
             raise ValueError('Para renomear, diga apenas o novo nome do arquivo.')
-    return nome, pasta, novo_nome, pasta_destino
+    return PurePosixPath(nome).as_posix(), pasta, novo_nome, pasta_destino
 
 
 def _caminho_operacao(raiz, nome):
@@ -185,7 +197,16 @@ def _gravar_sem_sobrescrever(origem, destino, compactar, info):
 
 
 def _executar_operacao(comando, parametro, raizes):
+    if comando in COMANDOS_ORGANIZACAO:
+        from servicos.organizacao_pc import executar_organizacao
+
+        _, pasta, _ = parametros_operacao(comando, parametro)
+        return executar_organizacao(comando, raizes[pasta], pasta)
     nome, pasta, novo_nome, pasta_destino = parametros_operacao(comando, parametro)
+    if comando in {'lixeira_arquivo', 'restaurar_lixeira'}:
+        from servicos.lixeira_pc import executar_lixeira
+
+        return executar_lixeira(comando, raizes[pasta], pasta, nome)
     origem = _caminho_operacao(raizes[pasta], nome)
     if comando == 'criar_pasta':
         destino, rotulo, relativo = origem, pasta, nome

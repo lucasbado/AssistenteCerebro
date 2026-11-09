@@ -1,6 +1,7 @@
 export const fileCommands = new Set([
   'buscar_documentos', 'abrir_arquivo', 'listar_arquivos', 'capturar_tela',
   'criar_pasta', 'copiar_arquivo', 'mover_arquivo', 'renomear_arquivo', 'compactar_arquivo',
+  'prever_organizacao', 'organizar_pasta', 'desfazer_organizacao', 'lixeira_arquivo', 'restaurar_lixeira',
 ]);
 
 export function pcCommandParam(command: string, data: Record<string, unknown>): string {

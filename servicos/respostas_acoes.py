@@ -30,6 +30,9 @@ ACOES_PC = {
     'capturar_tela': 'capturar a tela', 'system_status': 'consultar o uso de CPU, memória e disco',
     'criar_pasta': 'criar a pasta', 'copiar_arquivo': 'copiar o arquivo', 'mover_arquivo': 'mover o arquivo',
     'renomear_arquivo': 'renomear o arquivo', 'compactar_arquivo': 'compactar o arquivo',
+    'prever_organizacao': 'preparar a prévia', 'organizar_pasta': 'organizar a pasta',
+    'desfazer_organizacao': 'desfazer a organização', 'lixeira_arquivo': 'enviar o arquivo à Lixeira',
+    'restaurar_lixeira': 'restaurar o arquivo da Lixeira',
 }
 
 
@@ -86,13 +89,39 @@ def _resposta_arquivo(comando, resultado):
     estado, itens = resultado['arquivo']['estado'], resultado['arquivo']['itens']
     nomes = _juntar([f'“{item}”' for item in itens])
     operacao = {'pasta_criada': 'Criei a pasta', 'copiado': 'Copiei para', 'movido': 'Movi para',
-                'renomeado': 'Renomeei para', 'compactado': 'Salvei o ZIP em'}.get(estado)
+                'renomeado': 'Renomeei para', 'compactado': 'Salvei o ZIP em',
+                'na_lixeira': 'Enviei à Lixeira', 'restaurado': 'Restaurei'}.get(estado)
     if operacao:
-        return f'{operacao} {nomes} no PC.'
+        resposta = f'{operacao} {nomes} no PC.'
+        if estado == 'na_lixeira':
+            pasta, nome = itens[0].split('/', 1)
+            resposta += f' Para voltar, diga “Restaure {nome} da Lixeira em {pasta}”.'
+        return resposta
     if estado == 'destino_existe':
         return f'{nomes} já existe. Escolha outro nome ou destino.'
     if estado == 'origem_ausente':
         return 'O arquivo não está nesse caminho. Confira a pasta e o nome completo.'
+    if estado == 'previa_organizacao' and itens:
+        pasta = itens[0].split('/', 1)[0]
+        return f'Prévia de destinos: {nomes}. Para mover esses arquivos, diga “Aplique a organização em {pasta}”.'
+    if estado == 'organizado':
+        return f'Organizei os arquivos em {nomes}.'
+    if estado == 'organizacao_parcial':
+        return ('A organização foi interrompida. ' +
+                (f'Movi {nomes}. Você pode pedir para desfazer a organização.' if itens else 'Nenhum movimento foi confirmado.'))
+    if estado in {'desfeito', 'desfeito_parcial'}:
+        volta = f'Voltei {nomes} para o lugar anterior.' if itens else 'Nenhum arquivo precisou voltar.'
+        return volta if estado == 'desfeito' else volta + ' Alguns itens mudaram de lugar ou têm conflito de nome.'
+    mensagens = {
+        'organizacao_sem_itens': 'Não encontrei arquivos que possam ser organizados nesta pasta.',
+        'organizacao_sem_previa': 'Peça uma prévia da organização desta pasta primeiro.',
+        'previa_desatualizada': 'Os arquivos mudaram desde a prévia. Peça uma nova prévia para continuar.',
+        'sem_organizacao': 'Não tenho uma organização registrada para desfazer nesta pasta.',
+        'sem_item_lixeira': 'Não tenho um envio desse arquivo à Lixeira registrado pela Ollie.',
+        'restauro_nao_confirmado': 'O Windows não confirmou a restauração desse item da Lixeira.',
+    }
+    if estado in mensagens:
+        return mensagens[estado]
     if estado == 'janela_confirmada':
         return f'Abri {nomes} no PC e conferi a janela do documento.'
     if estado == 'capturado':

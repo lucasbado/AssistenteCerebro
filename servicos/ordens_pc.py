@@ -26,10 +26,23 @@ _OPERACOES = (
     ('mover_arquivo', rf'(?:mova|mover|move)\s+(?:o\s+)?(?:arquivo\s+)?({_NOME}){_LOCAL}\s+(?:para|pra)\s+(?:a\s+)?({PASTA})', 'pasta_destino'),
     ('renomear_arquivo', rf'(?:renomeie|renomear|renomeia)\s+(?:o\s+)?(?:arquivo\s+)?({_NOME}){_LOCAL}\s+para\s+({_NOME})', 'novo_nome'),
     ('compactar_arquivo', rf'(?:compacte|compactar|zipe|zipar)\s+(?:o\s+)?(?:arquivo\s+)?({_NOME}){_LOCAL}(?:\s+em\s+zip)?', None),
+    ('lixeira_arquivo', rf'(?:mande|envie|mova)\s+(?:o\s+)?(?:arquivo\s+)?({_NOME}){_LOCAL}\s+(?:para|pra)\s+(?:a\s+)?lixeira', None),
+    ('restaurar_lixeira', rf'(?:restaure|recupere)\s+(?:o\s+)?(?:arquivo\s+)?({_NOME})\s+da\s+lixeira{_LOCAL}', None),
+)
+_ORGANIZACAO = (
+    ('prever_organizacao', rf'(?:(?:mostre\s+a\s+)?pr[eé]via\s+(?:de|da)\s+organiza[çc][aã]o\s+(?:em|de|da|dos)\s+|(?:organize|organizar|organiza)\s+)(?:(?:a|minha)\s+pasta\s+)?({PASTA})'),
+    ('organizar_pasta', rf'(?:aplique|confirme|execute)\s+a\s+organiza[çc][aã]o{_LOCAL}'),
+    ('desfazer_organizacao', rf'(?:desfa[çc]a|desfazer|reverta)\s+a\s+(?:[uú]ltima\s+)?organiza[çc][aã]o{_LOCAL}'),
 )
 
 
 def _interpretar_operacao_arquivo(texto):
+    for comando, padrao in _ORGANIZACAO:
+        pedido = re.fullmatch(padrao, texto, re.I)
+        if pedido:
+            parametro = {'pasta': pedido[1]}
+            parametros_operacao(comando, parametro)
+            return comando, json.dumps(parametro, ensure_ascii=False)
     for comando, padrao, argumento in _OPERACOES:
         pedido = re.fullmatch(padrao, texto, re.I)
         if pedido:
