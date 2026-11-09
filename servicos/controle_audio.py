@@ -11,32 +11,47 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from servicos.nomes_mixer import ALVOS_MIXER, SAIDAS, SAIDAS_FISICAS, VIRTUAIS, apelido_valido, localizar_nome
 
 logger = logging.getLogger(__name__)
 CONFIG = Path(__file__).resolve().parents[1] / 'config/audio.json'
-SAIDAS = ('A1', 'A2', 'A3', 'B1', 'B2')
-ALVOS_MIXER = {**{saida: f'Bus[{i}]' for i, saida in enumerate(SAIDAS)},
-               **{f'ENTRADA{i + 1}': f'Strip[{i}]' for i in range(5)}}
-OPERACOES_MIXER = frozenset({'ler_mixer', 'ganho_mixer', 'ajustar_ganho_mixer', 'mudo_mixer', 'rota_mixer'})
+OPERACOES_MIXER = frozenset({'ler_mixer', 'ganho_mixer', 'ajustar_ganho_mixer', 'mudo_mixer', 'rota_mixer',
+                             'catalogo_mixer', 'apelidar_mixer', 'mover_rota_mixer'})
 
 
 class ComandoAudio(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     id_comando: str = Field(min_length=1, max_length=128, pattern=r'^[\w.:-]+$')
     operacao: Literal['avancar', 'voltar', 'alternar_modo', 'selecionar_perfil', 'consultar',
-                      'ler_mixer', 'ganho_mixer', 'ajustar_ganho_mixer', 'mudo_mixer', 'rota_mixer']
+                      'ler_mixer', 'ganho_mixer', 'ajustar_ganho_mixer', 'mudo_mixer', 'rota_mixer',
+                      'catalogo_mixer', 'apelidar_mixer', 'mover_rota_mixer']
     perfil_audio: Literal['HEADSET', 'CINEMA'] | None = None
     alvo: str | None = Field(default=None, pattern=r'^(?:A[1-3]|B[12]|ENTRADA[1-5])$')
     rota: Literal['A1', 'A2', 'A3', 'B1', 'B2'] | None = None
     valor: float | None = Field(default=None, allow_inf_nan=False)
+    nome: str | None = Field(default=None, max_length=32)
 
     @model_validator(mode='after')
     def perfil_obrigatorio(self):
         if (self.operacao == 'selecionar_perfil') != (self.perfil_audio is not None):
             raise ValueError('Somente selecionar_perfil exige perfil_audio')
         if self.operacao not in OPERACOES_MIXER:
-            if any(v is not None for v in (self.alvo, self.rota, self.valor)):
+            if any(v is not None for v in (self.alvo, self.rota, self.valor, self.nome)):
                 raise ValueError('Parâmetros de mixer fora da operação')
+            return self
+        if self.operacao == 'apelidar_mixer':
+            if not self.alvo or not apelido_valido(self.nome) or self.rota is not None or self.valor is not None:
+                raise ValueError('Indique um canal e um apelido de até 32 caracteres.')
+            return self
+        if self.nome is not None:
+            raise ValueError('Apelido fora da operação')
+        if self.operacao == 'catalogo_mixer':
+            if any(v is not None for v in (self.alvo, self.rota, self.valor)):
+                raise ValueError('A listagem não aceita ajustes')
+            return self
+        if self.operacao == 'mover_rota_mixer':
+            if not self.alvo or self.alvo in SAIDAS or self.rota not in SAIDAS_FISICAS or self.valor is not None:
+                raise ValueError('Indique uma entrada e uma saída física A1, A2 ou A3.')
             return self
         if self.operacao == 'ler_mixer':
             if self.rota is not None or self.valor is not None:
@@ -71,6 +86,7 @@ class EstadoAudio(BaseModel):
     perfil_audio: Literal['HEADSET', 'CINEMA'] | None = None
     modo_controle: Literal['VOLUME', 'SINCRONIZACAO'] = 'VOLUME'
     recibos: dict = Field(default_factory=dict)
+    apelidos_mixer: dict[str, str] = Field(default_factory=dict, max_length=10)
 
 
 class EstadoOcupado(RuntimeError):
@@ -155,10 +171,18 @@ class MixerBanana:
     def escrever(self, parametro, valor):
         self.obter_vm().set(parametro, valor)
 
+    def ler_texto(self, parametro):
+        vm = self.obter_vm()
+        vm.cache.pop(parametro, None)
+        _ = vm.pdirty
+        valor = vm.get(parametro, is_string=True)
+        return ''.join(c for c in valor if c.isprintable()).strip()[:160]
+
     def confirmar(self, valores):
         limite = time.monotonic() + .5
         while True:
-            if all(abs(self.ler(p) - v) < .05 for p, v in valores.items()):
+            if all(self.ler_texto(p) == v if isinstance(v, str) else abs(self.ler(p) - v) < .05
+                   for p, v in valores.items()):
                 return
             if time.monotonic() >= limite:
                 raise RuntimeError('VoiceMeeter não confirmou a alteração')
@@ -175,6 +199,8 @@ class ControleAudio:
     def executar(self, comando):
         pedido = ComandoAudio.model_validate(comando)
         dados = pedido.model_dump(exclude={'id_comando'})
+        if pedido.nome is None:
+            dados.pop('nome')
         if pedido.operacao not in OPERACOES_MIXER:
             # Preserva recibos já gravados para os comandos do botão/HA.
             dados = {k: dados[k] for k in ('operacao', 'perfil_audio')}
@@ -182,6 +208,13 @@ class ControleAudio:
         try:
             with self.estado.travar():
                 estado = self.estado.ler()  # Corrupção nunca vira reset silencioso.
+                if pedido.operacao == 'catalogo_mixer':
+                    try:
+                        return self._resultado(estado, 'concluido', 'catalogo_mixer', False,
+                                               catalogo=self._catalogo(estado))
+                    except Exception as erro:
+                        logger.warning('Catálogo do mixer indisponível (%s).', type(erro).__name__)
+                        return self._resultado(estado, 'erro', 'executor_indisponivel', False)
                 anterior = estado.recibos.get(pedido.id_comando)
                 if anterior:
                     if anterior.get('assinatura') != assinatura:
@@ -255,6 +288,10 @@ class ControleAudio:
         return self._escrever(estado, antes, depois, {f'Bus[{i}].Gain': i for i in ativos})
 
     def _aplicar_mixer(self, estado, pedido):
+        if pedido.operacao == 'apelidar_mixer':
+            return self._apelidar(estado, pedido)
+        if pedido.operacao == 'mover_rota_mixer':
+            return self._mover_rota(estado, pedido)
         if pedido.operacao == 'ler_mixer':
             alvos = (pedido.alvo,) if pedido.alvo else SAIDAS
             campos = ['Gain', 'Mute']
@@ -280,6 +317,52 @@ class ControleAudio:
             return self._resultado(estado, 'parcial', 'alteracao_nao_confirmada', None,
                                    antes=antes, solicitado=depois, parametros_tentados=[parametro])
         return self._resultado(estado, 'concluido', 'ajuste_confirmado', True, antes=antes, depois=depois)
+
+    def _catalogo(self, estado):
+        return {alvo: {'rotulo': self.mixer.ler_texto(f'{prefixo}.Label'),
+                       'dispositivo': self.mixer.ler_texto(f'{prefixo}.device.name') if alvo in SAIDAS_FISICAS else '',
+                       'apelido': estado.apelidos_mixer.get(alvo, ''),
+                       'rotas': [saida for saida in SAIDAS if self.mixer.ler(f'{prefixo}.{saida}') == 1]
+                       if alvo in VIRTUAIS else []}
+                for alvo, prefixo in ALVOS_MIXER.items()}
+
+    def _apelidar(self, estado, pedido):
+        catalogo = self._catalogo(estado)
+        dono = localizar_nome(pedido.nome, catalogo)
+        if dono is not None and dono != pedido.alvo:
+            return self._resultado(estado, 'bloqueado', 'apelido_em_uso', False)
+        parametro = f'{ALVOS_MIXER[pedido.alvo]}.Label'
+        mudou = catalogo[pedido.alvo]['rotulo'] != pedido.nome or estado.apelidos_mixer.get(pedido.alvo) != pedido.nome
+        if catalogo[pedido.alvo]['rotulo'] != pedido.nome:
+            try:
+                self.mixer.escrever(parametro, pedido.nome)
+                self.mixer.confirmar({parametro: pedido.nome})
+            except Exception:
+                return self._resultado(estado, 'parcial', 'apelido_nao_confirmado', None)
+        estado.apelidos_mixer[pedido.alvo] = pedido.nome
+        return self._resultado(estado, 'concluido', 'mixer_apelidado', mudou, nome=pedido.nome)
+
+    def _mover_rota(self, estado, pedido):
+        prefixo = ALVOS_MIXER[pedido.alvo]
+        # Liga a nova saída antes de desligar as antigas. B1 e B2 são rotas de gravação/stream.
+        saidas = (pedido.rota, *(s for s in SAIDAS_FISICAS if s != pedido.rota))
+        depois = {f'{prefixo}.{saida}': int(saida == pedido.rota) for saida in saidas}
+        antes = {parametro: self.mixer.ler(parametro) for parametro in depois}
+        if any(valor not in (0, 1) for valor in antes.values()):
+            raise RuntimeError('Rota anterior inválida')
+        if antes == depois:
+            return self._resultado(estado, 'sem_alteracao', 'mixer_ja_ajustado', False, depois=depois)
+        tentados = []
+        try:
+            for parametro, valor in depois.items():
+                if antes[parametro] != valor:
+                    tentados.append(parametro)
+                    self.mixer.escrever(parametro, valor)
+            self.mixer.confirmar(depois)
+        except Exception:
+            return self._resultado(estado, 'parcial', 'alteracao_nao_confirmada', None, antes=antes,
+                                   solicitado=depois, parametros_tentados=tentados)
+        return self._resultado(estado, 'concluido', 'rotas_confirmadas', True, antes=antes, depois=depois)
 
     def _mute(self, indice):
         value = self.mixer.ler(f'Bus[{indice}].Mute')
