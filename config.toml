@@ -1,6 +1,13 @@
 [windows]
 sandbox = "unelevated"
 
+[voz]
+provider = "auto"
+voice = "Puck"
+edge_voice = "pt-BR-ThalitaMultilingualNeural"
+rate = 1.0
+pitch = 1.0
+
 [obsidian]
 vault_path = "D:/Programacao/AssistenteCell/Ollie"
 
