@@ -27,7 +27,7 @@ class DisponibilidadeMiddleware:
         else:
             # Somente caminhos que não consultam a persistência. Rotas novas falham fechadas.
             allowed = (path in {'/', '/health', '/docs', '/openapi.json', '/redoc', '/eventos'}
-                or path == '/api/v1/voice/speak'
+                or path in {'/api/v1/voice/speak', '/api/v1/voice/voices', '/api/v1/voice/config', '/api/v1/voice/diagnostic'}
                 or path in {'/api/v1/pc/conexoes', '/api/v1/pc/pc-apps', '/api/v1/pc/mobile-apps', '/api/v1/pc/comando'}
                 or path.startswith('/api/v1/pc/comando/')
                 or path in {'/api/v1/ha/webhook', '/api/v1/ha/buttons/preview', '/api/v1/ha/light/on', '/api/v1/ha/light/off', '/api/v1/ha/light/toggle', '/api/v1/ha/audio'})

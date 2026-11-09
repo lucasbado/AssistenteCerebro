@@ -3,7 +3,7 @@ sandbox = "unelevated"
 
 [voz]
 provider = "auto"
-voice = "Puck"
+voice = "pt-BR-ThalitaMultilingualNeural"
 edge_voice = "pt-BR-ThalitaMultilingualNeural"
 rate = 1.0
 pitch = 1.0

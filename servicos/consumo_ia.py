@@ -16,6 +16,10 @@ escopo_ia = ContextVar('escopo_ia', default=('interno', False))
 class LimiteIA(ValueError): pass
 
 
+class OrcamentoIAEsgotado(LimiteIA):
+    """O teto é compartilhado entre os modelos deste provedor."""
+
+
 @contextmanager
 def uso_ia(funcao, solicitado=False):
     token = escopo_ia.set((funcao, bool(solicitado)))
@@ -63,9 +67,10 @@ class ConsumoIA:
                 # Teto conservador próprio, não equivale ao saldo de neurons da conta.
                 limites = dict(total_24h=60000, automatico_24h=0, automatico_1h=0)
             previsto = entrada + max_tokens
-            if total + previsto > limites['total_24h'] or (not solicitado and (
-                auto + previsto > limites['automatico_24h'] or hora + previsto > limites['automatico_1h'])):
-                raise LimiteIA('Orçamento de IA atingido; capacidade reservada para pedidos diretos.')
+            if total + previsto > limites['total_24h']:
+                raise OrcamentoIAEsgotado('O pedido não cabe no orçamento de IA das últimas 24 horas.')
+            if not solicitado and (auto + previsto > limites['automatico_24h'] or hora + previsto > limites['automatico_1h']):
+                raise OrcamentoIAEsgotado('Orçamento automático atingido; capacidade reservada para pedidos diretos.')
             identificador = str(uuid.uuid4())
             s.add(UsoIADB(id=identificador, criado_em=agora, provider=provider, modelo=modelo,
                 funcao=funcao, solicitado=int(solicitado), entrada=entrada, saida=max_tokens, estimado=1, estado='reservado'))

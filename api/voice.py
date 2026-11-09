@@ -10,22 +10,23 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from servicos.texto_falado import preparar_fala
-from servicos.corretor_fala import corrigir_fala
 from servicos.gemini_tts import (
+    CodigoGemini,
+    FalhaGemini,
     gemini_tts_service,
     LISTA_VOZES_GEMINI,
     LISTA_VOZES_EDGE,
     obter_voz_edge_fallback,
     obter_voz_gemini,
-    DEFAULT_GEMINI_VOICE,
     DEFAULT_EDGE_VOICE,
+    voz_do_gemini,
 )
 
 logger = logging.getLogger("VoiceAPI")
 router = APIRouter()
 
 CONFIG_TOML_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.toml")
-DEFAULT_VOICE = DEFAULT_GEMINI_VOICE
+DEFAULT_VOICE = DEFAULT_EDGE_VOICE
 HEADERS_BASE = {"Content-Disposition": "attachment; filename=voice.mp3", "Cache-Control": "no-store"}
 
 _CONFIG_VOZ_MEMORIA = {}
@@ -88,10 +89,10 @@ def salvar_config_voz_pc(novos_dados: dict):
 
 class PedidoDeVoz(BaseModel):
     text: str
-    voice: str = None
-    provider: str = None  # 'auto', 'gemini' ou 'edge'
-    rate: float = None
-    pitch: float = None
+    voice: str | None = None
+    provider: str | None = None  # 'auto', 'gemini' ou 'edge'
+    rate: float | None = None
+    pitch: float | None = None
     stream: bool = False
 
 
@@ -114,7 +115,7 @@ async def blocos_de_audio(communicate):
                 yield bloco["data"]
 
 
-async def sintetizar_edge(pedido: PedidoDeVoz, texto: str, config_pc: dict, gemini_erro: str = None):
+async def sintetizar_edge(pedido: PedidoDeVoz, texto: str, config_pc: dict, gemini_erro: CodigoGemini | None = None):
     """Sintetiza voz utilizando o provedor Edge TTS."""
     voz_solicitada = pedido.voice or config_pc["voice"]
     voice = obter_voz_edge_fallback(voz_solicitada)
@@ -129,7 +130,7 @@ async def sintetizar_edge(pedido: PedidoDeVoz, texto: str, config_pc: dict, gemi
         "X-Gemini-Available": "true" if gemini_tts_service.disponivel() else "false"
     })
     if gemini_erro:
-        headers["X-Gemini-Error"] = gemini_erro[:150]
+        headers["X-Gemini-Error"] = gemini_erro.value
 
     blocos = None
     transferido = False
@@ -165,75 +166,59 @@ async def sintetizar(pedido: PedidoDeVoz):
     if not texto:
         raise HTTPException(status_code=400, detail="Texto não fornecido.")
 
-    # Aplica correção fonética de fala
-    texto = corrigir_fala(texto)
-
     config_pc = carregar_config_voz_pc()
     provider_ativo = pedido.provider or config_pc["provider"]
     voice_ativa = pedido.voice or config_pc["voice"]
     rate_val = pedido.rate if pedido.rate is not None else config_pc["rate"]
 
-    gemini_erro_msg = None
-
-    # Tentativa com Gemini se provider for 'auto' ou 'gemini'
-    if provider_ativo in ("auto", "gemini") and gemini_tts_service.disponivel():
+    gemini_erro = None
+    if provider_ativo == "gemini" or (provider_ativo == "auto" and voz_do_gemini(voice_ativa)):
         try:
-            logger.info("🎙️ [VoiceAPI] Sintetizando áudio via Gemini TTS (%s)...", voice_ativa)
             audio_bytes = await gemini_tts_service.sintetizar(texto, voice=voice_ativa, rate=rate_val)
             headers = dict(HEADERS_BASE)
             headers.update({
+                "Content-Disposition": "attachment; filename=voice.wav",
                 "X-Voice-Provider": "gemini",
                 "X-Voice-Used": obter_voz_gemini(voice_ativa),
                 "X-Voice-Fallback": "false",
                 "X-Gemini-Available": "true"
             })
-            return Response(audio_bytes, media_type="audio/mpeg", headers=headers)
+            return Response(audio_bytes, media_type="audio/wav", headers=headers)
+        except FalhaGemini as erro:
+            gemini_erro = erro.codigo
         except Exception as erro:
-            gemini_erro_msg = str(erro)
-            logger.warning("⚠️ [VoiceAPI] Falha no Gemini TTS (%s). Ativando fallback para Edge TTS.", erro)
+            gemini_erro = CodigoGemini.INTERNO
+            logger.warning("Falha interna na voz Gemini (%s).", type(erro).__name__)
+        if gemini_erro:
+            logger.info("Voz Gemini indisponível (%s).", gemini_erro.value)
             if provider_ativo == "gemini":
-                # Se o usuário exigiu estritamente o Gemini e este falhou
-                raise HTTPException(status_code=500, detail=f"Falha ao sintetizar voz via Gemini: {erro}") from erro
+                raise HTTPException(
+                    status_code=503, detail="Voz Gemini indisponível no momento.",
+                    headers={"X-Gemini-Error": gemini_erro.value},
+                )
 
-    # Fallback / Provedor padrão: Edge TTS
-    logger.info("🎙️ [VoiceAPI] Sintetizando áudio via Edge TTS...")
-    return await sintetizar_edge(pedido, texto, config_pc, gemini_erro=gemini_erro_msg)
+    return await sintetizar_edge(pedido, texto, config_pc, gemini_erro=gemini_erro)
 
 
 @router.get("/diagnostic")
 async def diagnostico_voz():
-    """Realiza um teste em tempo real com a API do Gemini e retorna o status detalhado da voz."""
+    """Relata a última tentativa real de síntese sem consumir uma chamada de teste."""
     gemini_ok = gemini_tts_service.disponivel()
-    formato_valido = gemini_tts_service.chave_valida_formato() if gemini_ok else False
     gemini_teste_status = "não configurado"
-    gemini_erro = None
-
+    ultimo_erro = gemini_tts_service.ultimo_erro
     if gemini_ok:
-        try:
-            test_audio = await gemini_tts_service.sintetizar("Teste de diagnóstico da Ollie.", voice="Kore")
-            gemini_teste_status = f"sucesso (áudio gerado: {len(test_audio)} bytes)"
-        except Exception as e:
-            gemini_teste_status = "falha na chamada da API"
-            gemini_erro = str(e)
+        gemini_teste_status = "ainda não testado nesta instância"
+        if gemini_tts_service.testado:
+            gemini_teste_status = "falha na chamada da API" if ultimo_erro else "sucesso"
 
     vozes_femininas_gemini = [v["nome"] for v in LISTA_VOZES_GEMINI if v["genero"] == "feminino"]
     vozes_masculinas_gemini = [v["nome"] for v in LISTA_VOZES_GEMINI if v["genero"] == "masculino"]
 
-    aviso_chave = None
-    if gemini_ok and not formato_valido:
-        aviso_chave = (
-            "A chave de API configurada no Render/servidor não possui o formato do Google AI Studio "
-            "(chaves do Gemini começam com 'AIzaSy...'). Crie sua chave gratuita de API em https://aistudio.google.com/app/apikey "
-            "e atualize a variável GEMINI_API_KEY no painel do Render."
-        )
-
     return {
         "status": "ok",
         "gemini_available": gemini_ok,
-        "gemini_api_key_valid_format": formato_valido,
-        "gemini_api_key_warning": aviso_chave,
         "gemini_test_status": gemini_teste_status,
-        "gemini_test_error": gemini_erro,
+        "gemini_test_error": ultimo_erro.value if ultimo_erro else None,
         "female_gemini_voices": vozes_femininas_gemini,
         "male_gemini_voices": vozes_masculinas_gemini,
         "active_pc_config": carregar_config_voz_pc()
@@ -244,7 +229,10 @@ async def diagnostico_voz():
 async def listar_vozes():
     """Retorna o catálogo completo de vozes do Gemini e do Edge TTS, com mapeamento de fallback."""
     config_pc = carregar_config_voz_pc()
-    provedor_ativo = "gemini" if gemini_tts_service.disponivel() else "edge"
+    provedor_ativo = "gemini" if gemini_tts_service.disponivel() and (
+        config_pc["provider"] == "gemini" or
+        (config_pc["provider"] == "auto" and voz_do_gemini(config_pc["voice"]))
+    ) else "edge"
     return {
         "active_provider": provedor_ativo,
         "gemini_available": gemini_tts_service.disponivel(),
@@ -281,10 +269,10 @@ async def atualizar_configuracao_voz(nova_config: ConfiguracaoVozPC):
 @router.get("/speak")
 async def speak(
     text: str,
-    voice: str = None,
-    provider: str = None,
-    rate: float = None,
-    pitch: float = None
+    voice: str | None = None,
+    provider: str | None = None,
+    rate: float | None = None,
+    pitch: float | None = None
 ):
     return await sintetizar(PedidoDeVoz(text=text, voice=voice, provider=provider, rate=rate, pitch=pitch))
 

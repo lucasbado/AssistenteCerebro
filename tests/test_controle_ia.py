@@ -63,9 +63,13 @@ async def test_orcamento_negado_nao_chama_api(banco_teste, monkeypatch):
     monkeypatch.setenv('OLLIE_IA_TOKENS_24H', '0')
     criar = AsyncMock(return_value=resposta())
     provider = GroqProvider(client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=criar))))
+    reservar = AsyncMock(wraps=provider.consumo.reservar)
+    monkeypatch.setattr(provider.consumo, 'reservar', reservar)
+    provider.modelos = ['primeiro', 'segundo']
     with uso_ia('conversa', True):
         with pytest.raises(LimiteIA): await provider.gerar('oi', 'JSON', 20)
     criar.assert_not_awaited()
+    reservar.assert_awaited_once()
 
 
 async def test_cache_perfil_reusa_mudancas_pequenas_e_conserva_ultimo_resumo(banco_teste):

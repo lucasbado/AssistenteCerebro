@@ -171,7 +171,7 @@ export default function App() {
   const [routineBusy, setRoutineBusy] = useState<string | null>(null);
   const [discoveredRoutines, setDiscoveredRoutines] = useState<any[]>([]);
 
-  const [selectedVoice, setSelectedVoice] = useState<string>('Puck');
+  const [selectedVoice, setSelectedVoice] = useState<string>('pt-BR-ThalitaMultilingualNeural');
   const [voicesList, setVoicesList] = useState<{ id: string; nome: string; genero: string; descricao: string }[]>([]);
 
   const fetchVoiceConfig = async () => {

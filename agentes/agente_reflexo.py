@@ -24,6 +24,9 @@ class AgenteReflexo:
             from servicos.agenda import agenda
             from servicos.roteamento_pedidos import dispositivo_origem
             texto = str(evento.payload.get('texto', ''))
+            from servicos.clima_atual import responder_clima_atual
+            if await responder_clima_atual(evento):
+                return
             from servicos.ordens_pc import encaminhar_ordem_pc
             if await encaminhar_ordem_pc(evento):
                 return

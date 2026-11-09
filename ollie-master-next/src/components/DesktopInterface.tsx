@@ -157,7 +157,7 @@ export default function DesktopInterface(p: Props) {
             <div className="setting-row"><div><strong>Chamar com “Ei Ollie”</strong><p>O PC escuta a chamada pelo microfone selecionado.</p></div><input type="checkbox" role="switch" aria-label="Ativação por voz no PC" checked={p.listeningEnabled} onChange={e => p.onListening(e.target.checked)} /></div>
             <label className="field-label" htmlFor="ollie-voice-select">Voz da Ollie (PC)</label>
             <select id="ollie-voice-select" value={p.selectedVoice} onChange={e => p.onUpdateVoice(e.target.value)}>
-              {p.voicesList.length === 0 && <option value="Puck">Puck (Masculino · Gemini Natural)</option>}
+              {p.voicesList.length === 0 && <option value="pt-BR-ThalitaMultilingualNeural">Thalita (Feminina)</option>}
               {p.voicesList.map(v => <option key={v.id} value={v.id}>{v.nome} ({v.genero}) · {v.descricao}</option>)}
             </select>
             <label className="field-label" htmlFor="ollie-input-device">Entrada de áudio</label><select id="ollie-input-device" value={p.device ?? ''} onChange={e => p.onDevice(e.target.value === '' ? null : Number(e.target.value))}>

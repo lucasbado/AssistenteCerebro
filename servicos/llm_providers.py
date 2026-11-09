@@ -7,7 +7,7 @@ import httpx
 from typing import Protocol, runtime_checkable
 from groq import AsyncGroq
 from dotenv import load_dotenv
-from servicos.consumo_ia import consumo_ia, escopo_ia
+from servicos.consumo_ia import OrcamentoIAEsgotado, consumo_ia, escopo_ia
 
 load_dotenv()
 logger = logging.getLogger("LLMProviders")
@@ -96,6 +96,8 @@ class GroqProvider:
                     logger.info("[Groq] Resposta gerada com %s.", modelo)
                     return content
                 raise ValueError("Resposta vazia da Groq.")
+            except OrcamentoIAEsgotado:
+                raise
             except Exception as e:
                 status = getattr(e, "status_code", None)
                 codigo = self._erro_api(e).get("code")

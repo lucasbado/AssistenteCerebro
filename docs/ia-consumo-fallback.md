@@ -113,8 +113,10 @@ até um minuto. O modelo é escolhido localmente. Para outro PC, instale Ollama,
 baixe o modelo e crie esse arquivo no checkout correspondente. O helper pode
 iniciar o runtime portátil Windows ou usar um Ollama já iniciado em loopback.
 
-Ollama escuta somente `127.0.0.1:11434`; não foram abertas portas de firewall
-ou roteador. Ollama Cloud fica desativado no runtime portátil. Um modelo por vez,
+O helper acessa somente `127.0.0.1`, na porta 11434 por padrão. Se outra
+instância do Ollama já estiver nessa porta sem o modelo, acrescente
+`"port": 11435` ao JSON local para iniciar o runtime portátil separadamente.
+Ollama Cloud fica desativado no runtime portátil. Um modelo por vez,
 liberado após dois minutos sem uso. Não há cota paga, mas há uso de GPU/RAM e
 energia. Não funciona com o computador desligado.
 

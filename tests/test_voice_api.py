@@ -1,9 +1,15 @@
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 import asyncio
+import base64
+import json
+from io import BytesIO
+import wave
+import httpx
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
 import api.voice as modulo
+from servicos.gemini_tts import GeminiTTSService
 
 
 @pytest.mark.parametrize('nome,esperado', [(None, 'pt-BR-ThalitaMultilingualNeural'),
@@ -70,3 +76,56 @@ async def test_stream_libera_o_primeiro_bloco_e_fecha_o_provedor_ao_cancelar(mon
         assert not fechou.is_set()
         await resposta.body_iterator.aclose()
         assert fechou.is_set()
+
+
+async def test_voz_gemini_envia_chave_so_no_header_e_retorna_wav(monkeypatch):
+    pcm = b'\x12\x00\x28\x00' * 120
+    def responder(request):
+        assert request.url.path.endswith('/gemini-2.5-flash-preview-tts:generateContent')
+        assert not request.url.query and 'authorization' not in request.headers
+        assert request.headers['x-goog-api-key'] == 'AQ-chave-ficticia'
+        config = json.loads(request.content)['generationConfig']
+        assert config['responseModalities'] == ['AUDIO'] and 'responseMimeType' not in config
+        assert config['speechConfig']['voiceConfig']['prebuiltVoiceConfig']['voiceName'] == 'Kore'
+        return httpx.Response(200, json={'candidates': [{'content': {'parts': [{'inlineData': {
+            'mimeType': 'audio/L16;codec=pcm;rate=24000', 'data': base64.b64encode(pcm).decode(),
+        }}]}}]})
+    service = GeminiTTSService('AQ-chave-ficticia', httpx.MockTransport(responder))
+    monkeypatch.setattr(modulo, 'gemini_tts_service', service)
+    resposta = await modulo.sintetizar(modulo.PedidoDeVoz(text='Oi', voice='Kore', provider='auto'))
+    assert resposta.media_type == 'audio/wav' and resposta.headers['X-Voice-Provider'] == 'gemini'
+    with wave.open(BytesIO(resposta.body)) as wav:
+        assert (wav.getnchannels(), wav.getsampwidth(), wav.getframerate()) == (1, 2, 24000)
+        assert wav.readframes(wav.getnframes()) == pcm
+
+
+async def test_voz_continua_com_falha_multilinha_sem_expor_chave(monkeypatch):
+    falha = AsyncMock(side_effect=ValueError('Erro\r\nhttps://exemplo.test/?key=chave-ficticia'))
+    monkeypatch.setattr(modulo.gemini_tts_service, 'sintetizar', falha)
+
+    async def stream():
+        yield {'type': 'audio', 'data': b'mp3'}
+
+    monkeypatch.setattr(modulo.edge_tts, 'Communicate', Mock(return_value=Mock(stream=stream)))
+    app = FastAPI(); app.include_router(modulo.router)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://teste') as client:
+        auto = await client.post('/speak', json={'text': 'Oi', 'voice': 'Kore', 'provider': 'auto', 'stream': True})
+        explicito = await client.post('/speak', json={'text': 'Oi', 'voice': 'Kore', 'provider': 'gemini'})
+    assert auto.status_code == 200 and auto.content == b'mp3'
+    assert auto.headers['X-Voice-Used'] == 'pt-BR-ThalitaMultilingualNeural'
+    assert auto.headers['X-Voice-Fallback'] == 'true'
+    assert explicito.status_code == 503 and 'chave-ficticia' not in explicito.text
+    assert auto.headers['X-Gemini-Error'] == explicito.headers['X-Gemini-Error'] == 'synthesis_failed'
+
+
+async def test_gemini_respeita_espera_apos_429_sem_requisitar_de_novo(monkeypatch):
+    handler = Mock(return_value=httpx.Response(429, headers={'Retry-After': '60'}))
+    service = GeminiTTSService('chave-ficticia', httpx.MockTransport(handler), relogio=lambda: 100)
+    monkeypatch.setattr(modulo, 'gemini_tts_service', service)
+    app = FastAPI(); app.include_router(modulo.router)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://teste') as client:
+        for _ in range(2):
+            r = await client.post('/speak', json={'text': 'Oi', 'provider': 'gemini'})
+            assert r.status_code == 503 and r.headers['X-Gemini-Error'] == 'rate_limited'
+        assert (await client.get('/diagnostic')).json()['gemini_test_error'] == 'rate_limited'
+    assert handler.call_count == 1
