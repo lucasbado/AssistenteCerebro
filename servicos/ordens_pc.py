@@ -15,7 +15,7 @@ COMANDOS_DIRETOS = COMANDOS_ARQUIVOS | COMANDOS_JANELAS | {'system_status'}
 DESTINO = r'(?:no|pelo|pro|para o)\s+(?:(?:meu|seu|este|esse)\s+)?(?:pc|computador|desktop|notebook|celular|telefone|smartphone|android)'
 PASTA = r'downloads?|documentos|documents|[áa]rea de trabalho|desktop'
 ABRIR = r'(?:abra|abre|abrir)'
-BUSCAR = r'(?:ache|acha|encontre|encontra|procure|procura|busque|busca|localize)'
+BUSCAR = r'(?:ache|acha|encontre|encontra|procure|procura|busque|busca|localize|pesquise|pesquisa|procurar|buscar|encontrar)'
 TIPOS = {'pdf': '.pdf', 'planilha': '.xlsx', 'apresentacao': '.pptx'}
 
 
@@ -45,10 +45,10 @@ def interpretar_ordem_pc(texto):
     if not pedido:
         return None
     termo = pedido[2].strip()
-    localizar = r'(?:\s*,?\s+e\s+(?:me\s+)?(?:mostr[ea]|dig[ae]|informe)\s+(?:onde\s+(?:est[aá]|fica)|o\s+caminho))?'
+    localizar = r'(?:(?:\s*,\s*|\s+e\s+)(?:me\s+)?(?:mostr[ea]|dig[ae]|informe|passe)\s+(?:onde\s+(?:est[aá]|fica)|o\s+caminho(?:\s+completo)?|a\s+localiza[çc][aã]o))?'
     pasta = re.search(rf'\s+(?:em|no|na|dos|da|de)\s+(?:pasta\s+(?:de\s+)?)?({PASTA}){localizar}$', termo, re.I)
     nome = termo[:pasta.start()].strip() if pasta else termo
-    tipo = re.match(r'^(arquivo|documento|pdf|planilha|apresenta[çc][aã]o)\s+(?:(?:chamado|chamada|de)\s+)?', nome, re.I)
+    tipo = re.match(r'^(arquivo|documento|pdf|planilha|apresenta[çc][aã]o|pasta|instalador)\s+(?:(?:chamad[oa]|d[oea])\s+)?', nome, re.I)
     nome = (nome[tipo.end():] if tipo else nome).strip(' "“”')
     if not tipo and not pasta and not any(nome.casefold().endswith(ext) for ext in EXTENSOES):
         return None
@@ -57,8 +57,6 @@ def interpretar_ordem_pc(texto):
     if re.search(r'\b(?:no|na|pelo|pela)\s+(?:google|youtube|whatsapp|internet|web)\b', nome, re.I):
         return None
     comando = 'abrir_arquivo' if abrir_depois or re.fullmatch(ABRIR, pedido[1], re.I) else 'buscar_documentos'
-    if comando == 'buscar_documentos' and pasta:
-        nome = re.sub(r'^ide\s+(?:d[oae]|[oa])\s+', 'ide ', nome, flags=re.I)
     parametro = {'nome': nome, 'pasta': pasta[1] if pasta else '',
                  'extensao': TIPOS.get(normalizar(tipo[1]), '') if tipo else ''}
     parametros_arquivo(comando, parametro)

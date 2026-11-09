@@ -14,6 +14,20 @@ def test_busca_instalador_em_downloads_com_pedido_de_localizacao(tmp_path):
     resultado = executar_arquivo(*ordem, service=None, pastas={'Downloads': tmp_path})
     assert resultado == {'arquivo': {'estado': 'encontrado', 'itens': [f'Downloads/{nome}']}}
 
+
+@pytest.mark.parametrize(('texto', 'nome', 'diretorio'), [
+    ('Pesquise o relatório de vendas em Documentos e me informe o caminho completo', 'relatorio-vendas_2026.pdf', False),
+    ('Ache a pasta de projetos de eletrônica em Documentos, me mostre onde fica', 'Projetos de Eletrônica', True),
+    ('Localize o instalador do navegador em Documentos e passe a localização', 'navegador_setup.exe', False),
+])
+def test_busca_local_reutilizavel(texto, nome, diretorio, tmp_path):
+    item = tmp_path / nome
+    item.mkdir() if diretorio else item.touch()
+    ordem = interpretar_ordem_pc(texto)
+    assert ordem[0] == 'buscar_documentos'
+    assert executar_arquivo(*ordem, service=None, pastas={'Documentos': tmp_path}) == {
+        'arquivo': {'estado': 'encontrado', 'itens': [f'Documentos/{nome}']}}
+
 from scripts.pc_command import executar
 from servicos.arquivos_pc import executar_arquivo, validar_resultado_arquivo
 from servicos.confirmacao_pc import ConfirmacoesPC

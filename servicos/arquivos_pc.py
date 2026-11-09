@@ -1,6 +1,7 @@
 """Busca e abertura de documentos dentro das pastas pessoais do Windows."""
 import json
 import os
+import re
 import stat
 import time
 import uuid
@@ -117,8 +118,9 @@ def _pontuar(nome, relativo):
         return 3
     if normalizar(relativo.stem) == consulta:
         return 2
-    palavras = set(normalizar(relativo.stem.replace('-', ' ').replace('_', ' ')).split())
-    return 1 if set(consulta.replace('-', ' ').replace('_', ' ').split()) <= palavras else 0
+    palavras = set(re.findall(r'[^\W_]+', normalizar(relativo.stem)))
+    termos = set(re.findall(r'[^\W_]+', consulta)) - {'o', 'a', 'os', 'as', 'de', 'do', 'da', 'dos', 'das'}
+    return 1 if termos and termos <= palavras else 0
 
 
 def executar_arquivo(comando, parametro, service, pastas=None):
@@ -162,7 +164,7 @@ def executar_arquivo(comando, parametro, service, pastas=None):
                         caminho = Path(entrada.path)
                         if stat.S_ISDIR(info.st_mode) and not lista:
                             pendentes.append(caminho)
-                        if not stat.S_ISREG(info.st_mode):
+                        if not stat.S_ISREG(info.st_mode) and not (comando == 'buscar_documentos' and stat.S_ISDIR(info.st_mode)):
                             continue
                         if comando == 'abrir_arquivo' and caminho.suffix.casefold() not in EXTENSOES:
                             continue
