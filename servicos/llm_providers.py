@@ -72,7 +72,8 @@ class GroqProvider:
                 logger.info(f"🤖 [Groq] Tentando gerar com o modelo: {modelo}")
                 parametros = {
                     "messages": [{"role": "system", "content": system_mod}, {"role": "user", "content": prompt}],
-                    "model": modelo, "temperature": 0.1, "max_tokens": max_tokens, "timeout": 25.0,
+                    "model": modelo, "temperature": 0.65 if escopo_ia.get()[0] == 'conversa' else 0.1,
+                    "max_tokens": max_tokens, "timeout": 25.0,
                 }
                 if escopo_ia.get()[0] == 'selecao_mensagens' and modelo in {'openai/gpt-oss-120b', 'openai/gpt-oss-20b'}:
                     parametros['reasoning_effort'] = 'low'

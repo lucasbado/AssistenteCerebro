@@ -92,12 +92,14 @@ async def lifespan(app: FastAPI):
             yield
         return
     
+    from servicos.memoria_trabalho import RegistroTurnosChat
+    turnos_chat = RegistroTurnosChat()
     # Instanciação Única de Agentes
     agentes_inst = {
         "perfil": AgentePerfil(),
         "inferencia": AgenteInferencia(),
-        "reflexo": AgenteReflexo(),
-        "notificacoes": AgenteNotificacoes(),
+        "reflexo": AgenteReflexo(turnos_chat),
+        "notificacoes": AgenteNotificacoes(turnos_chat),
         "roteador": AgenteRoteadorCognitivo(),
         "episodico": AgenteEpisodico(),
         "raciocinio": AgenteRaciocinio(),

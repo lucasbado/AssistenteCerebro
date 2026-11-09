@@ -1,6 +1,7 @@
 """Validação do retorno do executor, antes de exibi-lo na API."""
 import json
 import math
+from servicos.controle_audio import ALVOS_MIXER, SAIDAS
 
 
 def resultado_audio_valido(resultado):
@@ -21,13 +22,21 @@ def resultado_audio_valido(resultado):
         return False
     if audio.get('feedback') not in (None, 'desabilitado', 'enviado', 'falhou'):
         return False
-    parametros = {'Bus[0].Gain', 'Bus[1].Gain', 'Bus[2].Gain', 'Option.delay[2]'}
+    parametros = {'Option.delay[2]': (0, 500)}
+    for alvo, prefixo in ALVOS_MIXER.items():
+        parametros[f'{prefixo}.Gain'] = (-60, 12)
+        parametros[f'{prefixo}.Mute'] = (0, 1)
+        if alvo.startswith('ENTRADA'):
+            parametros.update({f'{prefixo}.{rota}': (0, 1) for rota in SAIDAS})
     for field in ('antes', 'depois', 'solicitado'):
         values = audio.get(field, {})
-        if not isinstance(values, dict) or set(values) - parametros:
+        if not isinstance(values, dict) or set(values) - parametros.keys():
             return False
         for p, v in values.items():
-            if type(v) not in (int, float) or not math.isfinite(v) or not (0 <= v <= 500 if p.startswith('Option') else -60 <= v <= 12):
+            minimo, maximo = parametros[p]
+            if type(v) not in (int, float) or not math.isfinite(v) or not minimo <= v <= maximo:
+                return False
+            if (minimo, maximo) == (0, 1) and v not in (0, 1):
                 return False
     tentados = audio.get('parametros_tentados', [])
     if not isinstance(tentados, list) or len(tentados) > 2 or any(not isinstance(p, str) or p not in parametros for p in tentados):

@@ -10,8 +10,9 @@ logger = logging.getLogger("AgenteNotificacoes")
 
 
 class AgenteNotificacoes:
-    def __init__(self):
+    def __init__(self, turnos_chat=None):
         self.politica = PoliticaNotificacoes()
+        self.turnos_chat = turnos_chat
 
     async def processar(self, evento: EventoCanonico):
         payload, motivo = self.politica.preparar(evento)
@@ -20,6 +21,8 @@ class AgenteNotificacoes:
             return
         dados = evento.model_dump()
         dados["payload"] = payload
+        if self.turnos_chat is not None and payload["tipo_ws"] == "CHAT_RESPONSE":
+            await self.turnos_chat.concluir(evento, payload["texto"])
         await central_alertas.enviar_alerta(dados)
         # Registra o encaminhamento após o filtro. Intenção suprimida não é entrega.
         await kernel.publicar(evento.clonar(

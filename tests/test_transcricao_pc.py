@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from tools.wakeword.desktop_worker import Conversation
+from tools.wakeword.desktop_worker import Conversation, PAUSA_FINAL
 from tools.wakeword.transcricao import clean_text, TranscriptionJobs, LocalTranscriber, load_transcriber
-from tests.test_desktop_worker import Detector, recognizer
+from tests.test_desktop_worker import Detector, recognizer, FALA, SILENCIO
 
 
 def test_buffer_inclui_a_janela_que_disparou_e_nao_espera_proximo_inicio():
@@ -26,9 +26,11 @@ def test_buffer_inclui_a_janela_que_disparou_e_nao_espera_proximo_inicio():
     session.process(first, .08)
     session.process(triggering, .16)
     assert primed == [first + triggering]
-    session.process(b'final', .24)  # Vosk encerra mesmo sem reconhecer as palavras estrangeiras.
+    session.process(FALA, .24)  # Mesmo sem palavras do Vosk, preserva a fala para o Whisper.
+    session.process(b'final', .32)
+    session.process(SILENCIO, .24 + PAUSA_FINAL + .1)
     revision, audio = session.pending_audio
-    assert audio == first + triggering + b'final'
+    assert audio == first + triggering + FALA + b'final' + SILENCIO
     assert not any(e['type'] == 'transcript' for e in events)
     session.complete(revision, 'Abra WhatsApp no PC')
     assert [e['text'] for e in events if e['type'] == 'transcript'] == ['Abra WhatsApp no PC']
@@ -42,6 +44,7 @@ def test_cancelamento_ignora_resultado_de_reconhecimento_anterior(action):
     session = Conversation(Detector(), recognizer, events.append, transcriber=lambda _: '')
     session.listen(0)
     session.process(b'final', 1)
+    session.process(SILENCIO, 1 + PAUSA_FINAL + .1)
     revision, _ = session.pending_audio
     getattr(session, action)(*[2] if action != 'pause' else [])
     session.complete(revision, 'ligue a luz do quarto')

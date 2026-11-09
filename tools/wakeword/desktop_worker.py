@@ -19,6 +19,10 @@ else:
 
 ROOT = Path(__file__).resolve().parents[2]
 MODELS = ROOT / '.artifacts/wakeword/modelos'
+ESPERA_INICIAL = 18
+ESPERA_CONTINUACAO = 20
+PAUSA_FINAL = 3.2
+MAXIMO_FALA = 60
 
 
 class Conversation:
@@ -28,6 +32,10 @@ class Conversation:
         self.state = 'paused'
         self.recognizer = None
         self.started = 0.0
+        self.speech_started = None
+        self.last_activity = 0.0
+        self.segments = []
+        self.followup = False
         self.ready_at = 0.0
         self.partial = ''
         self.gate = ActivationGate(threshold)
@@ -63,19 +71,23 @@ class Conversation:
         self.detector.reset()
         self.set_state('paused')
 
-    def listen(self, now, preroll=b''):
+    def listen(self, now, preroll=b'', *, followup=False):
         self.invalidate()
         self.recognizer = self.factory()
         self.audio.extend(preroll)
         if preroll:
             self.recognizer.AcceptWaveform(preroll)
         self.started, self.partial = now, ''
+        self.speech_started = None
+        self.last_activity = now
+        self.segments.clear()
+        self.followup = followup
         self.set_state('listening')
 
-    def finish(self, text):
+    def finish(self, text, *, heard=True):
         self.recognizer = None
         self.set_state('thinking')
-        if self.transcriber is not None:
+        if self.transcriber is not None and heard:
             self.waiting = self.revision
             self.pending_audio = (self.revision, bytes(self.audio))
             self.audio.clear()
@@ -93,7 +105,42 @@ class Conversation:
         if text:
             self.emit({'type': 'transcript', 'text': text})
         else:
-            self.emit({'type': 'no_speech', 'message': 'Nao ouvi o comando. Tente novamente.'})
+            self.emit({'type': 'no_speech', 'followup': self.followup,
+                       'message': 'Não ouvi o pedido. Você pode chamar a Ollie de novo.'})
+
+    def process_speech(self, pcm, now):
+        self.audio.extend(pcm)
+        accepted = self.recognizer.AcceptWaveform(pcm)
+        if accepted:
+            segment = json.loads(self.recognizer.Result()).get('text', '').strip()
+            if segment:
+                self.segments.append(segment)
+            partial = ''
+        else:
+            segment = ''
+            partial = json.loads(self.recognizer.PartialResult()).get('partial', '').strip()
+
+        samples = memoryview(pcm).cast('h') if len(pcm) % 2 == 0 else ()
+        # Energy keeps an open-vocabulary utterance alive even when Vosk has no words.
+        audible = bool(samples and sum(s * s for s in samples) > len(samples) * 300 ** 2)
+        if audible or (partial and partial != self.partial):
+            self.last_activity = now
+            if self.speech_started is None:
+                self.speech_started = now
+        elif segment and self.speech_started is None:
+            self.speech_started = self.last_activity = now
+
+        if partial != self.partial or segment:
+            self.partial = partial
+            self.emit({'type': 'partial', 'text': ' '.join([*self.segments, partial]).strip()})
+
+        if self.speech_started is None:
+            espera = ESPERA_CONTINUACAO if self.followup else ESPERA_INICIAL
+            if now - self.started >= espera:
+                self.finish('', heard=False)
+        elif now - self.last_activity >= PAUSA_FINAL or now - self.speech_started >= MAXIMO_FALA:
+            final = json.loads(self.recognizer.FinalResult()).get('text', '').strip()
+            self.finish(' '.join(t for t in [*self.segments, final] if t))
 
     def process(self, pcm, now):
         if self.state == 'wake' and now >= self.ready_at:
@@ -104,18 +151,7 @@ class Conversation:
                 self.emit({'type': 'wake', 'score': score})
                 self.listen(now, b''.join(self.history))
         elif self.state == 'listening':
-            self.audio.extend(pcm)
-            if self.recognizer.AcceptWaveform(pcm):
-                text = json.loads(self.recognizer.Result()).get('text', '')
-                if text.strip() or self.transcriber is not None:
-                    self.finish(text)
-                    return
-            partial = json.loads(self.recognizer.PartialResult()).get('partial', '')
-            if partial != self.partial:
-                self.partial = partial
-                self.emit({'type': 'partial', 'text': partial})
-            if now - self.started >= 12:
-                self.finish(json.loads(self.recognizer.FinalResult()).get('text', ''))
+            self.process_speech(pcm, now)
 
 
 def emit(event):
@@ -197,9 +233,9 @@ def run(device=None):
                 elif action == 'resume':
                     open_stream()
                     conversation.resume(time.monotonic())
-                elif action == 'listen':
+                elif action in ('listen', 'followup'):
                     open_stream()
-                    conversation.listen(time.monotonic())
+                    conversation.listen(time.monotonic(), followup=action == 'followup')
                 if 'request_id' in command:
                     emit({'ack': command['request_id']})
             if jobs:

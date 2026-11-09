@@ -49,7 +49,7 @@ const phases: Record<ListeningPhase, { title: string; hint: string }> = {
   off: { title: 'Ativação por voz desligada', hint: 'Você pode conversar por texto ou ativar a chamada.' },
   starting: { title: 'Preparando sua voz', hint: 'Carregando o detector e o microfone…' },
   wake: { title: 'Ouvindo “Ei Ollie”', hint: 'Faça a chamada, espere “Pode falar” e diga seu pedido.' },
-  listening: { title: 'Pode falar', hint: 'Estou ouvindo seu pedido no microfone do PC.' },
+  listening: { title: 'Pode falar', hint: 'Continue de onde parou. Para voltar ao modo de chamada, diga “encerre a conversa”.' },
   thinking: { title: 'Pensando no seu pedido', hint: 'Aguardando a resposta da Ollie.' },
   speaking: { title: 'Respondendo para você', hint: 'A chamada volta a ouvir depois da resposta.' },
   paused: { title: 'Microfone pausado', hint: 'A escuta retoma quando a interação terminar.' },

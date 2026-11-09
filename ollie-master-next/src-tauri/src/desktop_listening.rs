@@ -139,7 +139,7 @@ pub fn start_desktop_listening(app: AppHandle, instance_id: String, device: Opti
 
 #[tauri::command]
 pub async fn control_desktop_listening(action: String, instance_id: String) -> Result<(), String> {
-    if !["pause", "resume", "listen"].contains(&action.as_str()) { return Err("Acao de voz invalida".into()); }
+    if !["pause", "resume", "listen", "followup"].contains(&action.as_str()) { return Err("Acao de voz invalida".into()); }
     tauri::async_runtime::spawn_blocking(move || {
         let id = REQUEST.fetch_add(1, Ordering::Relaxed);
         let (sender, receiver) = mpsc::channel();

@@ -65,11 +65,13 @@ class AgenteRaciocinio:
             habitos_str = "\n".join(habitos_contexto) if habitos_contexto else "Nenhum padrão detectado ainda."
                 
             # 3. Gerenciamento de Memória de Trabalho
-            chave_conversa = "br.com.assistentecell.chat" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else evento.metadados.get('chave_conversa', evento.pacote)
-            if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO and texto_u:
-                await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Usuário: {texto_u}"])
-
-            historico = await self.memoria_trabalho.obter_contexto(chave_conversa) or []
+            from servicos.memoria_trabalho import CHAVE_CHAT
+            chave_conversa = CHAVE_CHAT if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else evento.metadados.get('chave_conversa', evento.pacote)
+            try:
+                historico = await self.memoria_trabalho.obter_contexto(chave_conversa) or []
+            except Exception as erro:
+                logger.warning('Histórico indisponível para este pedido (%s).', type(erro).__name__)
+                historico = []
 
             # 4. Invocação da LLM (com Heurística Local Fast-Path)
             heuristic_res = (self._tentar_heuristica_local(str(evento.payload.get('texto', '')))
@@ -112,13 +114,14 @@ class AgenteRaciocinio:
             from servicos.controle_casa import ACOES
             acoes_extraidas = exec_direta_raw if isinstance(exec_direta_raw, list) else [exec_direta_raw]
             from servicos.ordens_pc import COMANDOS_DIRETOS
+            from servicos.ordens_audio import COMANDO_AUDIO
             from servicos.comandos_pc import COMANDOS_ENTRADA
             def ferramenta_pc_reservada(item):
                 if not isinstance(item, dict):
                     return False
                 comando = str(item.get('comando') or item.get('action') or '').lower().strip()
                 parametro = str(item.get('parametro') or item.get('param') or item.get('value') or '').lower().strip()
-                return (comando in COMANDOS_DIRETOS | COMANDOS_ENTRADA
+                return (comando in COMANDOS_DIRETOS | COMANDOS_ENTRADA | {COMANDO_AUDIO, 'voicemeeter', 'volume_canal', 'ciclar_saida'}
                         or comando in {'executar_macro', 'macro'} and parametro in COMANDOS_ENTRADA)
 
             if any(ferramenta_pc_reservada(item) for item in acoes_extraidas):
@@ -166,9 +169,6 @@ class AgenteRaciocinio:
                     # The conversational decision belongs to reasoning; clients only
                     # reopen capture after the spoken answer has actually finished.
                     payload_notif["aguarda_resposta"] = resultado.get("aguarda_resposta") is True
-                
-                if tipo_ws == "CHAT_RESPONSE":
-                    await self.memoria_trabalho.atualizar_conversa(chave_conversa, [f"Ollie: {msg_limpa}"])
                 
                 await kernel.publicar(evento.clonar(
                     categoria=CategoriaEvento.INTENCAO_NOTIFICACAO, 

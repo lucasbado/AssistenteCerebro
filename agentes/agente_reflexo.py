@@ -17,13 +17,21 @@ from core.kernel import kernel
 logger = logging.getLogger(__name__)
 
 class AgenteReflexo:
+    def __init__(self, turnos_chat=None):
+        self.turnos_chat = turnos_chat
+
     async def processar(self, evento: EventoCanonico):
         # 🌟 NOVO: Comandos diretos do usuário são sempre complexos (merecem LLM)
         if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+            if self.turnos_chat is not None:
+                self.turnos_chat.registrar(evento)
             from servicos.datas_agenda import intencao_agenda, data_importante, continua_rascunho
             from servicos.agenda import agenda
             from servicos.roteamento_pedidos import dispositivo_origem
             texto = str(evento.payload.get('texto', ''))
+            from servicos.ordens_audio import encaminhar_audio
+            if await encaminhar_audio(evento):
+                return
             from servicos.clima_atual import responder_clima_atual
             if await responder_clima_atual(evento):
                 return

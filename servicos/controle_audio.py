@@ -14,18 +14,47 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 logger = logging.getLogger(__name__)
 CONFIG = Path(__file__).resolve().parents[1] / 'config/audio.json'
+SAIDAS = ('A1', 'A2', 'A3', 'B1', 'B2')
+ALVOS_MIXER = {**{saida: f'Bus[{i}]' for i, saida in enumerate(SAIDAS)},
+               **{f'ENTRADA{i + 1}': f'Strip[{i}]' for i in range(5)}}
+OPERACOES_MIXER = frozenset({'ler_mixer', 'ganho_mixer', 'ajustar_ganho_mixer', 'mudo_mixer', 'rota_mixer'})
 
 
 class ComandoAudio(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     id_comando: str = Field(min_length=1, max_length=128, pattern=r'^[\w.:-]+$')
-    operacao: Literal['avancar', 'voltar', 'alternar_modo', 'selecionar_perfil', 'consultar']
+    operacao: Literal['avancar', 'voltar', 'alternar_modo', 'selecionar_perfil', 'consultar',
+                      'ler_mixer', 'ganho_mixer', 'ajustar_ganho_mixer', 'mudo_mixer', 'rota_mixer']
     perfil_audio: Literal['HEADSET', 'CINEMA'] | None = None
+    alvo: str | None = Field(default=None, pattern=r'^(?:A[1-3]|B[12]|ENTRADA[1-5])$')
+    rota: Literal['A1', 'A2', 'A3', 'B1', 'B2'] | None = None
+    valor: float | None = Field(default=None, allow_inf_nan=False)
 
     @model_validator(mode='after')
     def perfil_obrigatorio(self):
         if (self.operacao == 'selecionar_perfil') != (self.perfil_audio is not None):
             raise ValueError('Somente selecionar_perfil exige perfil_audio')
+        if self.operacao not in OPERACOES_MIXER:
+            if any(v is not None for v in (self.alvo, self.rota, self.valor)):
+                raise ValueError('Parâmetros de mixer fora da operação')
+            return self
+        if self.operacao == 'ler_mixer':
+            if self.rota is not None or self.valor is not None:
+                raise ValueError('A leitura do mixer aceita apenas o canal')
+            return self
+        if self.alvo is None or self.valor is None:
+            raise ValueError('Indique o canal e o valor do ajuste')
+        if (self.operacao == 'rota_mixer') != (self.rota is not None):
+            raise ValueError('Indique a saída somente ao alterar uma rota')
+        if self.operacao == 'rota_mixer' and self.alvo in SAIDAS:
+            raise ValueError('A rota parte de uma entrada do mixer')
+        limites = {'ganho_mixer': (-60, 12), 'ajustar_ganho_mixer': (-60, 60)}
+        if self.operacao in limites:
+            minimo, maximo = limites[self.operacao]
+            if not minimo <= self.valor <= maximo:
+                raise ValueError('Ganho fora dos limites do mixer')
+        elif self.valor not in (0, 1):
+            raise ValueError('O estado deve ser zero ou um')
         return self
 
 
@@ -145,7 +174,11 @@ class ControleAudio:
 
     def executar(self, comando):
         pedido = ComandoAudio.model_validate(comando)
-        assinatura = hashlib.sha256(json.dumps(pedido.model_dump(exclude={'id_comando'}), sort_keys=True).encode()).hexdigest()
+        dados = pedido.model_dump(exclude={'id_comando'})
+        if pedido.operacao not in OPERACOES_MIXER:
+            # Preserva recibos já gravados para os comandos do botão/HA.
+            dados = {k: dados[k] for k in ('operacao', 'perfil_audio')}
+        assinatura = hashlib.sha256(json.dumps(dados, sort_keys=True).encode()).hexdigest()
         try:
             with self.estado.travar():
                 estado = self.estado.ler()  # Corrupção nunca vira reset silencioso.
@@ -176,6 +209,8 @@ class ControleAudio:
                     perfil_audio=estado.perfil_audio, modo_controle=estado.modo_controle, **extra)
 
     def _aplicar(self, estado, pedido):
+        if pedido.operacao in OPERACOES_MIXER:
+            return self._aplicar_mixer(estado, pedido)
         if pedido.operacao == 'consultar':
             return self._resultado(estado, 'concluido', 'estado_consultado', False)
         if pedido.operacao == 'selecionar_perfil':
@@ -218,6 +253,33 @@ class ControleAudio:
         delta = min(passo, 12 - max(antes.values())) if direcao > 0 else -min(passo, min(antes.values()) + 60)
         depois = {p: round(v + delta, 4) for p, v in antes.items()}
         return self._escrever(estado, antes, depois, {f'Bus[{i}].Gain': i for i in ativos})
+
+    def _aplicar_mixer(self, estado, pedido):
+        if pedido.operacao == 'ler_mixer':
+            alvos = (pedido.alvo,) if pedido.alvo else SAIDAS
+            campos = ['Gain', 'Mute']
+            if pedido.alvo and pedido.alvo.startswith('ENTRADA'):
+                campos.extend(SAIDAS)
+            valores = {f'{ALVOS_MIXER[alvo]}.{campo}': self.mixer.ler(f'{ALVOS_MIXER[alvo]}.{campo}')
+                       for alvo in alvos for campo in campos}
+            return self._resultado(estado, 'concluido', 'mixer_consultado', False, depois=valores)
+        campo = pedido.rota or ('Mute' if pedido.operacao == 'mudo_mixer' else 'Gain')
+        parametro = f'{ALVOS_MIXER[pedido.alvo]}.{campo}'
+        anterior = self.mixer.ler(parametro)
+        valor = pedido.valor
+        if pedido.operacao == 'ajustar_ganho_mixer':
+            valor = max(-60, min(12, anterior + valor))
+        antes, depois = {parametro: anterior}, {parametro: valor}
+        if abs(anterior - valor) < .05:
+            return self._resultado(estado, 'sem_alteracao', 'mixer_ja_ajustado', False, depois=antes)
+        try:
+            self.mixer.escrever(parametro, valor)
+            self.mixer.confirmar(depois)
+        except Exception as erro:
+            logger.warning('Não consegui confirmar o ajuste do mixer (%s).', type(erro).__name__)
+            return self._resultado(estado, 'parcial', 'alteracao_nao_confirmada', None,
+                                   antes=antes, solicitado=depois, parametros_tentados=[parametro])
+        return self._resultado(estado, 'concluido', 'ajuste_confirmado', True, antes=antes, depois=depois)
 
     def _mute(self, indice):
         value = self.mixer.ler(f'Bus[{indice}].Mute')

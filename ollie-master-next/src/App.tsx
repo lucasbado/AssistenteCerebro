@@ -119,7 +119,7 @@ export default function App() {
         pendingVoice.current.delete(id); desktopReplies.current.forget(id);
       };
       const cancel = () => { cleanup(); reject(new Error('Conversa cancelada.')); };
-      const timeout = window.setTimeout(() => { cleanup(); reject(new Error('A resposta demorou. Chame a Ollie novamente.')); }, 45000);
+      const timeout = window.setTimeout(() => { cleanup(); reject(new Error('A resposta demorou. Chame a Ollie novamente.')); }, 90000);
       pendingVoice.current.set(id, {
         resolve: reply => { cleanup(); resolve(reply); },
         reject: error => { cleanup(); reject(error); },

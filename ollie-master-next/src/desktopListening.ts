@@ -1,10 +1,10 @@
 export type ListeningPhase = 'off' | 'starting' | 'wake' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'error';
-export type ListeningEvent = { instance_id: string; type: string; state?: string; text?: string; message?: string; level?: number };
+export type ListeningEvent = { instance_id: string; type: string; state?: string; text?: string; message?: string; level?: number; followup?: boolean };
 type Dependencies = {
   newId: () => string;
   start: (id: string, device: number | null) => Promise<unknown>;
   stop: (id: string) => Promise<unknown>;
-  control: (id: string, action: 'pause' | 'resume' | 'listen') => Promise<unknown>;
+  control: (id: string, action: 'pause' | 'resume' | 'listen' | 'followup') => Promise<unknown>;
   send: (text: string, signal: AbortSignal) => Promise<string>;
   speak: (text: string) => Promise<unknown>;
   stopSpeech: () => Promise<unknown>;
@@ -69,7 +69,10 @@ export class DesktopListening {
     if (event.type === 'partial') this.deps.partial(event.text || '');
     if (event.type === 'wake' && !this.abort && !this.external) this.deps.wake();
     if (event.type === 'error') this.fail(event.message || 'Falha no microfone.');
-    if (event.type === 'no_speech') { this.deps.error(event.message || 'Não ouvi o comando.'); void this.cancel(); }
+    if (event.type === 'no_speech' && !this.abort && !this.external) {
+      if (!event.followup) this.deps.error(event.message || 'Não ouvi o pedido.');
+      void this.cancel();
+    }
     if (event.type === 'transcript' && event.text?.trim() && !this.abort && !this.external) void this.turn(event.text.trim());
   }
 
@@ -91,10 +94,16 @@ export class DesktopListening {
   }
 
   private async turn(text: string) {
+    const command = text.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/[.!?]+$/, '');
+    if (/^(?:ollie[, ]+)?(?:encerr[ae] (?:a )?conversa|pare de ouvir|pode parar de ouvir|fim da conversa)$/.test(command)) {
+      await this.cancel();
+      return;
+    }
     const epoch = this.epoch, number = ++this.turnNumber, id = this.instance;
     const controller = new AbortController(); this.abort = controller;
     const active = () => this.enabled && this.epoch === epoch && this.turnNumber === number;
     this.deps.partial(text); this.deps.phase('thinking');
+    let completed = false;
     try {
       await this.deps.control(id, 'pause'); // ACK confirma microfone liberado antes do TTS.
       if (!active()) return;
@@ -102,12 +111,14 @@ export class DesktopListening {
       if (!active()) return;
       this.deps.phase('speaking');
       await this.deps.speak(reply);
+      completed = true;
     } catch (error) {
       if (active() && !controller.signal.aborted) this.deps.error(String(error));
     } finally {
       if (active()) {
         this.abort = null;
-        try { await this.deps.control(id, 'resume'); }
+        this.deps.partial('');
+        try { await this.deps.control(id, completed ? 'followup' : 'resume'); }
         catch (error) { this.fail(String(error)); }
       }
     }

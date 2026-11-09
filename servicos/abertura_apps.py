@@ -8,7 +8,7 @@ from core.tipos import CategoriaEvento, OrigemEvento, TipoAcao
 def pedido_explicito_de_abertura(texto):
     t = normalizar(texto)
     # Só o início autoriza uma ordem. 'como' e 'se' podem fazer parte da busca.
-    return bool(re.match(r"^(?:ollie[, ]+)?(?:por favor[, ]+)?(?:voce )?(?:pode |poderia |consegue |quero que voce |quero )?(?:abr[aei]|abrir|inicie|inicia|iniciar|abra|acesse|acessa|acessar|entre|entrar|visite|visitar|pesquise|pesquisa|pesquisar|busque|busca|buscar|procure|procura|procurar)\b", t))
+    return bool(re.match(r"^(?:ollie[, ]+)?(?:por favor[, ]+)?(?:agora[, ]+)?(?:voce )?(?:pode |poderia |consegue |quero que voce |quero )?(?:abr[aei]|abrir|inicie|inicia|iniciar|abra|acesse|acessa|acessar|entre|entrar|visite|visitar|pesquise|pesquisa|pesquisar|busque|busca|buscar|procure|procura|procurar)\b", t))
 
 
 def metadados_abertura(decisao):

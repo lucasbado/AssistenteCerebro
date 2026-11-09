@@ -24,7 +24,7 @@ function fixture(overrides = {}) {
   return { control, calls, events, phases, reply: text => reply(text), event: (type, extra = {}, id = String(count)) => control.receive({instance_id:id, type, ...extra}) };
 }
 
-test('voz faz pausa confirmada, envia uma vez e retoma depois da resposta falada', async () => {
+test('voz faz pausa confirmada e escuta o próximo turno depois da resposta falada', async () => {
   const f = fixture();
   await f.control.start(null);
   f.event('wake'); f.event('state', {state:'listening'});
@@ -33,9 +33,22 @@ test('voz faz pausa confirmada, envia uma vez e retoma depois da resposta falada
   await tick();
   assert.equal(f.calls.filter(c => c[0] === 'send').length, 1);
   assert.ok(f.calls.findIndex(c => c[0] === 'pause') < f.calls.findIndex(c => c[0] === 'send'));
-  assert.ok(!f.calls.some(c => c[0] === 'speak' || c[0] === 'resume'));
+  assert.ok(!f.calls.some(c => c[0] === 'speak' || c[0] === 'followup'));
   f.reply('A luz esta ligada.'); await tick();
-  assert.ok(f.calls.findIndex(c => c[0] === 'speak') < f.calls.findIndex(c => c[0] === 'resume'));
+  assert.ok(f.calls.findIndex(c => c[0] === 'speak') < f.calls.findIndex(c => c[0] === 'followup'));
+  f.event('transcript', {text:'E a da sala?'});
+  await tick();
+  assert.deepEqual(f.calls.filter(c => c[0] === 'send').map(c => c[1]), ['como esta a luz', 'E a da sala?']);
+});
+
+test('silêncio após a resposta e pedido de encerrar voltam à chamada sem enviar outro comando', async () => {
+  const f = fixture();
+  await f.control.start(null);
+  f.event('no_speech', {followup:true, message:'Nao ouvi'}); await tick();
+  f.event('transcript', {text:'Encerre a conversa.'}); await tick();
+  assert.equal(f.calls.filter(c => c[0] === 'resume').length, 2);
+  assert.ok(!f.calls.some(c => c[0] === 'send'));
+  assert.ok(!f.events.includes('Nao ouvi'));
 });
 
 test('desativar durante espera impede fala e reativacao tardia', async () => {
@@ -44,7 +57,7 @@ test('desativar durante espera impede fala e reativacao tardia', async () => {
   f.event('transcript', {text:'teste'}); await tick();
   await f.control.stop();
   f.reply('Resposta atrasada'); await tick();
-  assert.ok(!f.calls.some(c => c[0] === 'speak' || c[0] === 'resume'));
+  assert.ok(!f.calls.some(c => c[0] === 'speak' || c[0] === 'resume' || c[0] === 'followup'));
   assert.equal(f.control.enabled, false);
 });
 
@@ -56,7 +69,7 @@ test('eventos e respostas de instancia substituida nao controlam o novo microfon
   f.event('wake', {}, '1');
   f.reply('antiga'); await tick();
   assert.ok(!f.events.includes('wake'));
-  assert.ok(!f.calls.some(c => c[0] === 'speak' || c[0] === 'resume'));
+  assert.ok(!f.calls.some(c => c[0] === 'speak' || c[0] === 'resume' || c[0] === 'followup'));
   assert.equal(f.control.enabled, true);
 });
 

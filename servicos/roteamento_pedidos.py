@@ -96,6 +96,8 @@ def interpretar_abertura(texto, site_busca=None):
                 "mensagem_dinamica": "", "tipo_interacao": "NOTIFICAR"}
     match = re.fullmatch(prefixo + r"(?:abre|abra|abrir|inicie|inicia|iniciar|acesse|acessa|acessar|entre|entrar|visite|visitar) (?:em |no |na |o |a )?(?:(?:site|app|aplicativo) (?:do |da )?)?(.+?)" + suffix, raw_text, re.I)
     if match:
+        if re.fullmatch(r'(?:ele|ela|isso|(?:ess[ea]|aquel[ea]|mesm[oa]|segund[oa]|primeir[oa])(?: (?:mesm[oa]|app|aplicativo|site|programa))?)', normalizar(match[1])):
+            return None  # Uma referência ao histórico precisa ser resolvida antes de abrir.
         if len(match[1]) > 250 or re.search(r"\b(?:e|depois|tambem|quando|porque|se|mas|nao|nunca)\b", normalizar(match[1])):
             return None
         # Preserve URL path/query casing; normalization is for the verb and destination only.

@@ -49,6 +49,8 @@ class ConfirmacoesPC:
                     else:
                         registro['status'] = 'erro'
                 return
+            if registro['comando'] == 'audio_controle' and registro['status'] != 'enviado':
+                return
             registro["status"] = status
             if isinstance(resultado, dict) and isinstance(resultado.get('primeiro_plano'), bool):
                 registro['resultado'] = {'primeiro_plano': resultado['primeiro_plano']}

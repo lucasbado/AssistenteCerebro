@@ -9,6 +9,10 @@ def pedido_de_explicacao(texto):
     if len(separar_etapas(texto)) > 1:
         return False  # Uma pergunta junto de uma ordem precisa do planejamento completo.
     t = re.sub(r'^(?:(?:ei )?ollie[,!: ]+)?(?:por favor[, ]+)?', '', normalizar(texto))
+    if re.match(r'^(?:(?:e |agora )?(?:me )?(?:de|da|traga|sugira) (?:mais |outros? |outras? |algumas? )?(?:ideias?|exemplos?|sugestoes|alternativas?)\b'
+                r'|(?:me )?(?:conte|conta) (?:uma historia|uma piada|mais(?: sobre)?\b)'
+                r'|(?:e )?(?:outro exemplo|outra ideia|continua|continue|me conta mais|como assim)$)', t):
+        return True
     explicacao = bool(re.match(
         r'^(?:por que\b|porque\b|por qual motivo\b|o ?que (?:e|era|foi|seria|sao|significa|quer dizer)\b'
         r'|como (?:funciona\w*|surgiu|surgiram|acontece\w*)\b|qual (?:e )?a diferenca\b'

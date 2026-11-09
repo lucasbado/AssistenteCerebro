@@ -8,7 +8,7 @@ import threading
 MODEL_NAME = 'faster-whisper-small'
 MODEL_REPO = 'Systran/faster-whisper-small'
 MODEL_REVISION = '536b0662742c02347bc0e980a01041f333bce120'
-HOTWORDS = 'WhatsApp, HBO Max, Prime Video, Valorant, YouTube, Spotify'
+HOTWORDS = 'WhatsApp, HBO Max, Prime Video, Valorant, YouTube, Spotify, Voicemeeter Banana, A1, A2, A3, B1, B2, dB'
 
 
 def clean_text(text):
@@ -35,7 +35,7 @@ class LocalTranscriber:
             return ''
         segments, _ = self.model.transcribe(samples, language='pt', beam_size=5,
             condition_on_previous_text=False, vad_filter=True,
-            hotwords=HOTWORDS, max_new_tokens=96,
+            hotwords=HOTWORDS, max_new_tokens=256,
             vad_parameters={'threshold': .35, 'speech_pad_ms': 300, 'min_speech_duration_ms': 80})
         return clean_text(' '.join(segment.text for segment in segments))
 

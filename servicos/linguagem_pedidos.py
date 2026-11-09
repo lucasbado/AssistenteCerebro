@@ -5,7 +5,7 @@ VERBOS = r'(?:abre|abra|abrir|acesse|acessa|acessar|entre|visite|inicie|pesquise
 SEPARADOR = re.compile(r'(?:\s+e\s+(?:depois\s+)?|,?\s+(?:depois|em seguida)\s+|;\s*)(?=(?:por favor\s+)?' + VERBOS + ')', re.I)
 
 
-def separar_etapas(texto):
+def separar_etapas(texto, separador=SEPARADOR):
     texto = str(texto)
     protegidos, aspas, parenteses = set(), None, 0
     for indice, caractere in enumerate(texto):
@@ -21,7 +21,7 @@ def separar_etapas(texto):
         if aspas or parenteses:
             protegidos.add(indice)
     partes, inicio = [], 0
-    for match in SEPARADOR.finditer(texto):
+    for match in separador.finditer(texto):
         if match.start() not in protegidos:
             partes.append(texto[inicio:match.start()].strip(' ,;'))
             inicio = match.end()

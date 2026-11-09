@@ -17,6 +17,9 @@ class AgenteModoLimitado:
         }:
             return
         texto = str(evento.payload.get('texto', ''))
+        from servicos.ordens_audio import encaminhar_audio
+        if await encaminhar_audio(evento):
+            return
         from servicos.clima_atual import responder_clima_atual
         if await responder_clima_atual(evento):
             return

@@ -87,7 +87,8 @@ class GerenciadorNotificacoes:
                          "pc_configurado": conectado(self.pc_master) and 'CASA' in self._capacidades.get(self.pc_master, set()),
                          "mobile_configurado": conectado(self.mobile_client) and 'CASA' in self._capacidades.get(self.mobile_client, set())}}
 
-    async def enviar_comando_pc(self, mensagem, *, operacao_arquivo_explicita=False, interface_pc_explicita=False, whatsapp_explicito=False):
+    async def enviar_comando_pc(self, mensagem, *, operacao_arquivo_explicita=False, interface_pc_explicita=False,
+                                whatsapp_explicito=False, mixer_explicito=False):
         from servicos.arquivos_pc import OPERACOES_ARQUIVOS
         from servicos.interface_pc import COMANDOS_INTERFACE_EXPLICITOS
         from servicos.whatsapp import COMANDO_WHATSAPP_PC
@@ -100,6 +101,14 @@ class GerenciadorNotificacoes:
             return {'status': 'erro', 'motivo': 'Peça a ação na janela pelo chat ou por voz.'}
         if comando == COMANDO_WHATSAPP_PC and not whatsapp_explicito:
             return {'status': 'erro', 'motivo': 'Peça o rascunho do WhatsApp pelo chat ou por voz.'}
+        if comando == 'audio_controle':
+            from servicos.controle_audio import ComandoAudio, OPERACOES_MIXER
+            try:
+                pedido_audio = ComandoAudio.model_validate_json(msg.get('parametro', ''))
+            except ValueError:
+                return {'status': 'erro', 'motivo': 'Pedido de áudio inválido.'}
+            if pedido_audio.operacao in OPERACOES_MIXER and not mixer_explicito:
+                return {'status': 'erro', 'motivo': 'Peça o ajuste do Voicemeeter pelo chat ou por voz.'}
         identificador = str(msg.get("id_comando") or uuid.uuid4())
         if len(identificador) > 128:
             raise ValueError("Identificador de comando inválido")
@@ -171,7 +180,7 @@ class GerenciadorNotificacoes:
         tipo_ws = dados_para_envio.get("tipo_ws", "")
         comando_nome = str(dados_para_envio.get("comando", "")).lower()
         from servicos.arquivos_pc import OPERACOES_ARQUIVOS
-        if (comando_nome or str(dados_para_envio.get('acao', '')).lower()) in OPERACOES_ARQUIVOS:
+        if (comando_nome or str(dados_para_envio.get('acao', '')).lower()) in OPERACOES_ARQUIVOS.keys() | {'audio_controle'}:
             return
         
         # Identifica se é comando para o Celular
