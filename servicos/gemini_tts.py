@@ -73,11 +73,15 @@ def obter_voz_edge_fallback(voz_solicitada: str) -> str:
 
 class GeminiTTSService:
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        self.api_key = (api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
 
     def disponivel(self) -> bool:
         """Verifica se há chave da API do Gemini configurada."""
-        return bool(self.api_key and self.api_key.strip())
+        return bool(self.api_key)
+
+    def chave_valida_formato(self) -> bool:
+        """Verifica se o formato da chave corresponde ao padrão do Google AI Studio (começa com 'AIzaSy')."""
+        return self.api_key.startswith("AIzaSy")
 
     async def sintetizar(self, texto: str, voice: str = None, rate: float = 1.0) -> bytes:
         """
@@ -86,6 +90,9 @@ class GeminiTTSService:
         """
         if not self.disponivel():
             raise ValueError("GEMINI_API_KEY não está configurada no ambiente (.env).")
+
+        if not self.chave_valida_formato():
+            logger.warning("[GeminiTTS] A chave GEMINI_API_KEY ('%s...') não parece ser uma chave do Google AI Studio (chaves do Gemini começam com 'AIzaSy...'). Crie em https://aistudio.google.com/app/apikey", self.api_key[:8])
 
         texto_processado = preparar_fala(texto)
         if not texto_processado:
@@ -113,8 +120,7 @@ class GeminiTTSService:
 
     async def _sintetizar_gemini_rest(self, texto: str, voice: str) -> bytes:
         """Gera áudio através da API Gemini generateContent com resposta de áudio de latência mínima."""
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.api_key}"
-        
+        modelos = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
         prompt_fala = f"Leia literalmente: {texto}"
         
         payload = {
@@ -140,25 +146,26 @@ class GeminiTTSService:
             }
         }
 
+        ultimo_erro = None
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, json=payload)
-            if resp.status_code != 200:
-                logger.error("[GeminiTTS] Erro Gemini API HTTP %s: %s", resp.status_code, resp.text[:300])
-                resp.raise_for_status()
-            data = resp.json()
+            for modelo in modelos:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={self.api_key}"
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        for part in parts:
+                            inline_data = part.get("inlineData") or part.get("inline_data")
+                            if inline_data and inline_data.get("data"):
+                                b64_audio = inline_data["data"]
+                                return base64.b64decode(b64_audio)
+                
+                ultimo_erro = f"HTTP {resp.status_code}: {resp.text[:250]}"
+                logger.warning("[GeminiTTS] Modelo %s retornou %s", modelo, ultimo_erro)
 
-        candidates = data.get("candidates", [])
-        if not candidates:
-            raise ValueError("Gemini não retornou nenhum candidato de resposta.")
-
-        parts = candidates[0].get("content", {}).get("parts", [])
-        for part in parts:
-            inline_data = part.get("inlineData") or part.get("inline_data")
-            if inline_data and inline_data.get("data"):
-                b64_audio = inline_data["data"]
-                return base64.b64decode(b64_audio)
-
-        raise ValueError("Resposta do Gemini não contém dados de áudio inline.")
+        raise ValueError(f"Falha na API Gemini REST com todos os modelos: {ultimo_erro}")
 
     async def _sintetizar_google_cloud_tts_rest(self, texto: str, voice: str) -> bytes:
         """Gera áudio utilizando a API pública do Google Text-to-Speech como contingência."""

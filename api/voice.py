@@ -204,6 +204,7 @@ async def sintetizar(pedido: PedidoDeVoz):
 async def diagnostico_voz():
     """Realiza um teste em tempo real com a API do Gemini e retorna o status detalhado da voz."""
     gemini_ok = gemini_tts_service.disponivel()
+    formato_valido = gemini_tts_service.chave_valida_formato() if gemini_ok else False
     gemini_teste_status = "não configurado"
     gemini_erro = None
 
@@ -218,9 +219,19 @@ async def diagnostico_voz():
     vozes_femininas_gemini = [v["nome"] for v in LISTA_VOZES_GEMINI if v["genero"] == "feminino"]
     vozes_masculinas_gemini = [v["nome"] for v in LISTA_VOZES_GEMINI if v["genero"] == "masculino"]
 
+    aviso_chave = None
+    if gemini_ok and not formato_valido:
+        aviso_chave = (
+            "A chave de API configurada no Render/servidor não possui o formato do Google AI Studio "
+            "(chaves do Gemini começam com 'AIzaSy...'). Crie sua chave gratuita de API em https://aistudio.google.com/app/apikey "
+            "e atualize a variável GEMINI_API_KEY no painel do Render."
+        )
+
     return {
         "status": "ok",
         "gemini_available": gemini_ok,
+        "gemini_api_key_valid_format": formato_valido,
+        "gemini_api_key_warning": aviso_chave,
         "gemini_test_status": gemini_teste_status,
         "gemini_test_error": gemini_erro,
         "female_gemini_voices": vozes_femininas_gemini,
