@@ -2,6 +2,8 @@
 import json
 import re
 from urllib.parse import parse_qs, urlsplit
+from servicos.arquivos_pc import COMANDOS_ARQUIVOS, validar_resultado_arquivo
+from servicos.comandos_pc import validar_status_pc
 from servicos.sites_pc import CONFIG
 
 APPS = {
@@ -20,6 +22,13 @@ SITES = {'youtube.com': 'o YouTube', 'hbomax.com': 'o HBO Max', 'max.com': 'o HB
          'instagram.com': 'o Instagram', 'tiktok.com': 'o TikTok', 'google.com': 'o Google'}
 ABERTURAS = {'abrir_app', 'abrir_programa', 'abrir_url', 'open_url', 'open_app',
              'pesquisa_google', 'web_search', 'pesquisar', 'abrir_app_mobile'}
+ACOES_PC = {
+    'buscar_documentos': 'procurar o documento', 'abrir_arquivo': 'abrir o documento',
+    'listar_arquivos': 'listar os arquivos', 'janela_focar': 'trazer a janela pra frente',
+    'janela_maximizar': 'maximizar a janela', 'janela_minimizar': 'minimizar a janela',
+    'janela_fechar': 'fechar a janela', 'janela_fullscreen': 'alternar a tela cheia',
+    'capturar_tela': 'capturar a tela', 'system_status': 'consultar o uso de CPU, memória e disco',
+}
 
 
 def _curto(texto, limite=160):
@@ -66,7 +75,29 @@ def _acao(etapa):
         'mutar_mic': 'alternar o mudo do microfone',
         'media_play_pause': 'acionar o play/pause', 'media_next': 'passar pra próxima faixa',
         'media_prev': 'voltar uma faixa', 'spotify_play': f'tocar “{_curto(parametro)}” no Spotify',
-    }.get(comando, 'concluir essa ação')
+    }.get(comando, ACOES_PC.get(comando, 'concluir essa ação'))
+
+
+def _resposta_arquivo(comando, resultado):
+    if not validar_resultado_arquivo(comando, resultado):
+        return 'O PC não devolveu um resultado de arquivo válido.'
+    estado, itens = resultado['arquivo']['estado'], resultado['arquivo']['itens']
+    nomes = _juntar([f'“{item}”' for item in itens])
+    if estado == 'janela_confirmada':
+        return f'Abri {nomes} no PC e conferi a janela do documento.'
+    if estado == 'capturado':
+        return f'Salvei a captura em {nomes} no PC.'
+    if estado == 'abertura_enviada':
+        return f'Pedi ao Windows para abrir {nomes}, mas não consegui confirmar a janela.'
+    if estado == 'ambiguo':
+        return f'Encontrei mais de um arquivo: {nomes}. Diga o nome ou o caminho relativo e a pasta que devo usar.'
+    if estado == 'nao_encontrado':
+        return 'Não encontrei um arquivo compatível com esse nome nas pastas pesquisadas.'
+    if estado == 'incompleto':
+        return 'Não consegui concluir a busca. ' + (f'Até onde consegui olhar, achei {nomes}.' if itens else 'Experimente indicar a pasta e o nome completo.')
+    if estado == 'listado':
+        return f'Arquivos da pasta: {nomes}.' if itens else 'A pasta está sem arquivos visíveis para a Ollie.'
+    return f'Encontrei {nomes} no PC.'
 
 
 def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
@@ -98,6 +129,16 @@ def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
             frases.append(f'Não consegui {acao} no {dispositivo}.')
         elif status == 'enviado':
             frases.append(f'Mandei {acao} no celular.' if alvo == 'MOBILE' else f'Pedi pro PC {acao}.')
+        elif comando in COMANDOS_ARQUIVOS:
+            frases.append(_resposta_arquivo(comando, registro.get('resultado')))
+        elif comando == 'system_status':
+            dados = registro.get('resultado')
+            if validar_status_pc(dados):
+                sistema = dados['sistema']
+                frases.append(f'O PC está com {sistema["cpu"]:.0f}% de uso de CPU, {sistema["ram"]:.0f}% de memória '
+                              f'e {sistema["disco"]:.0f}% de ocupação na unidade do usuário.')
+            else:
+                frases.append('O PC não devolveu uma medição válida.')
         elif registro.get('foco') is False:
             frases.append(f'Abri {nome_abertura(etapa)} no PC, mas não consegui trazer a janela pra frente.')
         else:
@@ -108,12 +149,16 @@ def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
                 'media_next': 'Passei pra próxima faixa no PC.',
                 'media_prev': 'Voltei uma faixa no PC.',
                 'spotify_play': f'Pedi pra tocar “{_curto(etapa.get("parametro"))}” no Spotify do PC.',
+                'janela_focar': 'Trouxe a janela pra frente no PC.',
+                'janela_maximizar': 'Maximizei a janela no PC.', 'janela_minimizar': 'Minimizei a janela no PC.',
+                'janela_fechar': 'Fechei a janela no PC.', 'janela_fullscreen': 'Alternei a tela cheia no navegador do PC.',
             }.get(comando, 'Terminei essa ação no PC.'))
     fechar_grupo()
     if interrupcao:
         frases.append(interrupcao)
     texto = ' '.join(frases)
-    if resultados and not interrupcao and all(r['status'] == 'concluido' and r.get('foco') is not False for r in resultados):
+    if resultados and not interrupcao and all(r['status'] == 'concluido' and r.get('foco') is not False
+            and r['etapa'].get('comando') not in COMANDOS_ARQUIVOS | {'system_status'} for r in resultados):
         prefixo = 'Fechou' if re.search(r'\b(cara|mano|bora|valeu|porra|caralho|merda)\b', str(texto_usuario), re.I) else 'Pronto'
         texto = f'{prefixo}, ' + texto[:1].lower() + texto[1:]
     return texto or 'Não consegui confirmar o que aconteceu.'

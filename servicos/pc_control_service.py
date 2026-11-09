@@ -9,6 +9,7 @@ import webbrowser
 import threading
 import difflib
 import re
+from pathlib import Path
 from typing import List
 
 logger = logging.getLogger("PCControl")
@@ -121,17 +122,8 @@ class PcControlService:
         
         self._carregar_config()
         
-        self.macros = {
-            "alt_tab": ["alt", "tab"],
-            "win_d": ["win", "d"],
-            "print_screen": ["printscreen"],
-            "task_mgr": ["ctrl", "shift", "esc"],
-            "alt_f4": ["alt", "f4"],
-            "win_tab": ["win", "tab"],
-            "media_play_pause": ["playpause"],
-            "media_next": ["nexttrack"],
-            "media_prev": ["prevtrack"],
-        }
+        from servicos.comandos_pc import MACROS_PC
+        self.macros = MACROS_PC.copy()
 
     def _carregar_config(self):
         try:
@@ -285,16 +277,23 @@ class PcControlService:
             logger.warning(f"[PCControl] Spotify offline: {e}")
 
     def spotify_next(self):
-        if self.sp: self.sp.next_track()
+        self._spotify_disponivel().next_track()
 
     def spotify_prev(self):
-        if self.sp: self.sp.previous_track()
+        self._spotify_disponivel().previous_track()
 
     def spotify_pause(self):
-        if self.sp:
-            current = self.sp.current_playback()
-            if current and current.get('is_playing'): self.sp.pause_playback()
-            else: self.sp.start_playback()
+        spotify = self._spotify_disponivel()
+        current = spotify.current_playback()
+        if current and current.get('is_playing'):
+            spotify.pause_playback()
+        else:
+            spotify.start_playback()
+
+    def _spotify_disponivel(self):
+        if not self.sp:
+            raise RuntimeError('Spotify não está configurado no PC.')
+        return self.sp
 
     def tocar_spotify(self, query: str):
         if self.sp:
@@ -303,10 +302,11 @@ class PcControlService:
                 self.sp.start_playback(uris=[results['tracks']['items'][0]['uri']])
 
     def spotify_like(self):
-        if self.sp:
-            current = self.sp.current_playback()
-            if current and current.get('item'):
-                self.sp.current_user_saved_tracks_add(tracks=[current['item']['id']])
+        spotify = self._spotify_disponivel()
+        current = spotify.current_playback()
+        if not current or not current.get('item'):
+            raise RuntimeError('O Spotify não informou uma faixa para salvar.')
+        spotify.current_user_saved_tracks_add(tracks=[current['item']['id']])
 
     def _garantir_vm(self):
         if not self.vm:
@@ -466,17 +466,63 @@ class PcControlService:
         return {"status": "ok", "aberto": True, "primeiro_plano": foco}
 
     def hibernar_pc(self):
-        subprocess.run(["shutdown", "/h"], check=True)
+        subprocess.run(['shutdown.exe', '/h'], check=True)
+
+    def abrir_documento_verificado(self, caminho: Path):
+        antes = self.foco.capturar()
+        os.startfile(caminho, 'open')
+        return self.foco.confirmar_documento({caminho.name.casefold(), caminho.stem.casefold()}, antes)
+
+    def controlar_janela(self, comando, termo=''):
+        self.foco.controlar(comando, termo, lambda: self._entrada().press('f11'))
+
+    @staticmethod
+    def _entrada():
+        if pyautogui is None:
+            raise RuntimeError('Controle de teclado e mouse indisponível neste PC.')
+        return pyautogui
+
+    def mouse_move(self, dx, dy):
+        self._entrada().moveRel(dx, dy, _pause=False)
+
+    def mouse_click(self, botao):
+        self._entrada().click(button=botao)
+
+    def mouse_scroll(self, quantidade):
+        self._entrada().scroll(quantidade)
+
+    def capturar_tela(self):
+        return self._entrada().screenshot()
+
+    def status_sistema(self):
+        return {'cpu': psutil.cpu_percent(interval=.2), 'ram': psutil.virtual_memory().percent,
+                'disco': psutil.disk_usage(Path.home().anchor).percent}
 
     def trazer_janela_para_frente(self, termo: str) -> bool:
         nomes = {"vscode": "code.exe", "android_studio": "studio64.exe"}
         processo = nomes.get(termo, termo if termo.endswith('.exe') else termo + '.exe')
         return self.foco.trazer(processos={processo}, termo=termo, tentativas=1)
 
-    def bloquear_pc(self): os.system("rundll32.exe user32.dll,LockWorkStation")
-    def dormir_pc(self): os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
-    def desligar_pc(self): os.system("shutdown /s /t 60")
-    def reiniciar_pc(self): os.system("shutdown /r /t 60")
+    def bloquear_pc(self):
+        import ctypes
+
+        if not ctypes.WinDLL('user32', use_last_error=True).LockWorkStation():
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def dormir_pc(self):
+        import ctypes
+
+        suspender = ctypes.WinDLL('powrprof', use_last_error=True).SetSuspendState
+        suspender.argtypes = [ctypes.c_ubyte] * 3
+        suspender.restype = ctypes.c_ubyte
+        if not suspender(0, 0, 0):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def desligar_pc(self):
+        subprocess.run(['shutdown.exe', '/s', '/t', '60'], check=True)
+
+    def reiniciar_pc(self):
+        subprocess.run(['shutdown.exe', '/r', '/t', '60'], check=True)
 
     def encerrar(self):
         """Finaliza conexões de hardware."""

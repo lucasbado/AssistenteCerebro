@@ -21,6 +21,20 @@ class ConfirmacoesPC:
     def atualizar(self, identificador, status, resultado=None):
         registro = self._comandos.get(identificador)
         if registro is not None and status in {"concluido", "erro", "pc_offline"}:
+            from servicos.arquivos_pc import COMANDOS_ARQUIVOS, validar_resultado_arquivo
+            if registro['comando'] in COMANDOS_ARQUIVOS or registro['comando'] == 'system_status':
+                if registro['status'] != 'enviado':
+                    return
+                registro['status'] = status
+                if status == 'concluido':
+                    from servicos.comandos_pc import validar_status_pc
+                    valido = (validar_status_pc(resultado) if registro['comando'] == 'system_status'
+                              else validar_resultado_arquivo(registro['comando'], resultado))
+                    if valido:
+                        registro['resultado'] = resultado
+                    else:
+                        registro['status'] = 'erro'
+                return
             registro["status"] = status
             if isinstance(resultado, dict) and isinstance(resultado.get('primeiro_plano'), bool):
                 registro['resultado'] = {'primeiro_plano': resultado['primeiro_plano']}

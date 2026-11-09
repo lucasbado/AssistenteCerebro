@@ -92,6 +92,24 @@ class AgentePcExecutor:
         resultado_abertura = None
         
         try:
+            from servicos.comandos_pc import COMANDOS_COMPARTILHADOS, executar_compartilhado
+            from servicos.arquivos_pc import COMANDOS_ARQUIVOS
+            if comando in COMANDOS_COMPARTILHADOS:
+                if comando == 'mouse_move':
+                    param = f'{payload.get("dx", 0)},{payload.get("dy", 0)}' if 'dx' in payload or 'dy' in payload else param
+                elif comando == 'mouse_click':
+                    param = payload.get('botao', param)
+                elif comando == 'mouse_scroll':
+                    param = payload.get('quantidade', param)
+                elif comando in COMANDOS_ARQUIVOS:
+                    param = payload.get('termo') or payload.get('caminho') or param
+                resultado = await asyncio.to_thread(executar_compartilhado, comando, param if param is not None else '', pc_control_service)
+                if comando in COMANDOS_ARQUIVOS | {'system_status'} and evento.metadados.get('pedido_usuario'):
+                    from servicos.respostas_acoes import resumir_resultados
+                    from servicos.roteamento_pedidos import responder_pedido
+                    await responder_pedido(evento, resumir_resultados([{'etapa': {'alvo': 'PC', 'comando': comando},
+                        'status': 'concluido', 'resultado': resultado}]))
+                return
             # --- COMANDOS DE MANUTENÇÃO / INTERFACE ---
             if comando == "executar_cenario":
                 from servicos.cenarios import ServicoCenarios
@@ -132,33 +150,8 @@ class AgentePcExecutor:
                 pc_control_service.mutar_mic()
 
             # --- COMANDOS SPOTIFY ---
-            elif comando.startswith("spotify_"):
-                if comando == "spotify_next": pc_control_service.spotify_next()
-                elif comando == "spotify_prev": pc_control_service.spotify_prev()
-                elif comando == "spotify_play_pause": pc_control_service.spotify_pause()
-                elif comando == "spotify_play":
-                    if param: pc_control_service.tocar_spotify(param)
-                elif comando == "spotify_like": pc_control_service.spotify_like()
-
-            # --- COMANDOS MOUSE/TECLADO ---
-            elif comando == "mouse_move":
-                pc_control_service.mouse_move(evento.payload.get("dx", 0), evento.payload.get("dy", 0))
-            elif comando == "mouse_click":
-                pc_control_service.mouse_click(evento.payload.get("botao", "left"))
-            elif comando == "mouse_scroll":
-                pc_control_service.mouse_scroll(evento.payload.get("quantidade", 0))
-            elif comando == "executar_macro":
-                macro_alvo = evento.payload.get("macro") or param
-                logger.info(f"⚡ [Agente PC] Disparando Macro: {macro_alvo}")
-                pc_control_service.executar_macro(macro_alvo)
-
-            # --- COMANDOS MÍDIA (DIRETO) ---
-            elif comando == "media_play_pause":
-                pc_control_service.executar_macro("media_play_pause")
-            elif comando == "media_next":
-                pc_control_service.executar_macro("media_next")
-            elif comando == "media_prev":
-                pc_control_service.executar_macro("media_prev")
+            elif comando == "spotify_play" and param:
+                pc_control_service.tocar_spotify(param)
 
             # --- COMANDOS SISTEMA ---
             elif comando == "abrir_app" or comando == "abrir_programa":
@@ -198,25 +191,6 @@ class AgentePcExecutor:
                         }
                     ))
 
-            elif comando == "abrir_arquivo":
-                if pc_control_service.abrir_arquivo(param):
-                    logger.info("Arquivo aberto: %s", param)
-                else:
-                    logger.warning(f"Não foi possível abrir o arquivo: {param}")
-
-            elif comando == "listar_arquivos":
-                caminho = evento.payload.get("caminho") or evento.payload.get("parametro")
-                itens = pc_control_service.listar_diretorio(caminho)
-                texto_res = f"📂 Arquivos em {caminho or 'Home'}:\n" + "\n".join(itens[:15]) # Top 15 para não poluir
-                
-                from core.kernel import kernel
-                await kernel.publicar(evento.clonar(
-                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                    acao=TipoAcao.INTENCAO_INTERACAO,
-                    origem=OrigemEvento.IA,
-                    payload={"texto": texto_res, "tipo_ws": "CHAT_RESPONSE"}
-                ))
-
             elif comando == "volume_sistema":
                 valor = evento.payload.get("valor") or evento.payload.get("parametro")
                 if str(valor).isdigit():
@@ -226,48 +200,10 @@ class AgentePcExecutor:
                 alvo = evento.payload.get("processo") or evento.payload.get("parametro")
                 pc_control_service.encerrar_processo(alvo)
 
-            elif comando == "buscar_documentos":
-                termo = evento.payload.get("termo") or evento.payload.get("parametro", "")
-                resultados = pc_control_service.buscar_arquivos(termo)
-                if resultados:
-                    texto_res = f"🔎 Encontrei isso para '{termo}':\n" + "\n".join([os.path.basename(r) for r in resultados])
-                else:
-                    texto_res = f"❌ Não achei nenhum arquivo com o nome '{termo}'."
-                if resultados:
-                    texto_res = "Encontrei estes arquivos:\n" + "\n".join(resultados)
-                else:
-                    texto_res = "Não encontrei nenhum arquivo com esse nome."
-                
-                # Feedback via Chat (Ollie responde o resultado da busca)
-                from core.kernel import kernel
-                await kernel.publicar(evento.clonar(
-                    categoria=CategoriaEvento.INTENCAO_NOTIFICACAO,
-                    acao=TipoAcao.INTENCAO_INTERACAO,
-                    origem=OrigemEvento.IA,
-                    payload={"texto": texto_res, "tipo_ws": "CHAT_RESPONSE"}
-                ))
-
-            elif comando == "bloquear_pc":
-                pc_control_service.bloquear_pc()
-            elif comando == "dormir_pc":
-                pc_control_service.dormir_pc()
-            elif comando == "hibernar_pc":
-                pc_control_service.hibernar_pc()
-            elif comando == "desligar_pc":
-                pc_control_service.desligar_pc()
-            elif comando == "reiniciar_pc":
-                pc_control_service.reiniciar_pc()
             elif comando == "modo_imersao":
                 # Se não passar estado, assume True para ligar
                 estado = evento.payload.get("estado", True)
                 pc_control_service.set_modo_imersao(estado)
-            
-            elif comando == "janela_fullscreen":
-                pc_control_service.janela_fullscreen(evento.payload.get("parametro") or evento.payload.get("app"))
-            elif comando == "janela_maximizar":
-                pc_control_service.janela_maximizar(evento.payload.get("parametro") or evento.payload.get("app"))
-            elif comando == "janela_minimizar":
-                pc_control_service.janela_minimizar(evento.payload.get("parametro") or evento.payload.get("app"))
             
             elif comando == "executar_macro_personalizada":
                 nome_macro = evento.payload.get("nome")

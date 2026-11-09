@@ -110,6 +110,21 @@ class AgenteRaciocinio:
                 return
             from servicos.controle_casa import ACOES
             acoes_extraidas = exec_direta_raw if isinstance(exec_direta_raw, list) else [exec_direta_raw]
+            from servicos.ordens_pc import COMANDOS_DIRETOS
+            from servicos.comandos_pc import COMANDOS_ENTRADA
+            def ferramenta_pc_reservada(item):
+                if not isinstance(item, dict):
+                    return False
+                comando = str(item.get('comando') or item.get('action') or '').lower().strip()
+                parametro = str(item.get('parametro') or item.get('param') or item.get('value') or '').lower().strip()
+                return (comando in COMANDOS_DIRETOS | COMANDOS_ENTRADA
+                        or comando in {'executar_macro', 'macro'} and parametro in COMANDOS_ENTRADA)
+
+            if any(ferramenta_pc_reservada(item) for item in acoes_extraidas):
+                if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO:
+                    from servicos.roteamento_pedidos import responder_pedido
+                    await responder_pedido(evento, 'Diga a ação diretamente, por exemplo “abra o arquivo teste.pdf em Downloads no PC”.')
+                return
             tem_casa = any(isinstance(item, dict) and
                            str(item.get("comando") or item.get("action") or "").lower().strip() in ACOES
                            for item in acoes_extraidas)

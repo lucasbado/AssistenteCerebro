@@ -24,6 +24,9 @@ class AgenteReflexo:
             from servicos.agenda import agenda
             from servicos.roteamento_pedidos import dispositivo_origem
             texto = str(evento.payload.get('texto', ''))
+            from servicos.ordens_pc import encaminhar_ordem_pc
+            if await encaminhar_ordem_pc(evento):
+                return
             from servicos.controle_celular import interpretar_controle
             from servicos.dialogo_controles import dialogo_controles
             if dialogo_controles.continua(dispositivo_origem(evento), texto) or interpretar_controle(dialogo_controles.resolver(dispositivo_origem(evento), texto), dispositivo_origem(evento), evento.timestamp):

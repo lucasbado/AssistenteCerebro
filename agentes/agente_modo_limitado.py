@@ -17,6 +17,9 @@ class AgenteModoLimitado:
         }:
             return
         texto = str(evento.payload.get('texto', ''))
+        from servicos.ordens_pc import encaminhar_ordem_pc
+        if await encaminhar_ordem_pc(evento):
+            return
         from servicos.dialogo_controles import dialogo_controles
         if dialogo_controles.continua(dispositivo_origem(evento), texto) or interpretar_controle(dialogo_controles.resolver(dispositivo_origem(evento), texto), dispositivo_origem(evento), evento.timestamp):
             await kernel.publicar(evento.clonar(categoria=CategoriaEvento.CELULAR_ACAO_SOLICITADA))

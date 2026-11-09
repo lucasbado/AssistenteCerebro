@@ -46,8 +46,9 @@ class AgentePlano:
                             resultados.append({'etapa': etapa, 'status': status if status in {'pc_offline', 'sem_confirmacao'} else 'erro'})
                             interrupcao = 'Parei por aqui e não fiz o restante.' if indice < len(etapas) else 'Parei por aqui.'
                             break
-                        foco = resultado.get('resultado', {}).get('primeiro_plano')
-                        resultados.append({'etapa': etapa, 'status': 'concluido', 'foco': foco})
+                        detalhes = resultado.get('resultado', {})
+                        resultados.append({'etapa': etapa, 'status': 'concluido',
+                                           'foco': detalhes.get('primeiro_plano'), 'resultado': detalhes})
                     elif alvo == 'MOBILE':
                         enviado = await central_alertas.enviar_comando_mobile({
                             'tipo_ws': 'COMANDO_SISTEMA', 'acao': comando, 'parametro': parametro,

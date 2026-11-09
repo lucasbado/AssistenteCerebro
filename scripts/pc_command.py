@@ -27,19 +27,13 @@ def executar(comando, parametro, service=None):
     if service is None:
         from servicos.pc_control_service import pc_control_service
         service = pc_control_service
-    macros = {"alt_tab", "win_d", "print_screen", "task_mgr", "alt_f4", "win_tab", "media_play_pause", "media_next", "media_prev"}
+    from servicos.comandos_pc import COMANDOS_COMPARTILHADOS, executar_compartilhado
+    if comando in COMANDOS_COMPARTILHADOS:
+        return executar_compartilhado(comando, parametro, service)
     apps = {"vscode", "android_studio", "spotify", "discord", "lol", "chrome", "steam", "clone_hero"}
-    simples = {
-        "bloquear_pc": "bloquear_pc", "dormir_pc": "dormir_pc", "suspender_pc": "dormir_pc",
-        "hibernar_pc": "hibernar_pc", "desligar_pc": "desligar_pc", "reiniciar_pc": "reiniciar_pc",
-        "mutar_mic": "mutar_mic", "inicializar_hardware": "inicializar",
-    }
     if comando == "snapshot":
         return service.obter_estado_completo()
-    if comando in {"executar_macro", "macro"} | macros:
-        service.inicializar()
-        service.executar_macro(parametro or comando)
-    elif comando in {"abrir_app", "abrir_programa"} | apps:
+    if comando in {"abrir_app", "abrir_programa"} | apps:
         from servicos.sites_pc import resolver_site_pc
         site = resolver_site_pc(parametro or comando)
         if site:
@@ -61,10 +55,11 @@ def executar(comando, parametro, service=None):
             raise ValueError("URL HTTP(S) inválida")
         resultado = service.abrir_url(parametro)
         return resultado if isinstance(resultado, dict) else {"status": "ok"}
-    elif comando in simples:
-        if comando != "inicializar_hardware":
-            service.inicializar()
-        getattr(service, simples[comando])()
+    elif comando == "inicializar_hardware":
+        service.inicializar()
+    elif comando == "mutar_mic":
+        service.inicializar()
+        service.mutar_mic()
     elif comando == "spotify_play":
         service.inicializar()
         service.tocar_spotify(parametro)

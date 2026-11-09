@@ -91,6 +91,45 @@ def test_modo_forcado_nao_tenta_conectar_e_nem_cria_banco_alternativo(aplicativo
     iniciar.assert_not_awaited()
 
 
+def test_voz_do_celular_busca_abre_no_pc_e_responde_na_origem(aplicativo, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from scripts.pc_command import executar
+
+    (tmp_path / 'teste.pdf').touch()
+    monkeypatch.setattr('servicos.arquivos_pc.pastas_pessoais', lambda: {'Downloads': tmp_path})
+    service = SimpleNamespace(abrir_documento_verificado=Mock(return_value=True))
+    app, _, _, central = aplicativo
+
+    async def aguardar_mobile():
+        async with asyncio.timeout(2):
+            while central.mobile_client is None:
+                await asyncio.sleep(.001)
+
+    with TestClient(app) as client:
+        url = '/api/v1/ws/alertas?token=token-limitado'
+        with client.websocket_connect(url) as pc, client.websocket_connect(url) as mobile:
+            pc.receive_json(); mobile.receive_json()
+            pc.send_json({'tipo_ws': 'REGISTRO', 'id': 'PC_MASTER'})
+            assert pc.receive_json()['tipo_ws'] == 'REGISTRO_OK'
+            mobile.send_json({'tipo_ws': 'REGISTRO', 'id': 'MOBILE'})
+            client.portal.call(aguardar_mobile)
+            mobile.send_json({'tipo_ws': 'CHAT_MESSAGE', 'canal': 'voz', 'correlacao_id': 'arquivo-teste',
+                              'texto': 'Ache o PDF de teste em Downloads, abra no PC e me diga se abriu.'})
+            comando = pc.receive_json()
+            assert (comando['tipo_ws'], comando['comando']) == ('COMANDO_PC', 'abrir_arquivo')
+            resultado = executar(comando['comando'], comando['parametro'], service)
+            pc.send_json({'tipo_ws': 'COMANDO_RESULTADO', 'id_comando': comando['id_comando'],
+                          'status': 'concluido', 'resultado': resultado})
+            resposta = mobile.receive_json()
+            assert resposta['tipo_ws'] == 'CHAT_RESPONSE'
+            assert resposta['dispositivo_destino'] == 'MOBILE'
+            assert resposta['correlacao_id'] == 'arquivo-teste'
+            assert resposta['canal_origem'] == 'voz'
+            assert 'conferi a janela' in resposta['texto']
+    service.abrir_documento_verificado.assert_called_once_with(tmp_path / 'teste.pdf')
+
+
 def test_controles_conversa_e_feedback_funcionam_sem_sessao_sql(aplicativo, monkeypatch):
     from servicos.cognicao_controles import cognicao_controles
     monkeypatch.setattr(cognicao_controles, 'gerar', AsyncMock(return_value={'resposta': 'Pareidolia é perceber formas familiares em estímulos vagos.', 'acoes': []}))
