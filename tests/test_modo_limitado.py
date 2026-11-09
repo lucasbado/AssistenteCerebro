@@ -160,6 +160,8 @@ def test_voz_do_celular_busca_abre_no_pc_e_responde_na_origem(aplicativo, monkey
     ('Liste os controles da janela ativa no PC.', 'listar_controles',
      {'estado': 'lida', 'janela': 'Nota de teste', 'parcial': False,
       'itens': [{'tipo': 'menu', 'nome': 'Arquivo', 'habilitado': True}]}, 'menu “Arquivo”'),
+    ('Selecione a aba Opções da janela “Teste” no PC.', 'acionar_controle',
+     {'estado': 'aba_selecionada'}, 'ficou selecionada'),
 ])
 def test_voz_consulta_janela_sem_expor_observacao_no_rele(aplicativo, frase, acao, resultado, trecho):
     app, _, _, central = aplicativo

@@ -5,7 +5,10 @@ from urllib.parse import parse_qs, urlsplit
 from servicos.arquivos_pc import COMANDOS_ARQUIVOS, validar_resultado_arquivo
 from servicos.comandos_pc import validar_status_pc
 from servicos.foco_janelas import COMANDOS_OBSERVACAO_JANELAS, validar_observacao_janelas
-from servicos.interface_pc import COMANDO_INTERFACE, COMANDOS_OBSERVACAO_PC, validar_resultado_interface
+from servicos.interface_pc import (
+    COMANDO_ACIONAR_CONTROLE, COMANDO_INTERFACE, COMANDOS_INTERFACE_EXPLICITOS,
+    validar_resultado_acionamento, validar_resultado_interface,
+)
 from servicos.sites_pc import CONFIG
 
 APPS = {
@@ -32,6 +35,7 @@ ACOES_PC = {
     'capturar_tela': 'capturar a tela', 'system_status': 'consultar o uso de CPU, memória e disco',
     'janela_ativa': 'identificar a janela ativa', 'listar_janelas': 'consultar as janelas abertas',
     COMANDO_INTERFACE: 'consultar os controles da janela',
+    COMANDO_ACIONAR_CONTROLE: 'acionar o controle da janela',
     'criar_pasta': 'criar a pasta', 'copiar_arquivo': 'copiar o arquivo', 'mover_arquivo': 'mover o arquivo',
     'renomear_arquivo': 'renomear o arquivo', 'compactar_arquivo': 'compactar o arquivo',
     'criar_arquivo': 'criar o arquivo', 'ler_arquivo': 'ler o arquivo', 'acrescentar_texto': 'acrescentar o texto',
@@ -169,18 +173,21 @@ def _resposta_janelas(comando, resultado, filtro):
     return f'Janelas abertas no PC\n\n{nomes}.'
 
 
+_FALHAS_INTERFACE = {
+    'sem_janela': 'Não encontrei a janela. Peça a lista de janelas do PC para conferir o título.',
+    'ambigua': 'Encontrei mais de uma janela. Peça a lista de janelas do PC e indique o título exato.',
+    'minimizada': 'A janela está minimizada. Traga a janela para frente e tente de novo.',
+    'mudou': 'A janela ou o controle mudou durante a consulta. Confira o alvo e tente de novo.',
+    'indisponivel': 'Não consegui acessar os controles dessa janela pela acessibilidade do Windows.',
+}
+
+
 def _resposta_interface(resultado):
     if not validar_resultado_interface(resultado):
         return 'O PC não devolveu uma leitura válida da interface.'
     estado = resultado['estado']
     if estado != 'lida':
-        return {
-            'sem_janela': 'Não encontrei a janela. Peça a lista de janelas do PC para conferir o título.',
-            'ambigua': 'Encontrei mais de uma janela. Peça a lista de janelas do PC e indique o título exato.',
-            'minimizada': 'A janela está minimizada. Traga a janela para frente e tente de novo.',
-            'mudou': 'A janela mudou durante a consulta. Peça a leitura novamente.',
-            'indisponivel': 'Não consegui consultar os controles dessa janela pela acessibilidade do Windows.',
-        }[estado]
+        return _FALHAS_INTERFACE[estado]
     titulo, itens = resultado['janela'], resultado['itens']
     if not itens:
         if resultado['parcial']:
@@ -190,6 +197,24 @@ def _resposta_interface(resultado):
                       for item in itens])
     prefixo = 'Parte dos controles em' if resultado['parcial'] else 'Controles em'
     return f'{prefixo} “{titulo}”\n\n{rotulos}.'
+
+
+def _resposta_acionamento(resultado):
+    if not validar_resultado_acionamento(resultado):
+        return 'O PC não devolveu um resultado válido para o controle.'
+    return {
+        **_FALHAS_INTERFACE,
+        'sem_controle': 'Não encontrei um controle visível com esse nome e tipo na janela indicada.',
+        'controle_ambiguo': 'Encontrei mais de um controle visível com esse nome. Indique um controle com nome único.',
+        'desabilitado': 'Encontrei o controle, mas ele está desabilitado.',
+        'sem_padrao': 'O aplicativo não oferece um comando de acessibilidade para acionar esse controle.',
+        'ocupado': 'Já estou aguardando o resultado de outra ação na interface do PC.',
+        'aba_selecionada': 'Selecionei a aba e confirmei que ela ficou selecionada.',
+        'aba_ja_selecionada': 'A aba já estava selecionada.',
+        'mudanca_observada': 'Acionei o botão e observei uma mudança nos controles visíveis da janela.',
+        'enviada_sem_confirmacao': 'Enviei a ação ao aplicativo. Ainda não consegui confirmar o efeito.',
+        'envio_incerto': 'O aplicativo não confirmou se recebeu a ação. Confira a janela antes de repetir.',
+    }[resultado['estado']]
 
 
 def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
@@ -227,6 +252,8 @@ def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
             frases.append(_resposta_janelas(comando, registro.get('resultado'), etapa.get('parametro')))
         elif comando == COMANDO_INTERFACE:
             frases.append(_resposta_interface(registro.get('resultado')))
+        elif comando == COMANDO_ACIONAR_CONTROLE:
+            frases.append(_resposta_acionamento(registro.get('resultado')))
         elif comando == 'system_status':
             dados = registro.get('resultado')
             if validar_status_pc(dados):
@@ -254,7 +281,7 @@ def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
         frases.append(interrupcao)
     texto = ' '.join(frases)
     if resultados and not interrupcao and all(r['status'] == 'concluido' and r.get('foco') is not False
-            and r['etapa'].get('comando') not in COMANDOS_ARQUIVOS | COMANDOS_OBSERVACAO_PC | {'system_status'} for r in resultados):
+            and r['etapa'].get('comando') not in COMANDOS_ARQUIVOS | COMANDOS_INTERFACE_EXPLICITOS | {'system_status'} for r in resultados):
         prefixo = 'Fechou' if re.search(r'\b(cara|mano|bora|valeu|porra|caralho|merda)\b', str(texto_usuario), re.I) else 'Pronto'
         texto = f'{prefixo}, ' + texto[:1].lower() + texto[1:]
     return texto or 'Não consegui confirmar o que aconteceu.'

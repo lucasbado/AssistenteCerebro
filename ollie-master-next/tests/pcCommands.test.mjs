@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pcCommandParam, readFileResult, readSystemResult, readWindowResult, readInterfaceResult } from '../src/pcCommands.ts';
+import { pcCommandParam, readFileResult, readSystemResult, readWindowResult, readInterfaceResult,
+  readControlActionResult } from '../src/pcCommands.ts';
 
 test('preserves structured input from Wear and legacy PC clients', () => {
   assert.equal(pcCommandParam('mouse_move', { dx: 0, dy: -12, parametro: '' }), '0,-12');
@@ -35,4 +36,10 @@ test('forwards control labels and states without values or coordinates', () => {
   const raw = JSON.stringify({ ...result, itens: [{ ...control, x: 42, valor: 'privado' }] });
   assert.deepEqual(readInterfaceResult(raw), result);
   assert.throws(() => readInterfaceResult(JSON.stringify({ ...result, itens: [{ ...control, habilitado: 1 }] })));
+});
+
+test('preserves the difference between confirmed selection and an unconfirmed effect', () => {
+  assert.deepEqual(readControlActionResult('{"estado":"aba_selecionada"}'), { estado: 'aba_selecionada' });
+  assert.deepEqual(readControlActionResult('{"estado":"enviada_sem_confirmacao"}'), { estado: 'enviada_sem_confirmacao' });
+  assert.throws(() => readControlActionResult('{"status":"ok"}'));
 });

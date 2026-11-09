@@ -29,6 +29,11 @@ const controlTypes = ['botão', 'link', 'aba', 'menu', 'caixa de seleção', 'op
 type Control = { tipo: string; nome: string; habilitado: boolean };
 export type InterfaceResult = { estado: typeof interfaceFailures[number] } |
   { estado: 'lida'; janela: string; itens: Control[]; parcial: boolean };
+const controlActionStates = [
+  ...interfaceFailures, 'sem_controle', 'controle_ambiguo', 'desabilitado', 'sem_padrao', 'ocupado',
+  'aba_selecionada', 'aba_ja_selecionada', 'mudanca_observada', 'enviada_sem_confirmacao', 'envio_incerto',
+] as const;
+export type ControlActionResult = { estado: typeof controlActionStates[number] };
 
 export function readFileResult(raw: string): FileResult {
   const result = JSON.parse(raw);
@@ -90,4 +95,12 @@ export function readInterfaceResult(raw: string): InterfaceResult {
     return { tipo: control.tipo, nome: control.nome, habilitado: control.habilitado };
   });
   return { estado: 'lida', janela: result.janela, itens, parcial: result.parcial };
+}
+
+export function readControlActionResult(raw: string): ControlActionResult {
+  const result = JSON.parse(raw);
+  if (!controlActionStates.includes(result?.estado)) {
+    throw new Error('O executor devolveu um resultado de acionamento inválido.');
+  }
+  return { estado: result.estado };
 }

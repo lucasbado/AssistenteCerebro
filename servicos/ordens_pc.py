@@ -6,14 +6,16 @@ import uuid
 from servicos.arquivos_pc import COMANDOS_ARQUIVOS, COMANDOS_TEXTO, EXTENSOES, parametros_arquivo, parametros_operacao
 from servicos.controle_casa import normalizar
 from servicos.foco_janelas import MAX_TITULO
-from servicos.interface_pc import COMANDO_INTERFACE, COMANDOS_OBSERVACAO_PC
+from servicos.interface_pc import (
+    COMANDO_ACIONAR_CONTROLE, COMANDO_INTERFACE, COMANDOS_INTERFACE_EXPLICITOS, parametros_acionar_controle,
+)
 from servicos.roteamento_pedidos import contexto_pedido, destino_explicito, dispositivo_origem, responder_pedido
 
 
 JANELAS = {'maximize': 'janela_maximizar', 'minimize': 'janela_minimizar',
            'feche': 'janela_fechar', 'foque': 'janela_focar'}
 COMANDOS_JANELAS = frozenset({*JANELAS.values(), 'janela_fullscreen'})
-COMANDOS_DIRETOS = COMANDOS_ARQUIVOS | COMANDOS_JANELAS | COMANDOS_OBSERVACAO_PC | {'system_status'}
+COMANDOS_DIRETOS = COMANDOS_ARQUIVOS | COMANDOS_JANELAS | COMANDOS_INTERFACE_EXPLICITOS | {'system_status'}
 DESTINO = r'(?:no|pelo|pro|para o)\s+(?:(?:meu|seu|este|esse)\s+)?(?:pc|computador|desktop|notebook|celular|telefone|smartphone|android)'
 PASTA = r'downloads?|documentos|documents|[áa]rea de trabalho|desktop'
 ABRIR = r'(?:abra|abre|abrir)'
@@ -23,6 +25,8 @@ TIPOS = {'pdf': '.pdf', 'planilha': '.xlsx', 'apresentacao': '.pptx'}
 _LOCAL = rf'\s+(?:em|na|no|de|da|do|dos)\s+({PASTA})'
 _NOME = r'(?:["“][^"”]+["”]|[^"“”]+?)'
 _TEXTO_LITERAL = r'("[^"]*"|“[^”]*”)'
+_INICIO_CONTROLE = r'(?:clique\s+n[oa]|acione\s+[oa]|selecione\s+a)\s+(bot[ãa]o|aba)'
+_ACIONAR_CONTROLE = rf'{_INICIO_CONTROLE}\s+({_NOME})\s+(?:d[oa]|na)\s+(?:janela\s+(?:d[oa]\s+)?)?({_NOME})'
 _ORDENS_TEXTO = (
     ('criar_arquivo', rf'(?:crie|criar|cria)\s+(?:(?:um|o)\s+)?arquivo\s+({_NOME}){_LOCAL}(?:\s+com\s+(?:o\s+)?texto\s+{_TEXTO_LITERAL})?'),
     ('ler_arquivo', rf'(?:(?:leia|ler)\s+(?:(?:o\s+)?conte[úu]do\s+d[oe]\s+)?|mostre\s+o\s+conte[úu]do\s+d[oe]\s+)(?:o\s+)?(?:arquivo\s+)?({_NOME}){_LOCAL}'),
@@ -90,6 +94,15 @@ def interpretar_ordem_pc(texto):
             parametros_operacao(comando, parametro)
             return comando, json.dumps(parametro, ensure_ascii=False)
     texto = re.sub(r'[,\s]+por favor$', '', texto.rstrip('.!?').strip(), flags=re.I).strip()
+    if re.match(rf'{_INICIO_CONTROLE}\b', texto, re.I):
+        pedido = re.fullmatch(rf'{_ACIONAR_CONTROLE}(?:\s+{DESTINO})?', texto, re.I)
+        if not pedido:
+            raise ValueError('Diga o nome do botão ou da aba e da janela que devo usar.')
+        tipo, nome, janela = pedido.groups()
+        parametro = json.dumps({'tipo': 'aba' if tipo.casefold() == 'aba' else 'botão',
+                                'nome': nome.strip(' "“”'), 'janela': janela.strip(' "“”')}, ensure_ascii=False)
+        parametros_acionar_controle(parametro)
+        return COMANDO_ACIONAR_CONTROLE, parametro
     abrir_depois = re.search(rf'(?:,\s*|\s+e\s+(?:depois\s+)?)'
                              rf'{ABRIR}(?:-o|-a|\s+(?:o arquivo|ele|ela))?'
                              rf'(?:\s+{DESTINO})?(?:\s+e\s+(?:me\s+)?(?:diga|avise)\s+se\s+abriu)?$', texto, re.I)
@@ -176,9 +189,11 @@ async def encaminhar_ordem_pc(evento):
             inicio = texto.rfind(literal)
             if inicio >= 0:
                 texto_destino = texto[:inicio] + texto[inicio + len(literal):]
+        if comando == COMANDO_ACIONAR_CONTROLE:
+            texto_destino = re.sub(_TEXTO_LITERAL, '', texto_destino)
         destino = destino_explicito(texto_destino)
         if destino == 'MOBILE' or (not destino and dispositivo_origem(evento) == 'MOBILE'
-                                  and comando in COMANDOS_JANELAS | COMANDOS_OBSERVACAO_PC | {'capturar_tela'}):
+                                  and comando in COMANDOS_JANELAS | COMANDOS_INTERFACE_EXPLICITOS | {'capturar_tela'}):
             await responder_pedido(evento, 'Esse controle é do PC. Diga “no PC” para executar lá.')
             return True
     except ValueError as erro:

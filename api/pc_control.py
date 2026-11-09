@@ -55,9 +55,9 @@ async def receber_comando(request: Request):
     
     if not comando:
         return {"status": "erro", "motivo": "Comando ausente"}
-    from servicos.interface_pc import COMANDOS_OBSERVACAO_PC
-    if comando in COMANDOS_OBSERVACAO_PC:
-        return {"status": "erro", "motivo": "Peça a consulta de janelas pelo chat ou por voz."}
+    from servicos.interface_pc import COMANDOS_INTERFACE_EXPLICITOS
+    if comando in COMANDOS_INTERFACE_EXPLICITOS:
+        return {"status": "erro", "motivo": "Peça a ação na janela pelo chat ou por voz."}
 
     print(f"📡 [API] Recebido comando via HTTP: {comando}")
 

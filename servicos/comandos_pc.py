@@ -1,7 +1,10 @@
 """Contratos dos controles compartilhados pelo executor local e pelo Ollie Desk."""
 from servicos.arquivos_pc import COMANDOS_ARQUIVOS, executar_arquivo
 from servicos.foco_janelas import MAX_TITULO
-from servicos.interface_pc import COMANDO_INTERFACE, COMANDOS_OBSERVACAO_PC
+from servicos.interface_pc import (
+    COMANDO_ACIONAR_CONTROLE, COMANDO_INTERFACE, COMANDOS_INTERFACE_EXPLICITOS,
+    COMANDOS_OBSERVACAO_PC, parametros_acionar_controle,
+)
 from servicos.ordens_pc import COMANDOS_JANELAS
 
 
@@ -18,7 +21,7 @@ COMANDOS_ENERGIA = {'bloquear_pc': 'bloquear_pc', 'dormir_pc': 'dormir_pc', 'sus
                     'hibernar_pc': 'hibernar_pc', 'desligar_pc': 'desligar_pc', 'reiniciar_pc': 'reiniciar_pc'}
 COMANDOS_SPOTIFY = {'spotify_next': 'spotify_next', 'spotify_prev': 'spotify_prev',
                      'spotify_play_pause': 'spotify_pause', 'spotify_like': 'spotify_like'}
-COMANDOS_COMPARTILHADOS = (COMANDOS_ARQUIVOS | COMANDOS_JANELAS | COMANDOS_OBSERVACAO_PC | MACROS_PC.keys() | COMANDOS_MOUSE
+COMANDOS_COMPARTILHADOS = (COMANDOS_ARQUIVOS | COMANDOS_JANELAS | COMANDOS_INTERFACE_EXPLICITOS | MACROS_PC.keys() | COMANDOS_MOUSE
                            | COMANDOS_ENERGIA.keys() | COMANDOS_SPOTIFY.keys() | {'executar_macro', 'macro', 'system_status'})
 
 
@@ -45,6 +48,8 @@ def executar_compartilhado(comando, parametro, service):
         return executar_arquivo(comando, parametro, service)
     if comando == 'system_status':
         return {'sistema': service.status_sistema()}
+    if comando == COMANDO_ACIONAR_CONTROLE:
+        return service.acionar_controle(parametros_acionar_controle(parametro))
     if comando in COMANDOS_OBSERVACAO_PC:
         if not isinstance(parametro, str) or len(parametro) > MAX_TITULO or comando == 'janela_ativa' and parametro:
             raise ValueError('Filtro de janelas inválido.')

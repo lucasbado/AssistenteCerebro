@@ -484,6 +484,11 @@ class PcControlService:
 
         return observar_interface(self.foco, termo)
 
+    def acionar_controle(self, alvo):
+        from servicos.interface_pc import acionar_controle
+
+        return acionar_controle(self.foco, alvo)
+
     @staticmethod
     def _entrada():
         if pyautogui is None:

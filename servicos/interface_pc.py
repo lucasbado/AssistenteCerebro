@@ -1,10 +1,15 @@
-"""Leitura de rótulos de controles da janela solicitada via Windows UI Automation."""
+"""Consulta e acionamento de controles de uma janela via Windows UI Automation."""
+import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 
+from servicos.controle_casa import normalizar
 from servicos.foco_janelas import COMANDOS_OBSERVACAO_JANELAS, MAX_TITULO, _rotulo
 
 COMANDO_INTERFACE = 'listar_controles'
+COMANDO_ACIONAR_CONTROLE = 'acionar_controle'
 COMANDOS_OBSERVACAO_PC = COMANDOS_OBSERVACAO_JANELAS | {COMANDO_INTERFACE}
+COMANDOS_INTERFACE_EXPLICITOS = COMANDOS_OBSERVACAO_PC | {COMANDO_ACIONAR_CONTROLE}
 MAX_CONTROLES = 10
 MAX_ROTULO = 100
 TIPOS_UIA = {
@@ -12,17 +17,40 @@ TIPOS_UIA = {
     'MenuItem': 'menu', 'CheckBox': 'caixa de seleção', 'RadioButton': 'opção',
 }
 ESTADOS_SEM_LEITURA = {'sem_janela', 'ambigua', 'minimizada', 'mudou', 'indisponivel'}
+ESTADOS_ACIONAMENTO = ESTADOS_SEM_LEITURA | {
+    'sem_controle', 'controle_ambiguo', 'desabilitado', 'sem_padrao', 'ocupado',
+    'aba_selecionada', 'aba_ja_selecionada', 'mudanca_observada', 'enviada_sem_confirmacao', 'envio_incerto',
+}
 
 
-def _ler_cache(hwnd):
+def parametros_acionar_controle(parametro):
+    dados = json.loads(parametro)
+    if not isinstance(dados, dict) or set(dados) != {'tipo', 'nome', 'janela'}:
+        raise ValueError('Indique o tipo e o nome do controle e o título da janela.')
+    if dados['tipo'] not in ('botão', 'aba'):
+        raise ValueError('Escolha um botão ou uma aba.')
+    for campo, limite in (('nome', MAX_ROTULO), ('janela', MAX_TITULO)):
+        valor = dados[campo]
+        if not isinstance(valor, str) or not normalizar(valor) or valor != _rotulo(valor, limite):
+            raise ValueError('Use nomes de controle e janela completos e curtos.')
+    if normalizar(dados['janela']) in {'ativa', 'a janela ativa', 'janela ativa'}:
+        raise ValueError('Diga o título da janela ou o nome do aplicativo.')
+    return dados
+
+
+def _cliente_uia():
     import comtypes.client
 
     uia = comtypes.client.GetModule('UIAutomationCore.dll')
     cliente = comtypes.client.CreateObject(uia.CUIAutomation8, interface=uia.IUIAutomation2)
     cliente.ConnectionTimeout = 2000
     cliente.TransactionTimeout = 2500
-    raiz = cliente.ElementFromHandle(hwnd)
-    tipos = {getattr(uia, f'UIA_{tipo}ControlTypeId'): nome for tipo, nome in TIPOS_UIA.items()}
+    return uia, cliente
+
+
+def _consultar_controles(uia, cliente, raiz, alvo=None):
+    tipos = {getattr(uia, f'UIA_{tipo}ControlTypeId'): nome for tipo, nome in TIPOS_UIA.items()
+             if alvo is None or nome == alvo['tipo']}
     tipos_cond = cliente.CreateOrConditionFromArray([
         cliente.CreatePropertyCondition(uia.UIA_ControlTypePropertyId, tipo) for tipo in tipos])
     visivel = cliente.CreatePropertyCondition(uia.UIA_IsOffscreenPropertyId, False)
@@ -30,11 +58,20 @@ def _ler_cache(hwnd):
     condicao = cliente.CreateAndCondition(tipos_cond, cliente.CreateAndCondition(visivel, nao_senha))
     cache = cliente.CreateCacheRequest()
     cache.TreeScope = uia.TreeScope_Element
-    cache.AutomationElementMode = uia.AutomationElementMode_None
+    if alvo is None:
+        cache.AutomationElementMode = uia.AutomationElementMode_None
+    else:
+        nome = cliente.CreatePropertyConditionEx(uia.UIA_NamePropertyId, alvo['nome'],
+                                                  uia.PropertyConditionFlags_IgnoreCase)
+        condicao = cliente.CreateAndCondition(condicao, nome)
     for propriedade in (uia.UIA_ControlTypePropertyId, uia.UIA_NamePropertyId, uia.UIA_IsEnabledPropertyId):
         cache.AddProperty(propriedade)
 
-    achados = raiz.FindAllBuildCache(uia.TreeScope_Descendants, condicao, cache)
+    return tipos, raiz.FindAllBuildCache(uia.TreeScope_Descendants, condicao, cache)
+
+
+def _rotulos_visiveis(uia, cliente, raiz):
+    tipos, achados = _consultar_controles(uia, cliente, raiz)
     if not achados:
         return [], False
     itens = []
@@ -49,18 +86,30 @@ def _ler_cache(hwnd):
     return itens, achados.Length > limite
 
 
-def _ler_windows(hwnd):
+def _ler_cache(hwnd):
+    uia, cliente = _cliente_uia()
+    return _rotulos_visiveis(uia, cliente, cliente.ElementFromHandle(hwnd))
+
+
+def _rodar_uia(funcao, *args):
     import pythoncom
 
     pythoncom.CoInitializeEx(pythoncom.COINIT_MULTITHREADED)
     try:
         from comtypes import COMError
         try:
-            return _ler_cache(hwnd)
+            return funcao(*args)
         except COMError as erro:
             raise OSError('A janela não respondeu à UI Automation.') from erro
     finally:
         pythoncom.CoUninitialize()
+
+
+def _executar_uia(funcao, *args):
+    # A importação inicial do comtypes inicializa COM na thread chamadora.
+    import comtypes.client
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(_rodar_uia, funcao, *args).result()
 
 
 def observar_interface(foco, termo, leitor=None):
@@ -68,13 +117,7 @@ def observar_interface(foco, termo, leitor=None):
     if janela is None:
         return {'estado': estado}
     try:
-        if leitor is None:
-            # A importação inicial do comtypes inicializa COM na thread chamadora.
-            import comtypes.client
-            leitor = _ler_windows
-        # As chamadas de UI Automation rodam numa thread MTA separada.
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            itens, parcial = executor.submit(leitor, janela.id).result()
+        itens, parcial = leitor(janela.id) if leitor else _executar_uia(_ler_cache, janela.id)
     except (ImportError, OSError):
         return {'estado': 'indisponivel'}
     if foco.alvo_interface(termo)[1] != janela:
@@ -83,6 +126,87 @@ def observar_interface(foco, termo, leitor=None):
     if not titulo:
         return {'estado': 'sem_janela'}
     return {'estado': 'lida', 'janela': titulo, 'itens': itens, 'parcial': parcial}
+
+
+def _acionar_windows(janela, alvo, janela_atual):
+    from comtypes import COMError
+
+    uia, cliente = _cliente_uia()
+    raiz = cliente.ElementFromHandle(janela.id)
+    tipos, achados = _consultar_controles(uia, cliente, raiz, alvo)
+    if not achados or achados.Length == 0:
+        return 'sem_controle'
+    if achados.Length != 1:
+        return 'controle_ambiguo'
+    item = achados.GetElement(0)
+    if not item.CurrentIsEnabled:
+        return 'desabilitado'
+    aba = alvo['tipo'] == 'aba'
+    if aba:
+        padrao = item.GetCurrentPattern(uia.UIA_SelectionItemPatternId)
+        interface = uia.IUIAutomationSelectionItemPattern
+    else:
+        padrao = item.GetCurrentPattern(uia.UIA_InvokePatternId)
+        interface = uia.IUIAutomationInvokePattern
+    if not padrao:
+        return 'sem_padrao'
+    acao = padrao.QueryInterface(interface)
+    antes = None if aba else _rotulos_visiveis(uia, cliente, raiz)
+    if (item.CurrentIsOffscreen or item.CurrentIsPassword or item.CurrentControlType not in tipos
+            or (item.CurrentName or '').casefold() != alvo['nome'].casefold() or janela_atual() != janela):
+        return 'mudou'
+    if not item.CurrentIsEnabled:
+        return 'desabilitado'
+    if aba and acao.CurrentIsSelected:
+        return 'aba_ja_selecionada'
+    try:
+        acionar = acao.Select if aba else acao.Invoke
+        acionar()
+    except COMError:
+        # A chamada pode ter chegado ao aplicativo antes da falha do provedor.
+        return 'envio_incerto'
+    try:
+        for _ in range(3):
+            time.sleep(.2)
+            if aba:
+                if acao.CurrentIsSelected:
+                    return 'aba_selecionada'
+            elif janela_atual() == janela and _rotulos_visiveis(uia, cliente, raiz) != antes:
+                return 'mudanca_observada'
+    except COMError:
+        pass
+    return 'enviada_sem_confirmacao'
+
+
+def acionar_controle(foco, alvo):
+    def resolver():
+        return foco.alvo_interface(alvo['janela'], exato=True)
+
+    estado, janela = resolver()
+    if janela is None:
+        return {'estado': estado}
+    try:
+        import win32event
+
+        trava = win32event.CreateMutex(None, False, r'Local\Ollie.AcaoInterface')
+        try:
+            espera = win32event.WaitForSingleObject(trava, 0)
+            if espera == win32event.WAIT_TIMEOUT:
+                return {'estado': 'ocupado'}
+            try:
+                estado = _executar_uia(_acionar_windows, janela, alvo, lambda: resolver()[1])
+            finally:
+                win32event.ReleaseMutex(trava)
+        finally:
+            trava.Close()
+    except (ImportError, OSError):
+        estado = 'indisponivel'
+    return {'estado': estado}
+
+
+def validar_resultado_acionamento(resultado):
+    return (isinstance(resultado, dict) and set(resultado) == {'estado'}
+            and isinstance(resultado['estado'], str) and resultado['estado'] in ESTADOS_ACIONAMENTO)
 
 
 def validar_resultado_interface(resultado):

@@ -5,7 +5,7 @@ from core.tipos import CategoriaEvento
 from servicos.roteamento_pedidos import responder_pedido
 from servicos.respostas_acoes import resumir_resultados
 from servicos.arquivos_pc import OPERACOES_ARQUIVOS
-from servicos.interface_pc import COMANDOS_OBSERVACAO_PC
+from servicos.interface_pc import COMANDOS_INTERFACE_EXPLICITOS
 from servicos.ordens_pc import interpretar_ordem_pc
 
 
@@ -29,12 +29,12 @@ class AgentePlano:
             if not 1 <= len(etapas) <= 6:
                 raise ValueError('O pedido não tem uma sequência válida de ações.')
             for etapa in etapas:
-                if etapa['comando'] in OPERACOES_ARQUIVOS.keys() | COMANDOS_OBSERVACAO_PC and (
+                if etapa['comando'] in OPERACOES_ARQUIVOS.keys() | COMANDOS_INTERFACE_EXPLICITOS and (
                         len(etapas) != 1 or etapa['alvo'] != 'PC'
                         or interpretar_ordem_pc(evento.payload.get('texto_pedido', '')) != (etapa['comando'], etapa['parametro'])):
                     if etapa['comando'] in OPERACOES_ARQUIVOS:
                         raise ValueError('Peça a operação de arquivo em um comando separado, com nome e pasta.')
-                    raise ValueError('Peça a consulta de janelas no PC em um comando separado.')
+                    raise ValueError('Peça a ação na janela no PC em um comando separado.')
             conexoes = central_alertas.estado_conexoes()
             for etapa in etapas:
                 alvo = etapa['alvo']
@@ -50,7 +50,7 @@ class AgentePlano:
                             'comando': comando, 'parametro': parametro, 'id_comando': etapa['id_comando'],
                             'correlacao_id': chave, 'origem': 'IA', 'abertura_modo': 'pedido', 'abertura_autorizada': True},
                             **({'operacao_arquivo_explicita': True} if comando in OPERACOES_ARQUIVOS else {}),
-                            **({'observacao_pc_explicita': True} if comando in COMANDOS_OBSERVACAO_PC else {}))
+                            **({'interface_pc_explicita': True} if comando in COMANDOS_INTERFACE_EXPLICITOS else {}))
                         if resultado and resultado['status'] == 'enviado':
                             resultado = await central_alertas.confirmacoes.aguardar(etapa['id_comando'])
                         status = (resultado or {}).get('status')

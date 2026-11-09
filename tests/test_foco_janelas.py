@@ -119,3 +119,25 @@ def test_pedido_explicito_de_interface(frase, ordem):
     from servicos.ordens_pc import interpretar_ordem_pc
 
     assert interpretar_ordem_pc(frase) == ordem
+
+
+def test_acionamento_exige_janela_nomeada_e_preserva_rotulo_literal():
+    from servicos.interface_pc import parametros_acionar_controle
+    from servicos.ordens_pc import interpretar_ordem_pc
+
+    comando, parametro = interpretar_ordem_pc('Clique no botão “Salvar no celular” da janela “Editor local” no PC.')
+    assert comando == 'acionar_controle'
+    assert parametros_acionar_controle(parametro) == {
+        'tipo': 'botão', 'nome': 'Salvar no celular', 'janela': 'Editor local',
+    }
+    with pytest.raises(ValueError):
+        interpretar_ordem_pc('Clique no botão Salvar da janela ativa no PC.')
+
+
+def test_acionamento_nao_resolve_janela_por_fragmento_ou_alias_de_outro_programa():
+    janelas = [Janela(1, 'opera.exe', 'Ollie'), Janela(2, 'notepad.exe', 'Nota - Bloco de Notas')]
+    sistema = SimpleNamespace(observar=Mock(return_value=janelas), estado=Mock(return_value=False))
+    foco = FocoJanelas(sistema)
+    assert foco.alvo_interface('Ollie', exato=True) == ('sem_janela', None)
+    assert foco.alvo_interface('Nota', exato=True) == ('sem_janela', None)
+    assert foco.alvo_interface('Nota - Bloco de Notas', exato=True) == ('lida', janelas[1])

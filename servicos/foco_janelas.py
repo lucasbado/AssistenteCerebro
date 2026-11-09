@@ -202,17 +202,19 @@ class FocoJanelas:
         itens = [{'titulo': titulo, 'processo': processo} for titulo, processo in rotulos if titulo and processo]
         return {'janelas': itens[:MAX_JANELAS], 'total': len(itens)}
 
-    def alvo_interface(self, termo):
+    def alvo_interface(self, termo, *, exato=False):
         sistema = self._sistema()
         if sistema is None:
             return 'indisponivel', None
         termo = normalizar(termo)
         janelas = sistema.observar(so_ativa=not termo)
         if termo:
+            apelido = PROCESSOS_APLICATIVOS.get(termo)
             exatas = [janela for janela in janelas if normalizar(janela.titulo) == termo]
             por_app = [janela for janela in janelas if termo in {janela.processo, janela.processo.removesuffix('.exe')}
-                       or PROCESSOS_APLICATIVOS.get(termo) == janela.processo]
-            janelas = exatas or por_app or [janela for janela in janelas if _combina(janela, termo)]
+                       or apelido == janela.processo]
+            janelas = por_app if exato and apelido else (exatas or por_app or
+                ([] if exato else [janela for janela in janelas if _combina(janela, termo)]))
         if not janelas:
             return 'sem_janela', None
         if len(janelas) != 1:
