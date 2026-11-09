@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from core.tipos import CategoriaEvento, TipoAcao
-from servicos.conversa import pedido_de_explicacao, ler_resposta_conversa, resposta_pendente
+from servicos.conversa import pedido_de_explicacao, ler_resposta_conversa, resposta_pendente, texto_legivel
 
 
 @pytest.mark.parametrize('texto', ['O que era pareidolia?', 'Por que o céu é azul?',
@@ -43,6 +43,11 @@ def test_explicacao_nao_autoriza_comandos_nem_memoria_permanente():
         'memoria_obsidian': {'fato': 'O usuário quer o microfone mudo.'}})
     assert data['execucao_direta'] == [] and 'memoria_obsidian' not in data
     assert data['aguarda_resposta'] is False
+
+
+def test_quebras_escapadas_do_modelo_sao_corrigidas_fora_de_codigo():
+    bruto = r'1. Farol\n2. Tangerina\nQual você prefere? Use `\n` como separador.'
+    assert texto_legivel(bruto) == '1. Farol\n2. Tangerina\nQual você prefere? Use `\\n` como separador.'
 
 
 @pytest.fixture

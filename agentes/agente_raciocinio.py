@@ -154,7 +154,9 @@ class AgenteRaciocinio:
 
             # 5. DISPACHO DE RESPOSTA (Ollie Falando)
             if msg_ia and tipo_interacao in ["NOTIFICAR", "SUGERIR"]:
-                msg_limpa = re.sub(r"(?i)\b(eu\s+)?sou\s+a\s+ollie\b[,!.]*|\bollie\s+aqui\b[,!.]*", "", msg_ia).strip()
+                from servicos.conversa import texto_legivel
+                msg_limpa = re.sub(r"(?i)\b(eu\s+)?sou\s+a\s+ollie\b[,!.]*|\bollie\s+aqui\b[,!.]*", "",
+                                  texto_legivel(msg_ia)).strip()
                 
                 # Determina se é Chat ou Notificação de Sistema
                 tipo_ws = "CHAT_RESPONSE" if evento.categoria == CategoriaEvento.SISTEMA_COMANDO_USUARIO else "NOTIFICACAO"

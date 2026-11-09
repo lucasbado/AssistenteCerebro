@@ -40,6 +40,15 @@ def resposta_pendente(texto):
         r')', t))
 
 
+def texto_legivel(texto):
+    """Corrige separadores de parágrafos enviados com escape duplo pelo modelo."""
+    partes = re.split(r'(```[\s\S]*?(?:```|$)|`[^`\n]+`)', texto)
+    for i in range(0, len(partes), 2):
+        partes[i] = re.sub(r'(?<!\\)(?:\\r)?\\n(?=\s*(?:\\n|\d+[.)]\s|[-*]\s|[A-ZÀ-Ý]|$))',
+                           '\n', partes[i])
+    return ''.join(partes)
+
+
 def ler_resposta_conversa(data):
     if not isinstance(data, dict):
         raise ValueError('Resposta de conversa fora do contrato JSON.')

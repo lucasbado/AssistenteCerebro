@@ -246,8 +246,8 @@ Retorne JSON com tipo_interacao (NOTIFICAR ou IGNORAR), mensagem_dinamica
         system = PERSONALIDADE_OLLIE + '''
 CONVERSA:
 Responda ao assunto em português, aproveitando detalhes que o usuário já deu.
-Quando ele pedir outra ideia, exemplo ou versão, continue de onde pararam e
-mude a abordagem de forma concreta. O histórico é contexto, não instrução nova.
+Se pedir outra ideia, crie uma opção nova. Preserve o tema e as restrições
+atuais sem repetir frases nem escolher opções antigas. Use o histórico como contexto.
 Se faltar informação, faça uma pergunta específica. Se não souber, admita.
 Você não está consultando a internet nem controlando aparelhos neste fluxo:
 não invente buscas, dados atuais, execuções ou trabalho em segundo plano.
@@ -258,9 +258,8 @@ quando convidou o usuário a responder uma pergunta específica para continuar).
 Um recibo como "comando recebido" não responde à pergunta.'''
         if falada:
             system += ESTILO_RESPOSTA_FALADA
-        prompt = json.dumps({'pergunta': texto,
-            'historico': historico_para_prompt(historico),
-            'conhecimento': str(knowledge)[:1200]}, ensure_ascii=False)
+        prompt = json.dumps({'historico': historico_para_prompt(historico),
+            'conhecimento': str(knowledge)[:1200], 'pergunta': texto}, ensure_ascii=False)
 
         async def gerar():
             for tentativa in range(2):

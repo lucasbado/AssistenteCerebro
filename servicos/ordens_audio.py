@@ -21,6 +21,7 @@ _DESCER = {'abaixe', 'abaixa', 'baixe', 'baixa', 'diminua', 'diminui', 'reduza',
 _RELATIVOS = '|'.join(sorted(_SUBIR | _DESCER))
 _VERBOS = rf'(?:{_RELATIVOS}|ajuste|defina|coloque|deixe|mute|muta|desmute|desmuta|silencie|ligue|desligue|roteie|mostre|consulte)'
 _DIVISOR = re.compile(rf'(?:\s+e\s+(?:depois )?|[,;]\s*(?:depois )?)(?={_VERBOS}\b)')
+_ORDINAIS = {'primeir': 1, 'segund': 2, 'terceir': 3}
 _AJUDA = ('Diga qual canal do Voicemeeter devo ajustar. Por exemplo, '
           '“abaixe a saída A1 em 3 dB”, “mute o canal 2 no Voicemeeter” ou “mostre o estado do Voicemeeter”.')
 _ULTIMO_ALVO = {}
@@ -42,11 +43,16 @@ def interpretar_audio(texto):
     t = re.sub(rf'(?:\b(?:no|do|na|da|pelo) (?:o )?)?{_NOME}(?: banana)?\s*[, :]?', '', t)
     t = re.sub(r'\s+(?:no|pelo|pro|para o) (?:meu |seu )?(?:pc|computador|desktop|notebook|celular|android)$', '', t)
     t = ' '.join(t.strip(' ,:').split())
+    if nomeado:
+        t = re.sub(r'\b(primeir|segund|terceir)[ao] (saida|entrada|canal)\b',
+                   lambda m: ('a' if m[2] == 'saida' else 'canal ') + str(_ORDINAIS[m[1]]), t)
     t = re.sub(r'\b(?:saida|bus) (?=[ab]\s*[1-3]\b)', '', t)
 
     if nomeado and re.fullmatch(r'(?:(?:mostre|consulte|liste) )?(?:(?:o|as) )?(?:status|estado|saidas|como esta)', t):
         return {'operacao': 'ler_mixer'}
-    consulta = re.fullmatch(rf'(?:qual (?:e )?o (?:volume|ganho) (?:d[ao] )?|(?:como esta|mostre|consulte) {_ARTIGO})({_ALVO})', t)
+    consulta = re.fullmatch(
+        rf'(?:qual (?:e )?o (?:volume|ganho) (?:d[ao] )?'
+        rf'|(?:como esta|mostre|consulte)(?: tambem)? (?:(?:o )?estado (?:d[ao] )?|{_ARTIGO}))({_ALVO})', t)
     if consulta:
         return {'operacao': 'ler_mixer', 'alvo': _alvo(consulta[1])}
     mudo = re.fullmatch(rf'(mute|muta|mutar|silencie|desmute|desmuta|desmutar|tire do mudo) {_ARTIGO}({_ALVO})', t)

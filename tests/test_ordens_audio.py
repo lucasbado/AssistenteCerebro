@@ -67,3 +67,10 @@ async def test_mixer_estruturado_exige_fluxo_explicito_de_voz_ou_chat():
     resultado = await central_alertas.enviar_comando_pc({'comando': 'audio_controle',
         'parametro': json.dumps({'id_comando': 'teste', 'operacao': 'mudo_mixer', 'alvo': 'A1', 'valor': 1})})
     assert resultado['status'] == 'erro'
+
+
+def test_consulta_entende_ordinais_comuns_na_transcricao():
+    assert ordens_audio.interpretar_audio('Mostre a primeira saída do Voicemeeter') == {
+        'operacao': 'ler_mixer', 'alvo': 'A1'}
+    assert ordens_audio.interpretar_audio('mostre também o estado da segunda saída do Voicemeeter') == {
+        'operacao': 'ler_mixer', 'alvo': 'A2'}
