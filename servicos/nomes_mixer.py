@@ -1,7 +1,7 @@
 """Nomes falados para os canais do Voicemeeter Banana."""
 import re
 
-from servicos.controle_casa import normalizar
+from servicos.linguagem_relogio import numeros_falados
 
 SAIDAS = ('A1', 'A2', 'A3', 'B1', 'B2')
 SAIDAS_FISICAS = SAIDAS[:3]
@@ -18,7 +18,7 @@ NOMES = {
 
 
 def nome_falado(texto):
-    nome = normalizar(texto)
+    nome = numeros_falados(texto)
     nome = re.sub(r'\bvoice[e ]*m[e]+ter\b', 'voicemeeter', nome)
     return re.sub(r'^(?:(?:o|a(?!\s+[1-3]\b)|no|na|do|da|pro|pra|para)\s+)+', '', nome).strip(' "“”')
 

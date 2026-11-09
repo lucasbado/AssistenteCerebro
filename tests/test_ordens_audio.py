@@ -137,3 +137,14 @@ async def test_apelido_e_confirmado_no_mixer_e_resolvido_do_catalogo(desk_audio)
     assert mixer.ler('Strip[3].A3') == 1
     await reflexo.processar(comando('Quais são os canais do Voicemeeter?'))
     assert 'Áudio Jogo (Voicemeeter AUX Input)' in responder.await_args.args[1]
+
+
+async def test_apelidos_nao_podem_usar_codigo_de_outro_canal_por_extenso(desk_audio):
+    mixer, estado, responder = desk_audio
+    reflexo = AgenteReflexo()
+    await reflexo.processar(comando('Apelide o Voicemeeter AUX de Canal Dois'))
+    assert not mixer.escritas and not estado.ler().apelidos_mixer
+    assert 'já pertence a outro canal' in responder.await_args.args[1]
+    await reflexo.processar(comando('Apelide o Voicemeeter AUX de Jogo Dois'))
+    await reflexo.processar(comando('Mova o Jogo 2 para o Echo Dot'))
+    assert mixer.ler('Strip[4].A2') == 1 and mixer.ler('Strip[4].A1') == 0
