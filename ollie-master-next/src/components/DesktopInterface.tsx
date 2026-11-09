@@ -15,6 +15,8 @@ import './desktop-interface.css';
 export type DesktopPage = 'chat' | 'computer' | 'activity' | 'automation' | 'agenda' | 'tasks' | 'messages';
 export type DesktopMessage = { id: string; role: 'user' | 'ollie'; text: string; time: string; agendaActions?: AgendaAction[]; taskActions?: TaskAction[]; messageActions?: MessageAction[] };
 export type InterventionPolicy = { auto_open_enabled: boolean; min_priority_score: number; whitelist: string[]; blacklist: string[] };
+export type VoiceOption = { id: string; nome: string; genero: string; descricao: string };
+
 type Props = {
   page: DesktopPage; onPage: (page: DesktopPage) => void; connected: boolean; thinking: boolean;
   cpu: number | null; ram: number | null; vision: { process: string; title: string };
@@ -22,6 +24,7 @@ type Props = {
   whatsappDrafts: WhatsAppDraft[]; onRemoveWhatsAppDraft: (id: string) => void;
   draft: string; onDraft: (value: string) => void; onSend: () => void; inputRef: RefObject<HTMLInputElement | null>;
   voiceEnabled: boolean; onToggleVoice: () => void; onTestVoice: () => void;
+  selectedVoice: string; voicesList: VoiceOption[]; onUpdateVoice: (voice: string) => void;
   listeningEnabled: boolean; phase: ListeningPhase; level: number; heard: string;
   devices: { id: number; name: string; default: boolean }[]; device: number | null;
   onListening: (enabled: boolean) => void; onDevice: (id: number | null) => void; onListenNow: () => void; onCancel: () => void;
@@ -152,9 +155,14 @@ export default function DesktopInterface(p: Props) {
           <section className="desktop-panel"><div className="panel-heading"><Cpu size={18} /><h2>Desempenho</h2></div><Usage label="Processador" value={p.cpu} /><Usage label="Memória RAM" value={p.ram} purple /><p className="help-text">{p.cpu === null ? 'Aguardando os dados do computador.' : 'Leituras recebidas do monitor local.'}</p></section>
           <section className="desktop-panel microphone-panel"><div className="panel-heading"><Mic size={18} /><h2>Voz e microfone</h2><span className="setting-badge">{p.listeningEnabled ? 'Ativada' : 'Desligada'}</span></div>
             <div className="setting-row"><div><strong>Chamar com “Ei Ollie”</strong><p>O PC escuta a chamada pelo microfone selecionado.</p></div><input type="checkbox" role="switch" aria-label="Ativação por voz no PC" checked={p.listeningEnabled} onChange={e => p.onListening(e.target.checked)} /></div>
+            <label className="field-label" htmlFor="ollie-voice-select">Voz da Ollie (PC)</label>
+            <select id="ollie-voice-select" value={p.selectedVoice} onChange={e => p.onUpdateVoice(e.target.value)}>
+              {p.voicesList.length === 0 && <option value="Puck">Puck (Masculino · Gemini Natural)</option>}
+              {p.voicesList.map(v => <option key={v.id} value={v.id}>{v.nome} ({v.genero}) · {v.descricao}</option>)}
+            </select>
             <label className="field-label" htmlFor="ollie-input-device">Entrada de áudio</label><select id="ollie-input-device" value={p.device ?? ''} onChange={e => p.onDevice(e.target.value === '' ? null : Number(e.target.value))}>
               <option value="">Padrão do Windows{p.devices.find(d => d.default) ? ` · ${p.devices.find(d => d.default)!.name}` : ''}</option>{p.devices.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select><div className="microphone-meter"><span>Nível de entrada</span><meter min={0} max={1} value={Math.min(1, p.level * 8)} aria-label="Nível do microfone" /></div><p className="help-text">No Voicemeeter, escolha a saída de captura que recebe seu microfone, como Out B1.</p>
+            </select><div className="microphone-meter"><span>Nível de entrada</span><meter min={0} max={1} value={Math.min(1, p.level * 8)} aria-label="Nível do microfone" /></div><p className="help-text">Escolha a voz desejada para as respostas do PC e a entrada do microfone.</p>
             <div className="panel-actions"><button className="button" onClick={p.onTestVoice}><Volume2 size={16} />Testar voz da Ollie</button><button className="button button-subtle" disabled={!p.listeningEnabled || p.phase !== 'wake' || !p.connected} onClick={p.onListenNow}><Mic size={16} />Falar agora</button></div>
           </section>
           <section className="desktop-panel quick-actions"><div className="panel-heading"><Settings2 size={18} /><h2>Conexões do PC</h2></div><button className="action-row" onClick={p.onScan}><span><Monitor size={18} />Analisar aplicativos do PC</span><ChevronRight size={16} /></button><button className="action-row" onClick={p.onHardware}><span><Database size={18} />Reconectar controles de hardware</span><ChevronRight size={16} /></button><button className="action-row" onClick={p.onReconnect}><span><RefreshCw size={18} />Reconectar ao servidor</span><ChevronRight size={16} /></button></section>

@@ -171,6 +171,51 @@ export default function App() {
   const [routineBusy, setRoutineBusy] = useState<string | null>(null);
   const [discoveredRoutines, setDiscoveredRoutines] = useState<any[]>([]);
 
+  const [selectedVoice, setSelectedVoice] = useState<string>('Puck');
+  const [voicesList, setVoicesList] = useState<{ id: string; nome: string; genero: string; descricao: string }[]>([]);
+
+  const fetchVoiceConfig = async () => {
+    try {
+      const apiUrl = await invoke<string>("get_api_url");
+      const res = await authenticatedFetch(`${apiUrl}/api/v1/voice/voices`);
+      const data = await res.json();
+      if (data.pc_config?.voice) {
+        setSelectedVoice(data.pc_config.voice);
+      }
+      const geminiVoices = (data.gemini_voices || []).map((v: any) => ({
+        id: v.id,
+        nome: `${v.nome} (Gemini)`,
+        genero: v.genero,
+        descricao: v.descricao
+      }));
+      const edgeVoices = (data.edge_voices || []).map((v: any) => ({
+        id: v.id,
+        nome: `${v.nome} (Edge)`,
+        genero: v.genero,
+        descricao: v.descricao
+      }));
+      setVoicesList([...geminiVoices, ...edgeVoices]);
+    } catch (e) {
+      console.error("Erro ao buscar vozes:", e);
+    }
+  };
+
+  const updateVoiceConfig = async (voice: string) => {
+    setSelectedVoice(voice);
+    try {
+      const apiUrl = await invoke<string>("get_api_url");
+      await authenticatedFetch(`${apiUrl}/api/v1/voice/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voice, provider: 'auto', rate: 1.0, pitch: 1.0 })
+      });
+      addLog(`Voz da Ollie alterada para: ${voice}`, 'text-neon-cyan');
+      setNotice({ text: `Voz da Ollie alterada para ${voice}`, kind: 'success' });
+    } catch (error) {
+      addLog(`Erro ao atualizar voz: ${error}`, 'text-neon-orange');
+    }
+  };
+
   const fetchDiscovered = async () => {
     setRoutinesLoading(true); setRoutinesError('');
     try {
@@ -582,6 +627,7 @@ export default function App() {
           if (data.tipo_ws === "REGISTRO_OK") {
             addLog("✅ Autenticação confirmada pelo cérebro.", "text-neon-cyan");
             setIsConnected(true);
+            void fetchVoiceConfig();
           }
 
           if (data.tipo_ws === "STATUS_PC" && data.id === "PC_MASTER") {
@@ -651,6 +697,7 @@ export default function App() {
       void listening.current!.speakExternal('Oi! Sou a Ollie. Essa é minha voz mais natural no computador.')
         .catch(() => setNotice({ text: 'Não consegui reproduzir o teste de voz.', kind: 'error' }));
     }}
+    selectedVoice={selectedVoice} voicesList={voicesList} onUpdateVoice={voice => void updateVoiceConfig(voice)}
     listeningEnabled={listening.current.enabled} phase={listeningPhase} level={microphoneLevel} heard={heardText}
     devices={inputDevices} device={inputDevice} onListening={enabled => void changeListening(enabled)}
     onDevice={device => { setInputDevice(device); inputDeviceRef.current = device; void changeListening(listening.current!.enabled, device); }}
