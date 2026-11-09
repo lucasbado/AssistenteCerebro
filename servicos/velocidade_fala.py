@@ -2,7 +2,10 @@
 Ajuste de velocidade da fala de Ollie sem alterar o tom da voz (Algoritmo SOLA).
 Mantém a altura da voz natural mesmo em velocidades mais altas (ex: 1.25x, 1.5x).
 """
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 VELOCIDADE_PADRAO = 1.0
 TAXA_AMOSTRAGEM = 24_000  # 24 kHz mono PCM 16-bit
@@ -12,6 +15,8 @@ class Acelerador:
     """Acelera PCM 16-bit sem alterar o tom, aceitando áudio em blocos."""
 
     def __init__(self, fator: float = VELOCIDADE_PADRAO, taxa: int = TAXA_AMOSTRAGEM):
+        if np is None:
+            raise RuntimeError("Numpy não instalado.")
         self.fator = max(1.0, float(fator))
         self.taxa = int(taxa)
         self.janela = int(self.taxa * 0.030)  # Janela de 30ms
@@ -71,14 +76,14 @@ class Acelerador:
 
     @staticmethod
     def _para_bytes(pedacos: list) -> bytes:
-        if not pedacos:
+        if not pedacos or np is None:
             return b""
         arr = np.concatenate(pedacos)
         arr = np.clip(arr, -32768.0, 32767.0)
         return arr.astype(np.int16).tobytes()
 
     def empurrar(self, raw: bytes) -> bytes:
-        if not raw or self.fator <= 1.001:
+        if not raw or self.fator <= 1.001 or np is None:
             return raw
         if self._meio_byte:
             raw = self._meio_byte + raw
@@ -93,7 +98,7 @@ class Acelerador:
         return self._para_bytes(self._moer())
 
     def fim(self) -> bytes:
-        if self.fator <= 1.001:
+        if self.fator <= 1.001 or np is None:
             return b""
         sobra = []
         if self._cauda is not None:
@@ -109,8 +114,8 @@ class Acelerador:
 
 
 def acelerar_pcm16(raw: bytes, fator: float = VELOCIDADE_PADRAO, taxa: int = TAXA_AMOSTRAGEM) -> bytes:
-    """Acelera um buffer de áudio PCM16. Se ocorrer falha, retorna o áudio original intacto."""
-    if not raw or float(fator) <= 1.001:
+    """Acelera um buffer de áudio PCM16. Se ocorrer falha ou faltar o numpy, retorna o áudio original."""
+    if not raw or float(fator) <= 1.001 or np is None:
         return raw
     try:
         acelerador = Acelerador(fator, taxa)
