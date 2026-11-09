@@ -26,7 +26,7 @@ router = APIRouter()
 
 CONFIG_TOML_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.toml")
 DEFAULT_VOICE = DEFAULT_GEMINI_VOICE
-HEADERS = {"Content-Disposition": "attachment; filename=voice.mp3", "Cache-Control": "no-store"}
+HEADERS_BASE = {"Content-Disposition": "attachment; filename=voice.mp3", "Cache-Control": "no-store"}
 
 _CONFIG_VOZ_MEMORIA = {}
 
@@ -86,7 +86,6 @@ def salvar_config_voz_pc(novos_dados: dict):
         logger.warning("[VoiceAPI] Aviso ao salvar no config.toml (mantido em memória): %s", e)
 
 
-
 class PedidoDeVoz(BaseModel):
     text: str
     voice: str = None
@@ -115,12 +114,22 @@ async def blocos_de_audio(communicate):
                 yield bloco["data"]
 
 
-async def sintetizar_edge(pedido: PedidoDeVoz, texto: str, config_pc: dict):
+async def sintetizar_edge(pedido: PedidoDeVoz, texto: str, config_pc: dict, gemini_erro: str = None):
     """Sintetiza voz utilizando o provedor Edge TTS."""
     voz_solicitada = pedido.voice or config_pc["voice"]
     voice = obter_voz_edge_fallback(voz_solicitada)
     rate_val = pedido.rate if pedido.rate is not None else config_pc["rate"]
     pitch_val = pedido.pitch if pedido.pitch is not None else config_pc["pitch"]
+
+    headers = dict(HEADERS_BASE)
+    headers.update({
+        "X-Voice-Provider": "edge",
+        "X-Voice-Used": voice,
+        "X-Voice-Fallback": "true" if gemini_erro else "false",
+        "X-Gemini-Available": "true" if gemini_tts_service.disponivel() else "false"
+    })
+    if gemini_erro:
+        headers["X-Gemini-Error"] = gemini_erro[:150]
 
     blocos = None
     transferido = False
@@ -136,13 +145,13 @@ async def sintetizar_edge(pedido: PedidoDeVoz, texto: str, config_pc: dict):
                     yield primeiro
                     async for bloco in blocos:
                         yield bloco
-            resposta = StreamingResponse(audio(), media_type="audio/mpeg", headers=HEADERS)
+            resposta = StreamingResponse(audio(), media_type="audio/mpeg", headers=headers)
             transferido = True
             return resposta
         dados = bytearray(primeiro)
         async for bloco in blocos:
             dados.extend(bloco)
-        return Response(bytes(dados), media_type="audio/mpeg", headers=HEADERS)
+        return Response(bytes(dados), media_type="audio/mpeg", headers=headers)
     except Exception as erro:
         logger.warning("Edge TTS indisponível (%s).", type(erro).__name__)
         raise HTTPException(status_code=500, detail="Não consegui gerar o áudio.") from erro
@@ -164,21 +173,60 @@ async def sintetizar(pedido: PedidoDeVoz):
     voice_ativa = pedido.voice or config_pc["voice"]
     rate_val = pedido.rate if pedido.rate is not None else config_pc["rate"]
 
+    gemini_erro_msg = None
+
     # Tentativa com Gemini se provider for 'auto' ou 'gemini'
     if provider_ativo in ("auto", "gemini") and gemini_tts_service.disponivel():
         try:
             logger.info("🎙️ [VoiceAPI] Sintetizando áudio via Gemini TTS (%s)...", voice_ativa)
             audio_bytes = await gemini_tts_service.sintetizar(texto, voice=voice_ativa, rate=rate_val)
-            return Response(audio_bytes, media_type="audio/mpeg", headers=HEADERS)
+            headers = dict(HEADERS_BASE)
+            headers.update({
+                "X-Voice-Provider": "gemini",
+                "X-Voice-Used": obter_voz_gemini(voice_ativa),
+                "X-Voice-Fallback": "false",
+                "X-Gemini-Available": "true"
+            })
+            return Response(audio_bytes, media_type="audio/mpeg", headers=headers)
         except Exception as erro:
-            logger.warning("⚠️ [VoiceAPI] Falha no Gemini TTS (%s). Ativando fallback para Edge TTS.", type(erro).__name__)
+            gemini_erro_msg = str(erro)
+            logger.warning("⚠️ [VoiceAPI] Falha no Gemini TTS (%s). Ativando fallback para Edge TTS.", erro)
             if provider_ativo == "gemini":
                 # Se o usuário exigiu estritamente o Gemini e este falhou
                 raise HTTPException(status_code=500, detail=f"Falha ao sintetizar voz via Gemini: {erro}") from erro
 
     # Fallback / Provedor padrão: Edge TTS
     logger.info("🎙️ [VoiceAPI] Sintetizando áudio via Edge TTS...")
-    return await sintetizar_edge(pedido, texto, config_pc)
+    return await sintetizar_edge(pedido, texto, config_pc, gemini_erro=gemini_erro_msg)
+
+
+@router.get("/diagnostic")
+async def diagnostico_voz():
+    """Realiza um teste em tempo real com a API do Gemini e retorna o status detalhado da voz."""
+    gemini_ok = gemini_tts_service.disponivel()
+    gemini_teste_status = "não configurado"
+    gemini_erro = None
+
+    if gemini_ok:
+        try:
+            test_audio = await gemini_tts_service.sintetizar("Teste de diagnóstico da Ollie.", voice="Kore")
+            gemini_teste_status = f"sucesso (áudio gerado: {len(test_audio)} bytes)"
+        except Exception as e:
+            gemini_teste_status = "falha na chamada da API"
+            gemini_erro = str(e)
+
+    vozes_femininas_gemini = [v["nome"] for v in LISTA_VOZES_GEMINI if v["genero"] == "feminino"]
+    vozes_masculinas_gemini = [v["nome"] for v in LISTA_VOZES_GEMINI if v["genero"] == "masculino"]
+
+    return {
+        "status": "ok",
+        "gemini_available": gemini_ok,
+        "gemini_test_status": gemini_teste_status,
+        "gemini_test_error": gemini_erro,
+        "female_gemini_voices": vozes_femininas_gemini,
+        "male_gemini_voices": vozes_masculinas_gemini,
+        "active_pc_config": carregar_config_voz_pc()
+    }
 
 
 @router.get("/voices")

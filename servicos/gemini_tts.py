@@ -8,13 +8,21 @@ from servicos.velocidade_fala import acelerar_pcm16
 
 logger = logging.getLogger("GeminiTTS")
 
-# Lista Estruturada de Vozes Gemini (Multimodal Audio Output)
+# Lista Estruturada de Vozes Gemini (Multimodal Audio Output - Masculinas e Femininas)
 LISTA_VOZES_GEMINI = [
+    # Vozes Femininas Gemini
+    {"id": "Kore", "nome": "Kore", "genero": "feminino", "descricao": "Voz Gemini Natural (Feminina - Suave)", "fallback_edge": "pt-BR-ThalitaMultilingualNeural"},
+    {"id": "Aoede", "nome": "Aoede", "genero": "feminino", "descricao": "Voz Gemini Natural (Feminina - Expressiva)", "fallback_edge": "pt-BR-FranciscaNeural"},
+    {"id": "Leda", "nome": "Leda", "genero": "feminino", "descricao": "Voz Gemini Natural (Feminina - Elegante)", "fallback_edge": "pt-BR-ThalitaMultilingualNeural"},
+    {"id": "Despina", "nome": "Despina", "genero": "feminino", "descricao": "Voz Gemini Natural (Feminina - Melódica)", "fallback_edge": "pt-BR-FranciscaNeural"},
+    {"id": "Algieba", "nome": "Algieba", "genero": "feminino", "descricao": "Voz Gemini Natural (Feminina - Acolhedora)", "fallback_edge": "pt-BR-ThalitaMultilingualNeural"},
+    {"id": "Callisto", "nome": "Callisto", "genero": "feminino", "descricao": "Voz Gemini Natural (Feminina - Amigável)", "fallback_edge": "pt-BR-FranciscaNeural"},
+    {"id": "Rhea", "nome": "Rhea", "genero": "feminino", "descricao": "Voz Gemini Natural (Feminina - Calma)", "fallback_edge": "pt-BR-ThalitaMultilingualNeural"},
+    
+    # Vozes Masculinas Gemini
     {"id": "Puck", "nome": "Puck", "genero": "masculino", "descricao": "Voz Gemini Natural (Masculina - Enérgica)", "fallback_edge": "pt-BR-AntonioNeural"},
     {"id": "Charon", "nome": "Charon", "genero": "masculino", "descricao": "Voz Gemini Natural (Masculina - Profunda)", "fallback_edge": "pt-BR-AntonioNeural"},
     {"id": "Fenrir", "nome": "Fenrir", "genero": "masculino", "descricao": "Voz Gemini Natural (Masculina - Forte)", "fallback_edge": "pt-BR-AntonioNeural"},
-    {"id": "Kore", "nome": "Kore", "genero": "feminino", "descricao": "Voz Gemini Natural (Feminina - Suave)", "fallback_edge": "pt-BR-ThalitaMultilingualNeural"},
-    {"id": "Aoede", "nome": "Aoede", "genero": "feminino", "descricao": "Voz Gemini Natural (Feminina - Expressiva)", "fallback_edge": "pt-BR-FranciscaNeural"},
 ]
 
 # Lista Estruturada de Vozes Edge TTS (Microsoft Edge TTS)
@@ -30,7 +38,7 @@ MAPEAMENTO_EDGE_PARA_GEMINI = {v["id"]: v["fallback_gemini"] for v in LISTA_VOZE
 MAPEAMENTO_EDGE_PARA_GEMINI["pt-BR-ThalitaNeural"] = "Kore"
 
 VOIZES_GEMINI_PADRAO = {v["id"] for v in LISTA_VOZES_GEMINI}
-DEFAULT_GEMINI_VOICE = os.getenv("GEMINI_VOICE", "Puck")
+DEFAULT_GEMINI_VOICE = os.getenv("GEMINI_VOICE", "Kore")
 DEFAULT_EDGE_VOICE = "pt-BR-ThalitaMultilingualNeural"
 
 INSTRUCAO_SISTEMA_VOZ_HUMANA = (
@@ -88,8 +96,12 @@ class GeminiTTSService:
         try:
             audio_bytes = await self._sintetizar_gemini_rest(texto_processado, voz_escolhida)
         except Exception as erro_gemini:
-            logger.warning("[GeminiTTS] Falha na síntese Gemini REST (%s). Tentando Google Cloud TTS fallback...", type(erro_gemini).__name__)
-            audio_bytes = await self._sintetizar_google_cloud_tts_rest(texto_processado, voz_escolhida)
+            logger.warning("[GeminiTTS] Falha na síntese Gemini REST (%s: %s). Tentando Google Cloud TTS fallback...", type(erro_gemini).__name__, erro_gemini)
+            try:
+                audio_bytes = await self._sintetizar_google_cloud_tts_rest(texto_processado, voz_escolhida)
+            except Exception as erro_cloud:
+                logger.error("[GeminiTTS] Ambas as chamadas do Gemini falharam (%s). Ativando fallback Edge.", erro_cloud)
+                raise erro_gemini from erro_cloud
 
         if rate > 1.001:
             try:
@@ -118,9 +130,6 @@ class GeminiTTSService:
             ],
             "generationConfig": {
                 "responseMimeType": "audio/mp3",
-                "thinkingConfig": {
-                    "thinkingBudget": 0
-                },
                 "speechConfig": {
                     "voiceConfig": {
                         "prebuiltVoiceConfig": {
@@ -133,7 +142,9 @@ class GeminiTTSService:
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(url, json=payload)
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                logger.error("[GeminiTTS] Erro Gemini API HTTP %s: %s", resp.status_code, resp.text[:300])
+                resp.raise_for_status()
             data = resp.json()
 
         candidates = data.get("candidates", [])
@@ -168,7 +179,9 @@ class GeminiTTSService:
 
         async with httpx.AsyncClient(timeout=12.0) as client:
             resp = await client.post(url, json=payload)
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                logger.error("[GeminiTTS] Erro Cloud TTS API HTTP %s: %s", resp.status_code, resp.text[:300])
+                resp.raise_for_status()
             data = resp.json()
 
         audio_b64 = data.get("audioContent")
