@@ -30,6 +30,7 @@ ACOES_PC = {
     'capturar_tela': 'capturar a tela', 'system_status': 'consultar o uso de CPU, memória e disco',
     'criar_pasta': 'criar a pasta', 'copiar_arquivo': 'copiar o arquivo', 'mover_arquivo': 'mover o arquivo',
     'renomear_arquivo': 'renomear o arquivo', 'compactar_arquivo': 'compactar o arquivo',
+    'criar_arquivo': 'criar o arquivo', 'ler_arquivo': 'ler o arquivo', 'acrescentar_texto': 'acrescentar o texto',
     'prever_organizacao': 'preparar a prévia', 'organizar_pasta': 'organizar a pasta',
     'desfazer_organizacao': 'desfazer a organização', 'lixeira_arquivo': 'enviar o arquivo à Lixeira',
     'restaurar_lixeira': 'restaurar o arquivo da Lixeira',
@@ -90,7 +91,8 @@ def _resposta_arquivo(comando, resultado):
     nomes = _juntar([f'“{item}”' for item in itens])
     operacao = {'pasta_criada': 'Criei a pasta', 'copiado': 'Copiei para', 'movido': 'Movi para',
                 'renomeado': 'Renomeei para', 'compactado': 'Salvei o ZIP em',
-                'na_lixeira': 'Enviei à Lixeira', 'restaurado': 'Restaurei'}.get(estado)
+                'na_lixeira': 'Enviei à Lixeira', 'restaurado': 'Restaurei',
+                'arquivo_criado': 'Criei', 'texto_acrescentado': 'Acrescentei o texto em'}.get(estado)
     if operacao:
         resposta = f'{operacao} {nomes} no PC.'
         if estado == 'na_lixeira':
@@ -101,6 +103,12 @@ def _resposta_arquivo(comando, resultado):
         return f'{nomes} já existe. Escolha outro nome ou destino.'
     if estado == 'origem_ausente':
         return 'O arquivo não está nesse caminho. Confira a pasta e o nome completo.'
+    if estado == 'lido':
+        conteudo = resultado['arquivo']['texto']
+        if not conteudo:
+            return f'{nomes} está vazio.'
+        leitura = 'Início do arquivo' if resultado['arquivo']['parcial'] else 'Conteúdo do arquivo'
+        return f'{leitura} {nomes}\n\n{conteudo}'
     if estado == 'previa_organizacao' and itens:
         pasta = itens[0].split('/', 1)[0]
         return f'Prévia de destinos: {nomes}. Para mover esses arquivos, diga “Aplique a organização em {pasta}”.'

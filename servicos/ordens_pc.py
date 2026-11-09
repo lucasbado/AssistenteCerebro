@@ -3,7 +3,7 @@ import json
 import re
 import uuid
 
-from servicos.arquivos_pc import COMANDOS_ARQUIVOS, EXTENSOES, parametros_arquivo, parametros_operacao
+from servicos.arquivos_pc import COMANDOS_ARQUIVOS, COMANDOS_TEXTO, EXTENSOES, parametros_arquivo, parametros_operacao
 from servicos.controle_casa import normalizar
 from servicos.roteamento_pedidos import contexto_pedido, destino_explicito, dispositivo_origem, responder_pedido
 
@@ -20,6 +20,16 @@ TIPOS = {'pdf': '.pdf', 'planilha': '.xlsx', 'apresentacao': '.pptx'}
 
 _LOCAL = rf'\s+(?:em|na|no|de|da|do|dos)\s+({PASTA})'
 _NOME = r'(?:["“][^"”]+["”]|[^"“”]+?)'
+_TEXTO_LITERAL = r'("[^"]*"|“[^”]*”)'
+_ORDENS_TEXTO = (
+    ('criar_arquivo', rf'(?:crie|criar|cria)\s+(?:(?:um|o)\s+)?arquivo\s+({_NOME}){_LOCAL}(?:\s+com\s+(?:o\s+)?texto\s+{_TEXTO_LITERAL})?'),
+    ('ler_arquivo', rf'(?:(?:leia|ler)\s+(?:(?:o\s+)?conte[úu]do\s+d[oe]\s+)?|mostre\s+o\s+conte[úu]do\s+d[oe]\s+)(?:o\s+)?(?:arquivo\s+)?({_NOME}){_LOCAL}'),
+    ('acrescentar_texto', rf'(?:acrescente|adicione|escreva)\s+(?:o\s+texto\s+)?{_TEXTO_LITERAL}\s+(?:ao|a|no|em)\s+(?:arquivo\s+)?({_NOME}){_LOCAL}'),
+)
+_DITADO = (
+    ('criar_arquivo', rf'(?:crie|criar|cria)\s+(?:(?:um|o)\s+)?arquivo\s+({_NOME}){_LOCAL}\s+com\s+(?:o\s+)?texto\s+([^"“].*)'),
+    ('acrescentar_texto', rf'(?:acrescente|adicione|escreva)\s+(?:ao|no|em)\s+(?:arquivo\s+)?({_NOME}){_LOCAL}[, ]+o\s+texto\s+([^"“].*)'),
+)
 _OPERACOES = (
     ('criar_pasta', rf'(?:crie|criar|cria)\s+(?:(?:uma|a)\s+)?pasta\s+(?:chamada\s+)?({_NOME}){_LOCAL}', None),
     ('copiar_arquivo', rf'(?:copie|copiar|copia)\s+(?:o\s+)?(?:arquivo\s+)?({_NOME}){_LOCAL}\s+(?:para|pra)\s+(?:a\s+)?({PASTA})', 'pasta_destino'),
@@ -37,6 +47,19 @@ _ORGANIZACAO = (
 
 
 def _interpretar_operacao_arquivo(texto):
+    for comando, padrao in _ORDENS_TEXTO:
+        pedido = re.fullmatch(padrao, texto, re.I)
+        if pedido:
+            if comando == 'acrescentar_texto':
+                literal, nome, pasta = pedido.groups()
+            else:
+                nome, pasta, *extras = pedido.groups()
+                literal = extras[0] if extras else None
+            parametro = {'nome': nome.strip(' "“”'), 'pasta': pasta}
+            if comando != 'ler_arquivo':
+                parametro['texto'] = literal[1:-1] if literal else ''
+            parametros_operacao(comando, parametro)
+            return comando, json.dumps(parametro, ensure_ascii=False)
     for comando, padrao in _ORGANIZACAO:
         pedido = re.fullmatch(padrao, texto, re.I)
         if pedido:
@@ -58,6 +81,12 @@ def _interpretar_operacao_arquivo(texto):
 
 def interpretar_ordem_pc(texto):
     texto = re.sub(r'^(?:ei\s+)?ollie\b[,\s]*|^por favor\b[,\s]*', '', str(texto).strip(), flags=re.I)
+    for comando, padrao in _DITADO:
+        pedido = re.fullmatch(padrao, texto, re.I | re.S)
+        if pedido:
+            parametro = {'nome': pedido[1].strip(' "“”'), 'pasta': pedido[2], 'texto': pedido[3]}
+            parametros_operacao(comando, parametro)
+            return comando, json.dumps(parametro, ensure_ascii=False)
     texto = re.sub(r'[,\s]+por favor$', '', texto.rstrip('.!?').strip(), flags=re.I).strip()
     abrir_depois = re.search(rf'(?:,\s*|\s+e\s+(?:depois\s+)?)'
                              rf'{ABRIR}(?:-o|-a|\s+(?:o arquivo|ele|ela))?'
@@ -114,7 +143,12 @@ async def encaminhar_ordem_pc(evento):
         if not ordem:
             return False
         comando, parametro = ordem
-        destino = destino_explicito(texto)
+        texto_destino = texto
+        if comando in COMANDOS_TEXTO and (literal := json.loads(parametro).get('texto')):
+            inicio = texto.rfind(literal)
+            if inicio >= 0:
+                texto_destino = texto[:inicio] + texto[inicio + len(literal):]
+        destino = destino_explicito(texto_destino)
         if destino == 'MOBILE' or (not destino and dispositivo_origem(evento) == 'MOBILE'
                                   and comando in COMANDOS_JANELAS | {'capturar_tela'}):
             await responder_pedido(evento, 'Esse controle é do PC. Diga “no PC” para executar lá.')

@@ -38,6 +38,34 @@ from servicos.ordens_pc import interpretar_ordem_pc
 from servicos.pc_control_service import PcControlService
 
 
+def test_criar_acrescentar_e_ler_texto_sem_sobrescrever(tmp_path):
+    from servicos.respostas_acoes import resumir_resultados
+
+    def executar_pedido(pedido):
+        comando, parametro = interpretar_ordem_pc(pedido)
+        resultado = executar_arquivo(comando, parametro, None, {'Downloads': tmp_path})
+        assert validar_resultado_arquivo(comando, resultado)
+        return comando, resultado
+
+    assert executar_pedido('Crie o arquivo notas.txt em Downloads com o texto Primeira linha.')[1]['arquivo']['estado'] == 'arquivo_criado'
+    assert executar_pedido('Crie o arquivo notas.txt em Downloads com o texto "outro"')[1]['arquivo']['estado'] == 'destino_existe'
+    executar_pedido('Acrescente ao arquivo notas.txt em Downloads o texto Olá, segunda linha!')
+    comando, resultado = executar_pedido('Leia o arquivo notas.txt em Downloads')
+    assert resultado['arquivo']['texto'] == 'Primeira linha.\nOlá, segunda linha!'
+    resposta = resumir_resultados([{'etapa': {'comando': comando}, 'status': 'concluido', 'resultado': resultado}])
+    assert resposta.endswith(resultado['arquivo']['texto'])
+    assert interpretar_ordem_pc('Mostre os arquivos em Downloads')[0] == 'listar_arquivos'
+
+
+def test_leitura_corta_no_limite_de_caracteres_sem_romper_utf8(tmp_path):
+    (tmp_path / 'longo.txt').write_text('😀' * 1300, encoding='utf-8-sig')
+    comando, parametro = interpretar_ordem_pc('Mostre o conteúdo do arquivo longo.txt em Downloads')
+    resultado = executar_arquivo(comando, parametro, None, {'Downloads': tmp_path})
+    assert validar_resultado_arquivo(comando, resultado)
+    assert resultado['arquivo']['texto'] == '😀' * 1200
+    assert resultado['arquivo']['parcial'] is True
+
+
 def test_operacoes_arquivo_preservam_conteudo_e_nao_sobrescrevem(tmp_path):
     downloads, documentos = tmp_path / 'downloads', tmp_path / 'docs'
     downloads.mkdir()

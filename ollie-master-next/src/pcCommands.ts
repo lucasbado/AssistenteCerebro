@@ -2,6 +2,7 @@ export const fileCommands = new Set([
   'buscar_documentos', 'abrir_arquivo', 'listar_arquivos', 'capturar_tela',
   'criar_pasta', 'copiar_arquivo', 'mover_arquivo', 'renomear_arquivo', 'compactar_arquivo',
   'prever_organizacao', 'organizar_pasta', 'desfazer_organizacao', 'lixeira_arquivo', 'restaurar_lixeira',
+  'criar_arquivo', 'ler_arquivo', 'acrescentar_texto',
 ]);
 
 export function pcCommandParam(command: string, data: Record<string, unknown>): string {
@@ -19,7 +20,7 @@ export function pcCommandParam(command: string, data: Record<string, unknown>): 
   return param;
 }
 
-export type FileResult = { arquivo: { estado: string; itens: string[] } };
+export type FileResult = { arquivo: { estado: string; itens: string[]; texto?: string; parcial?: boolean } };
 export type SystemResult = { sistema: { cpu: number; ram: number; disco: number } };
 
 export function readFileResult(raw: string): FileResult {
@@ -28,6 +29,12 @@ export function readFileResult(raw: string): FileResult {
   if (!file || typeof file.estado !== 'string' || !Array.isArray(file.itens) ||
       file.itens.some((item: unknown) => typeof item !== 'string')) {
     throw new Error('O executor devolveu um resultado de arquivo inválido.');
+  }
+  if (file.estado === 'lido') {
+    if (typeof file.texto !== 'string' || typeof file.parcial !== 'boolean') {
+      throw new Error('A leitura não devolveu conteúdo válido.');
+    }
+    return { arquivo: { estado: file.estado, itens: file.itens, texto: file.texto, parcial: file.parcial } };
   }
   return { arquivo: { estado: file.estado, itens: file.itens } };
 }

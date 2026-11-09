@@ -8,6 +8,7 @@ import tempfile
 import time
 import uuid
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 from servicos.controle_casa import normalizar
@@ -23,8 +24,13 @@ OPERACOES_ARQUIVOS = {
     'renomear_arquivo': 'renomeado', 'compactar_arquivo': 'compactado',
     'prever_organizacao': 'previa_organizacao', 'organizar_pasta': 'organizado',
     'desfazer_organizacao': 'desfeito', 'lixeira_arquivo': 'na_lixeira', 'restaurar_lixeira': 'restaurado',
+    'criar_arquivo': 'arquivo_criado', 'ler_arquivo': 'lido', 'acrescentar_texto': 'texto_acrescentado',
 }
 COMANDOS_ORGANIZACAO = {'prever_organizacao', 'organizar_pasta', 'desfazer_organizacao'}
+COMANDOS_TEXTO = {'criar_arquivo', 'ler_arquivo', 'acrescentar_texto'}
+EXTENSOES_TEXTO = {'.txt', '.md', '.csv'}
+LIMITE_TEXTO = 1200
+LIMITE_EDICAO = 256 * 1024
 COMANDOS_ARQUIVOS = frozenset({'buscar_documentos', 'abrir_arquivo', 'listar_arquivos', 'capturar_tela'} | OPERACOES_ARQUIVOS.keys())
 LIMITE_ITENS = 6
 ESTADOS = {
@@ -106,7 +112,15 @@ def validar_resultado_arquivo(comando, dados):
     if comando not in ESTADOS or not isinstance(dados, dict) or set(dados) != {'arquivo'}:
         return False
     arquivo = dados['arquivo']
-    if not isinstance(arquivo, dict) or set(arquivo) != {'estado', 'itens'}:
+    if not isinstance(arquivo, dict):
+        return False
+    campos = {'estado', 'itens'}
+    if comando == 'ler_arquivo' and arquivo.get('estado') == 'lido':
+        campos |= {'texto', 'parcial'}
+        if (not isinstance(arquivo.get('texto'), str) or not isinstance(arquivo.get('parcial'), bool)
+                or len(arquivo['texto']) > LIMITE_TEXTO or '\x00' in arquivo['texto']):
+            return False
+    if set(arquivo) != campos:
         return False
     estado, itens = arquivo['estado'], arquivo['itens']
     if (not isinstance(estado, str) or estado not in ESTADOS[comando] or not isinstance(itens, list)
@@ -134,6 +148,8 @@ def parametros_operacao(comando, parametro):
         if not isinstance(dados, dict) or set(dados) != {'pasta'}:
             raise ValueError('Indique a pasta da organização.')
         return parametros_arquivo('listar_arquivos', dados)
+    if comando in COMANDOS_TEXTO:
+        return _parametros_texto(comando, dados)
     chaves = {'nome', 'pasta'}
     if comando in {'copiar_arquivo', 'mover_arquivo'}:
         chaves.add('pasta_destino')
@@ -152,6 +168,20 @@ def parametros_operacao(comando, parametro):
         if '/' in novo_nome:
             raise ValueError('Para renomear, diga apenas o novo nome do arquivo.')
     return PurePosixPath(nome).as_posix(), pasta, novo_nome, pasta_destino
+
+
+def _parametros_texto(comando, dados):
+    campos = {'nome', 'pasta'} if comando == 'ler_arquivo' else {'nome', 'pasta', 'texto'}
+    if not isinstance(dados, dict) or set(dados) != campos:
+        raise ValueError('Indique o nome do arquivo e a pasta.')
+    nome, pasta, _ = parametros_arquivo('abrir_arquivo', {'nome': dados['nome'], 'pasta': dados['pasta']})
+    texto = dados.get('texto', '')
+    if not pasta or PurePosixPath(nome).suffix.casefold() not in EXTENSOES_TEXTO:
+        raise ValueError('Indique Downloads, Documentos ou Área de Trabalho e um arquivo .txt, .md ou .csv.')
+    if (not isinstance(texto, str) or len(texto) > LIMITE_TEXTO or '\x00' in texto
+            or (comando == 'acrescentar_texto' and not texto.strip())):
+        raise ValueError('Informe o texto a gravar com até 1200 caracteres.')
+    return PurePosixPath(nome).as_posix(), pasta, texto
 
 
 def _caminho_operacao(raiz, nome):
@@ -196,7 +226,74 @@ def _gravar_sem_sobrescrever(origem, destino, compactar, info):
         provisoria.unlink(missing_ok=True)
 
 
+@contextmanager
+def _travar_texto(arquivo):
+    if os.name == 'nt':
+        import msvcrt
+
+        msvcrt.locking(arquivo.fileno(), msvcrt.LK_NBLCK, LIMITE_EDICAO + 1)
+    else:
+        import fcntl
+
+        fcntl.flock(arquivo, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    yield  # Fechar o arquivo libera a trava.
+
+
+def _executar_texto(comando, parametro, raizes):
+    nome, pasta, texto = parametros_operacao(comando, parametro)
+    caminho = _caminho_operacao(raizes[pasta], nome)
+    exibido = [f'{pasta}/{nome}']
+    if comando == 'criar_arquivo':
+        try:
+            with tempfile.NamedTemporaryFile(dir=caminho.parent, prefix='.ollie-', delete=False) as arquivo:
+                provisoria = Path(arquivo.name)
+            try:
+                provisoria.write_bytes(texto.encode('utf-8'))
+                os.link(provisoria, caminho)
+            finally:
+                provisoria.unlink(missing_ok=True)
+        except FileExistsError:
+            return _resultado('destino_existe', exibido)
+        return _resultado('arquivo_criado', exibido)
+    try:
+        info = caminho.lstat()
+    except FileNotFoundError:
+        return _resultado('origem_ausente')
+    if not stat.S_ISREG(info.st_mode) or not _seguro(info):
+        raise ValueError('Selecione um arquivo de texto comum.')
+    with caminho.open('rb' if comando == 'ler_arquivo' else 'r+b', buffering=0) as arquivo:
+        if not os.path.samestat(info, os.fstat(arquivo.fileno())):
+            raise ValueError('O arquivo mudou durante a operação.')
+        if comando == 'ler_arquivo':
+            # O decodificador incremental ignora somente um caractere cortado no limite de bytes.
+            import codecs
+
+            dados = arquivo.read(4 * (LIMITE_TEXTO + 1) + 3)
+            trecho = codecs.getincrementaldecoder('utf-8-sig')().decode(dados, final=len(dados) < 4 * (LIMITE_TEXTO + 1) + 3)
+            if '\x00' in trecho:
+                raise ValueError('O arquivo não contém texto UTF-8.')
+            resultado = _resultado('lido', exibido)
+            resultado['arquivo'].update(texto=trecho[:LIMITE_TEXTO], parcial=len(trecho) > LIMITE_TEXTO)
+            return resultado
+        with _travar_texto(arquivo):
+            dados = arquivo.read(LIMITE_EDICAO + 1)
+            if len(dados) > LIMITE_EDICAO or b'\x00' in dados:
+                raise ValueError('A edição exige um arquivo de texto de até 256 KB.')
+            dados.decode('utf-8-sig')
+            quebra = '\r\n' if b'\r\n' in dados else '\n'
+            separador = quebra if dados.removeprefix(b'\xef\xbb\xbf') and not dados.endswith((b'\n', b'\r')) else ''
+            acrescimo = (separador + texto).encode('utf-8')
+            if len(dados) + len(acrescimo) > LIMITE_EDICAO:
+                raise ValueError('O arquivo ultrapassaria 256 KB.')
+            if arquivo.write(acrescimo) != len(acrescimo):
+                arquivo.truncate(len(dados))
+                raise OSError('O texto foi gravado apenas em parte.')
+    return _resultado('texto_acrescentado', exibido)
+
+
 def _executar_operacao(comando, parametro, raizes):
+    if comando in COMANDOS_TEXTO:
+        return _executar_texto(comando, parametro, raizes)
     if comando in COMANDOS_ORGANIZACAO:
         from servicos.organizacao_pc import executar_organizacao
 
