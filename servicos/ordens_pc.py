@@ -45,7 +45,8 @@ def interpretar_ordem_pc(texto):
     if not pedido:
         return None
     termo = pedido[2].strip()
-    pasta = re.search(rf'\s+(?:em|no|na|dos|da|de)\s+(?:pasta\s+(?:de\s+)?)?({PASTA})$', termo, re.I)
+    localizar = r'(?:\s*,?\s+e\s+(?:me\s+)?(?:mostr[ea]|dig[ae]|informe)\s+(?:onde\s+(?:est[aá]|fica)|o\s+caminho))?'
+    pasta = re.search(rf'\s+(?:em|no|na|dos|da|de)\s+(?:pasta\s+(?:de\s+)?)?({PASTA}){localizar}$', termo, re.I)
     nome = termo[:pasta.start()].strip() if pasta else termo
     tipo = re.match(r'^(arquivo|documento|pdf|planilha|apresenta[çc][aã]o)\s+(?:(?:chamado|chamada|de)\s+)?', nome, re.I)
     nome = (nome[tipo.end():] if tipo else nome).strip(' "“”')
@@ -56,6 +57,8 @@ def interpretar_ordem_pc(texto):
     if re.search(r'\b(?:no|na|pelo|pela)\s+(?:google|youtube|whatsapp|internet|web)\b', nome, re.I):
         return None
     comando = 'abrir_arquivo' if abrir_depois or re.fullmatch(ABRIR, pedido[1], re.I) else 'buscar_documentos'
+    if comando == 'buscar_documentos' and pasta:
+        nome = re.sub(r'^ide\s+(?:d[oae]|[oa])\s+', 'ide ', nome, flags=re.I)
     parametro = {'nome': nome, 'pasta': pasta[1] if pasta else '',
                  'extensao': TIPOS.get(normalizar(tipo[1]), '') if tipo else ''}
     parametros_arquivo(comando, parametro)

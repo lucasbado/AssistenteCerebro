@@ -5,6 +5,15 @@ from unittest.mock import Mock
 
 import pytest
 
+
+def test_busca_instalador_em_downloads_com_pedido_de_localizacao(tmp_path):
+    nome = 'arduino-ide_2.3.10_Windows_64bit.exe'
+    (tmp_path / nome).touch()
+    ordem = interpretar_ordem_pc('Procure a ide o arduino em downloads e me mostre onde esta')
+    assert ordem[0] == 'buscar_documentos'
+    resultado = executar_arquivo(*ordem, service=None, pastas={'Downloads': tmp_path})
+    assert resultado == {'arquivo': {'estado': 'encontrado', 'itens': [f'Downloads/{nome}']}}
+
 from scripts.pc_command import executar
 from servicos.arquivos_pc import executar_arquivo, validar_resultado_arquivo
 from servicos.confirmacao_pc import ConfirmacoesPC
