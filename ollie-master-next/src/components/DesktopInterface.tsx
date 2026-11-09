@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import AgendaPanel, { type AgendaAction } from './AgendaPanel';
 import TasksPanel from './TasksPanel';
 import MessagesPanel from './MessagesPanel';
+import WhatsAppReview from './WhatsAppReview';
+import type { WhatsAppDraft } from '../whatsappDraft';
 import AiUsagePanel from './AiUsagePanel';
 import type { MessageAction } from '../messageActions';
 import type { TaskAction } from '../taskActions';
@@ -17,6 +19,7 @@ type Props = {
   page: DesktopPage; onPage: (page: DesktopPage) => void; connected: boolean; thinking: boolean;
   cpu: number | null; ram: number | null; vision: { process: string; title: string };
   messages: DesktopMessage[]; logs: { t: string; m: string; c: string }[];
+  whatsappDrafts: WhatsAppDraft[]; onRemoveWhatsAppDraft: (id: string) => void;
   draft: string; onDraft: (value: string) => void; onSend: () => void; inputRef: RefObject<HTMLInputElement | null>;
   voiceEnabled: boolean; onToggleVoice: () => void; onTestVoice: () => void;
   listeningEnabled: boolean; phase: ListeningPhase; level: number; heard: string;
@@ -106,7 +109,10 @@ export default function DesktopInterface(p: Props) {
       <div id="desktop-content" className="desktop-content">
         {p.page === 'agenda' && <AgendaPanel selected={agendaSelection} onAll={() => setAgendaSelection(null)} />}
         {p.page === 'tasks' && <TasksPanel selected={taskSelection} onAll={() => setTaskSelection(null)} />}
-        {p.page === 'messages' && <MessagesPanel selected={messageSelection} onAll={() => setMessageSelection(null)} />}
+        {p.page === 'messages' && <>
+          <WhatsAppReview drafts={p.whatsappDrafts} remove={p.onRemoveWhatsAppDraft} />
+          <MessagesPanel selected={messageSelection} onAll={() => setMessageSelection(null)} />
+        </>}
         {p.page === 'chat' && <section className="conversation" aria-label="Conversa com a Ollie">
           <div className={`voice-strip phase-${p.phase}`}><span className="voice-strip-icon">{p.listeningEnabled ? <Mic size={20} /> : <MicOff size={20} />}</span>
             <div className="voice-strip-copy" role="status" aria-live="polite"><strong>{status.title}</strong><span>{status.hint}</span></div>

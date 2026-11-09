@@ -10,12 +10,13 @@ from servicos.interface_pc import (
     COMANDO_ACIONAR_CONTROLE, COMANDO_INTERFACE, COMANDOS_INTERFACE_EXPLICITOS, parametros_acionar_controle,
 )
 from servicos.roteamento_pedidos import contexto_pedido, destino_explicito, dispositivo_origem, responder_pedido
+from servicos.whatsapp import COMANDO_WHATSAPP_PC, interpretar_rascunho_whatsapp, numero_whatsapp_pc
 
 
 JANELAS = {'maximize': 'janela_maximizar', 'minimize': 'janela_minimizar',
            'feche': 'janela_fechar', 'foque': 'janela_focar'}
 COMANDOS_JANELAS = frozenset({*JANELAS.values(), 'janela_fullscreen'})
-COMANDOS_DIRETOS = COMANDOS_ARQUIVOS | COMANDOS_JANELAS | COMANDOS_INTERFACE_EXPLICITOS | {'system_status'}
+COMANDOS_DIRETOS = COMANDOS_ARQUIVOS | COMANDOS_JANELAS | COMANDOS_INTERFACE_EXPLICITOS | {'system_status', COMANDO_WHATSAPP_PC}
 DESTINO = r'(?:no|pelo|pro|para o)\s+(?:(?:meu|seu|este|esse)\s+)?(?:pc|computador|desktop|notebook|celular|telefone|smartphone|android)'
 PASTA = r'downloads?|documentos|documents|[áa]rea de trabalho|desktop'
 ABRIR = r'(?:abra|abre|abrir)'
@@ -86,6 +87,14 @@ def _interpretar_operacao_arquivo(texto):
 
 
 def interpretar_ordem_pc(texto):
+    whatsapp = interpretar_rascunho_whatsapp(texto)
+    if whatsapp:
+        if whatsapp.destino != 'PC':
+            return None
+        if not 0 < len(whatsapp.texto.encode('utf-16-le')) <= 4000:
+            raise ValueError('Diga o texto da mensagem com até 2.000 caracteres.')
+        numero = numero_whatsapp_pc(whatsapp.destinatario)
+        return COMANDO_WHATSAPP_PC, json.dumps({'numero': numero, 'texto': whatsapp.texto}, ensure_ascii=False)
     texto = re.sub(r'^(?:ei\s+)?ollie\b[,\s]*|^por favor\b[,\s]*', '', str(texto).strip(), flags=re.I)
     for comando, padrao in _DITADO:
         pedido = re.fullmatch(padrao, texto, re.I | re.S)
@@ -191,7 +200,7 @@ async def encaminhar_ordem_pc(evento):
                 texto_destino = texto[:inicio] + texto[inicio + len(literal):]
         if comando == COMANDO_ACIONAR_CONTROLE:
             texto_destino = re.sub(_TEXTO_LITERAL, '', texto_destino)
-        destino = destino_explicito(texto_destino)
+        destino = 'PC' if comando == COMANDO_WHATSAPP_PC else destino_explicito(texto_destino)
         if destino == 'MOBILE' or (not destino and dispositivo_origem(evento) == 'MOBILE'
                                   and comando in COMANDOS_JANELAS | COMANDOS_INTERFACE_EXPLICITOS | {'capturar_tela'}):
             await responder_pedido(evento, 'Esse controle é do PC. Diga “no PC” para executar lá.')

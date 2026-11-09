@@ -162,6 +162,8 @@ def test_voz_do_celular_busca_abre_no_pc_e_responde_na_origem(aplicativo, monkey
       'itens': [{'tipo': 'menu', 'nome': 'Arquivo', 'habilitado': True}]}, 'menu “Arquivo”'),
     ('Selecione a aba Opções da janela “Teste” no PC.', 'acionar_controle',
      {'estado': 'aba_selecionada'}, 'ficou selecionada'),
+    ('Prepare uma mensagem para +1 202 555 0142 no WhatsApp do PC dizendo: Vou conferir no celular.',
+     'preparar_whatsapp_pc', None, 'rascunho do WhatsApp em Mensagens no PC'),
 ])
 def test_voz_consulta_janela_sem_expor_observacao_no_rele(aplicativo, frase, acao, resultado, trecho):
     app, _, _, central = aplicativo
@@ -187,6 +189,9 @@ def test_voz_consulta_janela_sem_expor_observacao_no_rele(aplicativo, frase, aca
                               'texto': frase})
             comando = pc.receive_json()
             assert (comando['tipo_ws'], comando['comando']) == ('COMANDO_PC', acao)
+            if acao == 'preparar_whatsapp_pc':
+                import json
+                assert json.loads(comando['parametro']) == {'numero': '12025550142', 'texto': 'Vou conferir no celular.'}
             identificador = comando['id_comando']
             pc.send_json({'tipo_ws': 'COMANDO_RESULTADO', 'id_comando': identificador, 'status': 'concluido',
                           'resultado': resultado})

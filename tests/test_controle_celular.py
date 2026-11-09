@@ -60,6 +60,29 @@ def test_mensagem_preserva_texto_literal_sem_executar_seu_conteudo():
     assert interpretar_controle("Mande uma mensagem para Ana")["esclarecimento"]
 
 
+def test_whatsapp_escolhe_o_dispositivo_antes_do_corpo_literal():
+    import json
+    from servicos.ordens_pc import interpretar_ordem_pc
+
+    corpo = 'Revisa no celular e no PC.\nTe aviso às 18h!'
+    frase = 'Prepare uma mensagem para +1 (202) 555-0142 no WhatsApp do PC dizendo: ' + corpo
+    comando, parametro = interpretar_ordem_pc(frase)
+    assert comando == 'preparar_whatsapp_pc'
+    assert json.loads(parametro) == {'numero': '12025550142', 'texto': corpo}
+    assert interpretar_controle(frase) is None
+    frase = 'Prepare uma mensagem para Ana no WhatsApp do celular dizendo: ' + corpo
+    assert interpretar_ordem_pc(frase) is None
+    assert interpretar_controle(frase)['acoes'][0]['parametros']['texto'] == corpo
+
+
+def test_whatsapp_pc_exige_numero_internacional():
+    from servicos.ordens_pc import interpretar_ordem_pc
+
+    for destinatario in ('Ana', '11999999999', 'https://example.com'):
+        with pytest.raises(ValueError, match='número internacional'):
+            interpretar_ordem_pc(f'Prepare uma mensagem para {destinatario} no WhatsApp do PC dizendo oi')
+
+
 @pytest.mark.parametrize("acao,args", [
     ("flashlight.set", {"estado": "false"}), ("flashlight.set", {"estado": 1}),
     ("volume.set", {"canal": "media", "valor": True}), ("volume.set", {"canal": "media", "valor": 101}),

@@ -3,6 +3,7 @@ import re
 
 from servicos.controle_casa import normalizar
 from servicos.roteamento_pedidos import destino_explicito
+from servicos.whatsapp import interpretar_rascunho_whatsapp
 
 COMANDOS_LEGADOS = frozenset({"set_timer", "timer", "set_alarm", "alarme", "configurar_despertar", "despertar", "configurar_alarme",
     "toggle_flashlight", "lanterna", "set_volume", "volume", "set_brightness", "brilho", "set_dnd", "modo_nao_perturbe", "foco",
@@ -19,7 +20,14 @@ def interpretar_controle(texto, origem="MOBILE", referencia=None):
     t = re.sub(r"^(?:ei )?ollie[, ]+", "", t)
     t = re.sub(r"^(?:por favor[, ]+)?(?:(?:voce )?(?:pode|poderia|consegue) |quero que voce )?", "", t)
     # O corpo de mensagem é literal e não pode ser normalizado ou separado em ordens.
-    msg = re.fullmatch(r"(?:ollie[, ]+)?(?:pode |por favor )?(?:mande|manda|envie|envia|enviar) (?:uma )?mensagem (?:para|pra|pro) (.+?) (?:no|pelo) (whatsapp|instagram) (?:dizendo|falando|com o texto)\s*[: ,]?\s*(.+)", original, re.I)
+    whatsapp = interpretar_rascunho_whatsapp(original)
+    if whatsapp:
+        if whatsapp.destino != 'MOBILE':
+            return None
+        if not 0 < len(whatsapp.destinatario) <= 100 or not 0 < len(whatsapp.texto) <= 2000:
+            return {"esclarecimento": "Preciso de um destinatário curto e de uma mensagem com até 2.000 caracteres."}
+        return {"acoes": [_acao("message.prepare", app="whatsapp", destinatario=whatsapp.destinatario, texto=whatsapp.texto)]}
+    msg = re.fullmatch(r"(?:ollie[, ]+)?(?:pode |por favor )?(?:mande|manda|envie|envia|enviar) (?:uma )?mensagem (?:para|pra|pro) (.+?) (?:no|pelo) (instagram) (?:dizendo|falando|com o texto)\s*[: ,]?\s*(.+)", original, re.I)
     if msg:
         if len(msg[1]) > 100 or len(msg[3]) > 2000:
             return {"esclarecimento": "Preciso de um destinatário curto e de uma mensagem com até 2.000 caracteres."}

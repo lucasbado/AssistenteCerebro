@@ -87,9 +87,10 @@ class GerenciadorNotificacoes:
                          "pc_configurado": conectado(self.pc_master) and 'CASA' in self._capacidades.get(self.pc_master, set()),
                          "mobile_configurado": conectado(self.mobile_client) and 'CASA' in self._capacidades.get(self.mobile_client, set())}}
 
-    async def enviar_comando_pc(self, mensagem, *, operacao_arquivo_explicita=False, interface_pc_explicita=False):
+    async def enviar_comando_pc(self, mensagem, *, operacao_arquivo_explicita=False, interface_pc_explicita=False, whatsapp_explicito=False):
         from servicos.arquivos_pc import OPERACOES_ARQUIVOS
         from servicos.interface_pc import COMANDOS_INTERFACE_EXPLICITOS
+        from servicos.whatsapp import COMANDO_WHATSAPP_PC
 
         msg = dict(mensagem)
         comando = str(msg.get('comando') or msg.get('acao') or '')
@@ -97,6 +98,8 @@ class GerenciadorNotificacoes:
             return {'status': 'erro', 'motivo': 'Peça a operação de arquivo pelo chat ou por voz.'}
         if comando in COMANDOS_INTERFACE_EXPLICITOS and not interface_pc_explicita:
             return {'status': 'erro', 'motivo': 'Peça a ação na janela pelo chat ou por voz.'}
+        if comando == COMANDO_WHATSAPP_PC and not whatsapp_explicito:
+            return {'status': 'erro', 'motivo': 'Peça o rascunho do WhatsApp pelo chat ou por voz.'}
         identificador = str(msg.get("id_comando") or uuid.uuid4())
         if len(identificador) > 128:
             raise ValueError("Identificador de comando inválido")

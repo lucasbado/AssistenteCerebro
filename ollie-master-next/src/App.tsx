@@ -6,6 +6,7 @@ import { DesktopReplies } from './desktopReplies';
 import { createLocalAiBridge, type LocalAiResult } from './localAiBridge';
 import { decodeTaskActions } from './taskActions';
 import { decodeMessageActions } from './messageActions';
+import { readWhatsAppDraft, type WhatsAppDraft } from './whatsappDraft';
 import { DesktopVoice } from './desktopVoice';
 import { fileCommands, pcCommandParam, readFileResult, readSystemResult, readWindowResult, readInterfaceResult,
   readControlActionResult, windowQueries, type FileResult, type SystemResult, type WindowResult,
@@ -60,6 +61,8 @@ export default function App() {
   const [ram, setRam] = useState(0);
   const [vision, setVision] = useState({ process: "", title: "" });
   const [chatText, setChatInput] = useState("");
+  const whatsappDraftsRef = useRef<WhatsAppDraft[]>([]);
+  const [whatsappDrafts, setWhatsAppDrafts] = useState<WhatsAppDraft[]>([]);
   const [voiceEnabled, setVoiceEnabled] = useState(() => localStorage.getItem('ollie.desktopVoice') !== 'false');
   const voiceEnabledRef = useRef(voiceEnabled);
   voiceEnabledRef.current = voiceEnabled;
@@ -265,6 +268,11 @@ export default function App() {
     setLogs(prev => [...prev.slice(-99), { t: new Date().toLocaleTimeString(), m, c }]);
   };
 
+  const updateWhatsAppDrafts = (drafts: WhatsAppDraft[]) => {
+    whatsappDraftsRef.current = drafts;
+    setWhatsAppDrafts(drafts);
+  };
+
   const handleCommand = async (data: any, socket?: WebSocket | null) => {
     const id = String(data.id_comando || '');
     const previous = id ? commandResultsRef.current.get(id) : undefined;
@@ -301,7 +309,14 @@ export default function App() {
 
       addLog(`⚡ Executing local PC command: ${cmd}`, "text-neon-cyan");
 
-      if (cmd === 'audio_controle') {
+      if (cmd === 'preparar_whatsapp_pc') {
+        if (whatsappDraftsRef.current.length >= 5) {
+          throw new Error('Revise ou retire um dos cinco rascunhos do WhatsApp em Mensagens.');
+        }
+        const draft = readWhatsAppDraft(id, param);
+        updateWhatsAppDrafts([draft, ...whatsappDraftsRef.current]);
+        setPage('messages');
+      } else if (cmd === 'audio_controle') {
         const audio = await audioQueueRef.current(param);
         audioResultsRef.current.set(id, { audio });
         if (audioResultsRef.current.size > 200) {
@@ -622,6 +637,8 @@ export default function App() {
   }, []);
 
   return <DesktopInterface
+    whatsappDrafts={whatsappDrafts}
+    onRemoveWhatsAppDraft={id => updateWhatsAppDrafts(whatsappDraftsRef.current.filter(item => item.id !== id))}
     page={page} onPage={setPage} connected={isConnected} thinking={mood === 'thinking'}
     cpu={hardwareReady ? cpu : null} ram={hardwareReady ? ram : null} vision={vision} messages={messages} logs={logs}
     draft={chatText} onDraft={setChatInput} onSend={sendChat} inputRef={chatInputRef}

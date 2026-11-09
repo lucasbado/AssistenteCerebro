@@ -7,6 +7,7 @@ from servicos.respostas_acoes import resumir_resultados
 from servicos.arquivos_pc import OPERACOES_ARQUIVOS
 from servicos.interface_pc import COMANDOS_INTERFACE_EXPLICITOS
 from servicos.ordens_pc import interpretar_ordem_pc
+from servicos.whatsapp import COMANDO_WHATSAPP_PC
 
 
 class AgentePlano:
@@ -29,11 +30,13 @@ class AgentePlano:
             if not 1 <= len(etapas) <= 6:
                 raise ValueError('O pedido não tem uma sequência válida de ações.')
             for etapa in etapas:
-                if etapa['comando'] in OPERACOES_ARQUIVOS.keys() | COMANDOS_INTERFACE_EXPLICITOS and (
+                if etapa['comando'] in OPERACOES_ARQUIVOS.keys() | COMANDOS_INTERFACE_EXPLICITOS | {COMANDO_WHATSAPP_PC} and (
                         len(etapas) != 1 or etapa['alvo'] != 'PC'
                         or interpretar_ordem_pc(evento.payload.get('texto_pedido', '')) != (etapa['comando'], etapa['parametro'])):
                     if etapa['comando'] in OPERACOES_ARQUIVOS:
                         raise ValueError('Peça a operação de arquivo em um comando separado, com nome e pasta.')
+                    if etapa['comando'] == COMANDO_WHATSAPP_PC:
+                        raise ValueError('Peça o rascunho do WhatsApp em um comando separado, com número e texto.')
                     raise ValueError('Peça a ação na janela no PC em um comando separado.')
             conexoes = central_alertas.estado_conexoes()
             for etapa in etapas:
@@ -50,7 +53,8 @@ class AgentePlano:
                             'comando': comando, 'parametro': parametro, 'id_comando': etapa['id_comando'],
                             'correlacao_id': chave, 'origem': 'IA', 'abertura_modo': 'pedido', 'abertura_autorizada': True},
                             **({'operacao_arquivo_explicita': True} if comando in OPERACOES_ARQUIVOS else {}),
-                            **({'interface_pc_explicita': True} if comando in COMANDOS_INTERFACE_EXPLICITOS else {}))
+                            **({'interface_pc_explicita': True} if comando in COMANDOS_INTERFACE_EXPLICITOS else {}),
+                            **({'whatsapp_explicito': True} if comando == COMANDO_WHATSAPP_PC else {}))
                         if resultado and resultado['status'] == 'enviado':
                             resultado = await central_alertas.confirmacoes.aguardar(etapa['id_comando'])
                         status = (resultado or {}).get('status')

@@ -10,6 +10,7 @@ from servicos.interface_pc import (
     validar_resultado_acionamento, validar_resultado_interface,
 )
 from servicos.sites_pc import CONFIG
+from servicos.whatsapp import COMANDO_WHATSAPP_PC
 
 APPS = {
     'youtube': 'o YouTube', 'com.google.android.youtube': 'o YouTube',
@@ -36,6 +37,7 @@ ACOES_PC = {
     'janela_ativa': 'identificar a janela ativa', 'listar_janelas': 'consultar as janelas abertas',
     COMANDO_INTERFACE: 'consultar os controles da janela',
     COMANDO_ACIONAR_CONTROLE: 'acionar o controle da janela',
+    COMANDO_WHATSAPP_PC: 'preparar o rascunho do WhatsApp',
     'criar_pasta': 'criar a pasta', 'copiar_arquivo': 'copiar o arquivo', 'mover_arquivo': 'mover o arquivo',
     'renomear_arquivo': 'renomear o arquivo', 'compactar_arquivo': 'compactar o arquivo',
     'criar_arquivo': 'criar o arquivo', 'ler_arquivo': 'ler o arquivo', 'acrescentar_texto': 'acrescentar o texto',
@@ -254,6 +256,8 @@ def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
             frases.append(_resposta_interface(registro.get('resultado')))
         elif comando == COMANDO_ACIONAR_CONTROLE:
             frases.append(_resposta_acionamento(registro.get('resultado')))
+        elif comando == COMANDO_WHATSAPP_PC:
+            frases.append('Deixei o rascunho do WhatsApp em Mensagens no PC. Confira o número e o texto antes de abrir a conversa.')
         elif comando == 'system_status':
             dados = registro.get('resultado')
             if validar_status_pc(dados):
@@ -281,7 +285,7 @@ def resumir_resultados(resultados, texto_usuario='', interrupcao=''):
         frases.append(interrupcao)
     texto = ' '.join(frases)
     if resultados and not interrupcao and all(r['status'] == 'concluido' and r.get('foco') is not False
-            and r['etapa'].get('comando') not in COMANDOS_ARQUIVOS | COMANDOS_INTERFACE_EXPLICITOS | {'system_status'} for r in resultados):
+            and r['etapa'].get('comando') not in COMANDOS_ARQUIVOS | COMANDOS_INTERFACE_EXPLICITOS | {'system_status', COMANDO_WHATSAPP_PC} for r in resultados):
         prefixo = 'Fechou' if re.search(r'\b(cara|mano|bora|valeu|porra|caralho|merda)\b', str(texto_usuario), re.I) else 'Pronto'
         texto = f'{prefixo}, ' + texto[:1].lower() + texto[1:]
     return texto or 'Não consegui confirmar o que aconteceu.'
