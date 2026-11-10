@@ -4,8 +4,10 @@ import json
 import logging
 import math
 import os
+import re
 import tempfile
 import time
+import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
@@ -15,6 +17,7 @@ from servicos.nomes_mixer import ALVOS_MIXER, SAIDAS, SAIDAS_FISICAS, VIRTUAIS, 
 
 logger = logging.getLogger(__name__)
 CONFIG = Path(__file__).resolve().parents[1] / 'config/audio.json'
+DELAY_A3 = 'Option.delay[2]'
 OPERACOES_MIXER = frozenset({'ler_mixer', 'ganho_mixer', 'ajustar_ganho_mixer', 'mudo_mixer', 'rota_mixer',
                              'catalogo_mixer', 'apelidar_mixer', 'mover_rota_mixer'})
 
@@ -23,6 +26,7 @@ class ComandoAudio(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     id_comando: str = Field(min_length=1, max_length=128, pattern=r'^[\w.:-]+$')
     operacao: Literal['avancar', 'voltar', 'alternar_modo', 'selecionar_perfil', 'consultar',
+                      'aumentar_atraso', 'zerar_atraso',
                       'ler_mixer', 'ganho_mixer', 'ajustar_ganho_mixer', 'mudo_mixer', 'rota_mixer',
                       'catalogo_mixer', 'apelidar_mixer', 'mover_rota_mixer']
     perfil_audio: Literal['HEADSET', 'CINEMA'] | None = None
@@ -159,6 +163,8 @@ class MixerBanana:
 
     def ler(self, parametro):
         vm = self.obter_vm()
+        if parametro == DELAY_A3:
+            return self._ler_delay_a3(vm)
         vm.cache.pop(parametro, None)
         # A API nativa mantém outro snapshot além do cache Python. Consultar
         # IsParametersDirty atualiza esse snapshot, inclusive após vm.set().
@@ -167,6 +173,29 @@ class MixerBanana:
         if not math.isfinite(valor):
             raise RuntimeError('VoiceMeeter devolveu valor inválido')
         return valor
+
+    @staticmethod
+    def _ler_delay_a3(vm):
+        # No Banana 2.1.2.2, GetParameterFloat devolve um valor antigo
+        # mesmo quando System Settings já mostra o ajuste aplicado.
+        with tempfile.TemporaryDirectory(prefix='ollie-vm-') as pasta:
+            arquivo = Path(pasta) / 'mixer.xml'
+            vm.set('Command.Save', str(arquivo))
+            vm.cache.pop('Command.Save', None)
+            limite = time.monotonic() + 1
+            while time.monotonic() < limite:
+                try:
+                    dados = arquivo.read_bytes()
+                    opcoes = re.search(rb'<OptionDev\b[^>]*?/>', dados)
+                    if opcoes:
+                        valor = float(ET.fromstring(opcoes.group()).attrib['msA3'])
+                        if 0 <= valor <= 500:
+                            return valor
+                        raise ValueError('Delay da A3 fora dos limites')
+                except (FileNotFoundError, PermissionError):
+                    pass
+                time.sleep(.025)
+        raise RuntimeError('VoiceMeeter não exportou o atraso da A3')
 
     def escrever(self, parametro, valor):
         self.obter_vm().set(parametro, valor)
@@ -264,17 +293,8 @@ class ControleAudio:
         if estado.perfil_audio is None:
             return self._resultado(estado, 'bloqueado', 'perfil_nao_selecionado', False)
         direcao = 1 if pedido.operacao == 'avancar' else -1
-        if estado.modo_controle == 'SINCRONIZACAO':
-            if estado.perfil_audio != 'CINEMA':
-                return self._resultado(estado, 'bloqueado', 'sincronizacao_exige_cinema', False)
-            if self._mute(2):
-                return self._resultado(estado, 'sem_alteracao', 'a3_mutada', False)
-            parametro = 'Option.delay[2]'
-            antes = self.mixer.ler(parametro)
-            if not 0 <= antes <= 500:
-                raise RuntimeError('Delay fora dos limites')
-            depois = max(0, min(500, antes + direcao * self.config.passo_delay_ms))
-            return self._escrever(estado, {parametro: antes}, {parametro: depois}, {parametro: 2})
+        if pedido.operacao in ('aumentar_atraso', 'zerar_atraso') or estado.modo_controle == 'SINCRONIZACAO':
+            return self._ajustar_atraso(estado, pedido.operacao)
         indices = [0] if estado.perfil_audio == 'HEADSET' else [1, 2]
         ativos = [i for i in indices if not self._mute(i)]
         if not ativos:
@@ -286,6 +306,18 @@ class ControleAudio:
         delta = min(passo, 12 - max(antes.values())) if direcao > 0 else -min(passo, min(antes.values()) + 60)
         depois = {p: round(v + delta, 4) for p, v in antes.items()}
         return self._escrever(estado, antes, depois, {f'Bus[{i}].Gain': i for i in ativos})
+
+    def _ajustar_atraso(self, estado, operacao):
+        if estado.perfil_audio != 'CINEMA':
+            return self._resultado(estado, 'bloqueado', 'sincronizacao_exige_cinema', False)
+        if self._mute(2):
+            return self._resultado(estado, 'sem_alteracao', 'a3_mutada', False)
+        antes = self.mixer.ler(DELAY_A3)
+        if not 0 <= antes <= 500:
+            raise RuntimeError('Delay fora dos limites')
+        direcao = -1 if operacao == 'voltar' else 1
+        depois = 0 if operacao == 'zerar_atraso' else max(0, min(500, antes + direcao * self.config.passo_delay_ms))
+        return self._escrever(estado, {DELAY_A3: antes}, {DELAY_A3: depois}, {DELAY_A3: 2})
 
     def _aplicar_mixer(self, estado, pedido):
         if pedido.operacao == 'apelidar_mixer':

@@ -1,0 +1,83 @@
+blueprint:
+  name: Ollie - Ajuste de atraso da Mesa Touch
+  description: Use o sensor do GPIO14. Segure para ajustar a A3 e dê dois toques para zerar.
+  domain: automation
+  input:
+    sensor_mesa:
+      name: Entidade do sensor do botão da mesa
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+
+triggers:
+  - trigger: event
+    event_type: esphome.mesa_atraso_segurar
+    id: segurar
+  - trigger: event
+    event_type: esphome.mesa_atraso_zerar
+    id: zerar
+
+variables:
+  sensor_mesa: !input sensor_mesa
+  zerar: "{{ trigger.id == 'zerar' }}"
+  houve_ajuste: false
+  continuar: true
+  evento_base: "mesa-{{ now().strftime('%Y%m%d%H%M%S%f') }}-{{ trigger.id }}"
+
+actions:
+  - repeat:
+      while:
+        - condition: template
+          value_template: >-
+            {{ continuar and repeat.index <= 50 and
+               ((zerar and repeat.first) or
+                (not zerar and is_state(sensor_mesa, 'on'))) }}
+      sequence:
+        - action: rest_command.ollie_touch_audio
+          data:
+            payload:
+              evento_id: "{{ evento_base }}-{{ repeat.index }}"
+              action_name: "{{ 'audio.delay_reset' if zerar else 'audio.delay_step' }}"
+              gesture: "{{ 'double_click' if zerar else 'hold' }}"
+          response_variable: envio_ollie
+        - if:
+            - condition: template
+              value_template: >-
+                {{ envio_ollie.status == 202 and envio_ollie.content.id is defined }}
+          then:
+            - variables:
+                comando_id: "{{ envio_ollie.content.id }}"
+            - repeat:
+                sequence:
+                  - delay:
+                      milliseconds: 350
+                  - action: rest_command.ollie_consultar_audio
+                    data:
+                      comando_id: "{{ comando_id }}"
+                    response_variable: consulta_ollie
+                until:
+                  - condition: template
+                    value_template: >-
+                      {{ repeat.index >= 8 or
+                         (consulta_ollie.status == 200 and
+                          consulta_ollie.content.status in ['concluido', 'erro', 'falhou']) }}
+            - variables:
+                continuar: >-
+                  {{ consulta_ollie.status == 200 and
+                     consulta_ollie.content.status == 'concluido' and
+                     consulta_ollie.content.resultado.audio.codigo | default('') == 'ajuste_confirmado' }}
+                houve_ajuste: "{{ houve_ajuste or continuar }}"
+          else:
+            - variables:
+                continuar: false
+  - if:
+      - condition: template
+        value_template: "{{ houve_ajuste }}"
+    then:
+      - action: script.ollie_feedback_visual
+        data:
+          modo_controle: SINCRONIZACAO
+
+mode: queued
+max: 2

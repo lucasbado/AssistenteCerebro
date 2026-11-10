@@ -73,7 +73,14 @@ Escolha explicitamente um perfil antes de operar os botões. Não foi criado um 
 
 Sequência de ativação: publicar o backend no Render manualmente, reconstruir/reabrir a Ollie Desk, consultar a nova rota autenticada, selecionar o perfil, aprovar/aplicar o YAML abaixo e só então habilitar o feedback em `config/audio.json`. A alteração de modo/volume passa a valer para os botões apenas depois da atualização do `rest_command` no HA.
 
-**Pendência real:** volume validado no hardware; delay A3 ainda não confirmado. Não considerar a sincronização pronta para uso físico até resolver essa confirmação. O controlador não força reinício do motor para contornar a falha.
+**Atraso A3 no Banana 2.1.2.2:** a escrita pela API muda o valor exibido em System Settings, mas a leitura numérica da mesma API devolve o valor antigo. O controlador usa uma exportação temporária da configuração para ler e confirmar o atraso. O teste físico confirmou 100 → 110 → 120 ms e, em um teste separado, o comando de zerar. A A3 voltou a 100 ms ao fim dos testes.
+
+### Gesto de segurar e duplo toque
+
+1. Publique a versão do backend que aceita `audio.delay_step` e `audio.delay_reset`. Garanta que o helper local da Ollie Desk use o código atualizado.
+2. Copie `config/integracoes/ha_mesa_atraso_blueprint.yaml` para `blueprints/automation/ollie/mesa_atraso.yaml` no diretório de configuração do Home Assistant. Crie uma automação a partir do blueprint e selecione a entidade do sensor do GPIO14. O blueprint usa os dois comandos REST e o script `script.ollie_feedback_visual` já existentes.
+3. Substitua o bloco do GPIO14 pelo sensor de `config/integracoes/esphome_mesa_atraso.yaml` e instale a configuração no ESP32.
+4. Com CINEMA selecionado e A3 desmutada, segure o botão por pelo menos um segundo. Cada passo confirmado soma 10 ms, até 500 ms. Soltar impede novos passos, embora um pedido já enviado possa terminar. Dois toques zeram o atraso. Se houve uma mudança confirmada, a lâmpada dá um único pulso roxo pelo script existente.
 
 ## Backup existente
 

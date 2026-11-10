@@ -1,0 +1,23 @@
+# Substitua o sensor GPIO14 dentro da lista binary_sensor existente.
+# Mantenha o nome e o ID para preservar a entidade no Home Assistant.
+binary_sensor:
+  - platform: gpio
+    pin: GPIO14
+    name: "Botão Mídia"
+    id: botao_midia
+    filters:
+      - delayed_on_off: 20ms
+    on_multi_click:
+      - timing:
+          - ON for at least 1s
+        then:
+          - homeassistant.event:
+              event: esphome.mesa_atraso_segurar
+      - timing:
+          - ON for at most 350ms
+          - OFF for at most 400ms
+          - ON for at most 350ms
+          - OFF for at least 50ms
+        then:
+          - homeassistant.event:
+              event: esphome.mesa_atraso_zerar
